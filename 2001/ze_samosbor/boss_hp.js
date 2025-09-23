@@ -339,4 +339,5 @@ function ResetBossS()
     BOSS_HUD_IND = true;
     ITEM_DAMAGE = "";
     GRENADE_DAMAGE = 0;
+
 }
