@@ -1,0 +1,1674 @@
+<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->
+{
+	generic_data_type = "Vpulse"
+	m_Cells = 
+	[
+		
+		{
+			_class = "CPulseCell_Inflow_Method"
+			m_nEditorNodeID = -1
+			m_EntryChunk = 0
+			m_RegisterMap = 
+			{
+				m_Inparams = null
+				m_Outparams = 
+				{
+					arg1 = 0
+				}
+			}
+			m_MethodName = "SpawnCanister"
+			m_Description = ""
+			m_bIsPublic = true
+			m_ReturnType = "PVAL_VOID"
+			m_Args = 
+			[
+				
+				{
+					m_Name = "arg1"
+					m_Description = ""
+					m_Type = "PVAL_STRING"
+				},
+			]
+		},
+		
+		{
+			_class = "CPulseCell_Step_EntFire"
+			m_nEditorNodeID = -1
+			m_Input = "FireUser1"
+		},
+		
+		{
+			_class = "CPulseCell_Inflow_Method"
+			m_nEditorNodeID = -1
+			m_EntryChunk = 1
+			m_RegisterMap = 
+			{
+				m_Inparams = null
+				m_Outparams = 
+				{
+					arg1 = 0
+				}
+			}
+			m_MethodName = "SpawnItem"
+			m_Description = ""
+			m_bIsPublic = true
+			m_ReturnType = "PVAL_VOID"
+			m_Args = 
+			[
+				
+				{
+					m_Name = "arg1"
+					m_Description = ""
+					m_Type = "PVAL_STRING"
+				},
+			]
+		},
+		
+		{
+			_class = "CPulseCell_Step_EntFire"
+			m_nEditorNodeID = -1
+			m_Input = "FireUser2"
+		},
+		
+		{
+			_class = "CPulseCell_Inflow_Method"
+			m_nEditorNodeID = -1
+			m_EntryChunk = 2
+			m_RegisterMap = 
+			{
+				m_Inparams = null
+				m_Outparams = 
+				{
+					arg1 = 0
+				}
+			}
+			m_MethodName = "SetBossTarget"
+			m_Description = ""
+			m_bIsPublic = true
+			m_ReturnType = "PVAL_VOID"
+			m_Args = 
+			[
+				
+				{
+					m_Name = "arg1"
+					m_Description = ""
+					m_Type = "PVAL_STRING"
+				},
+			]
+		},
+		
+		{
+			_class = "CPulseCell_Step_EntFire"
+			m_nEditorNodeID = -1
+			m_Input = "Enable"
+		},
+		
+		{
+			_class = "CPulseCell_Inflow_Method"
+			m_nEditorNodeID = -1
+			m_EntryChunk = 3
+			m_RegisterMap = 
+			{
+				m_Inparams = null
+				m_Outparams = 
+				{
+					arg1 = 0
+				}
+			}
+			m_MethodName = "SpawnMeat"
+			m_Description = ""
+			m_bIsPublic = true
+			m_ReturnType = "PVAL_VOID"
+			m_Args = 
+			[
+				
+				{
+					m_Name = "arg1"
+					m_Description = ""
+					m_Type = "PVAL_STRING"
+				},
+			]
+		},
+		
+		{
+			_class = "CPulseCell_Step_EntFire"
+			m_nEditorNodeID = -1
+			m_Input = "FireUser3"
+		},
+	]
+	m_DomainIdentifier = "ServerEntity"
+	m_DomainSubType = "PVAL_EHANDLE:point_pulse"
+	m_ParentMapName = "maps/main.vmap"
+	m_ParentXmlName = ""
+	m_vecGameBlackboards = 
+	[
+	]
+	m_BlackboardReferences = 
+	[
+	]
+	m_Chunks = 
+	[
+		
+		{
+			m_Instructions = 
+			[
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 0
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 2
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 0
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 0
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 5
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_ARRAY_ELEMENT"
+					m_nVar = -1
+					m_nReg0 = 6
+					m_nReg1 = 4
+					m_nReg2 = 5
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 2
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "CELL_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 3
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "RETURN_VOID"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+			]
+			m_Registers = 
+			[
+				
+				{
+					m_nReg = 0
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 1
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 2
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 1
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 3
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 2
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 4
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 3
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 5
+					m_Type = "PVAL_INT"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 4
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 6
+					m_Type = "PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 5
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 7
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 6
+					m_nLastReadByInstruction = -1
+				},
+			]
+			m_InstructionEditorIDs = 
+			[
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+			]
+		},
+		
+		{
+			m_Instructions = 
+			[
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 2
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 2
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 4
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 5
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 5
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 3
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_ARRAY_ELEMENT"
+					m_nVar = -1
+					m_nReg0 = 6
+					m_nReg1 = 4
+					m_nReg2 = 5
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 6
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "CELL_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 7
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "RETURN_VOID"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+			]
+			m_Registers = 
+			[
+				
+				{
+					m_nReg = 0
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 1
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 2
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 1
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 3
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 2
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 4
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 3
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 5
+					m_Type = "PVAL_INT"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 4
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 6
+					m_Type = "PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 5
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 7
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 6
+					m_nLastReadByInstruction = -1
+				},
+			]
+			m_InstructionEditorIDs = 
+			[
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+			]
+		},
+		
+		{
+			m_Instructions = 
+			[
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 2
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "CELL_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 8
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 2
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 4
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 3
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 3
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 9
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 5
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 5
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 6
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 4
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 10
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "REINTERPRET_INSTANCE"
+					m_nVar = -1
+					m_nReg0 = 8
+					m_nReg1 = 7
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 9
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 6
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 10
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 5
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 11
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 12
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 13
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 7
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_ARRAY_ELEMENT"
+					m_nVar = -1
+					m_nReg0 = 14
+					m_nReg1 = 12
+					m_nReg2 = 13
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 13
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "RETURN_VOID"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+			]
+			m_Registers = 
+			[
+				
+				{
+					m_nReg = 0
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 1
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 2
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 2
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 3
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 3
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 4
+					m_Type = "PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 5
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 5
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 5
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 6
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 6
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 7
+					m_Type = "PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 8
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 8
+					m_Type = "PVAL_EHANDLE:trigger"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 8
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 9
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 9
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 10
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 10
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 11
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 11
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 12
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 12
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 13
+					m_Type = "PVAL_INT"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 13
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 14
+					m_Type = "PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 14
+					m_nLastReadByInstruction = -1
+				},
+			]
+			m_InstructionEditorIDs = 
+			[
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+			]
+		},
+		
+		{
+			m_Instructions = 
+			[
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 8
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_DOMAIN_VALUE"
+					m_nVar = -1
+					m_nReg0 = 2
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = 6
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 14
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 15
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_CONST"
+					m_nVar = -1
+					m_nReg0 = 5
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = 9
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "GET_ARRAY_ELEMENT"
+					m_nVar = -1
+					m_nReg0 = 6
+					m_nReg1 = 4
+					m_nReg2 = 5
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "LIBRARY_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 16
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "CELL_INVOKE"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = 17
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+				
+				{
+					m_nCode = "RETURN_VOID"
+					m_nVar = -1
+					m_nReg0 = -1
+					m_nReg1 = -1
+					m_nReg2 = -1
+					m_nInvokeBindingIndex = -1
+					m_nChunk = -1
+					m_nDestInstruction = 0
+					m_nCallInfoIndex = -1
+					m_nConstIdx = -1
+					m_nDomainValueIdx = -1
+					m_nBlackboardReferenceIdx = -1
+				},
+			]
+			m_Registers = 
+			[
+				
+				{
+					m_nReg = 0
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 1
+					m_Type = "PVAL_STRING"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 0
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 2
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 1
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 3
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 2
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 4
+					m_Type = "PVAL_ARRAY:PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 3
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 5
+					m_Type = "PVAL_INT"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 4
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 6
+					m_Type = "PVAL_EHANDLE"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 5
+					m_nLastReadByInstruction = -1
+				},
+				
+				{
+					m_nReg = 7
+					m_Type = "PVAL_ENTITY_NAME"
+					m_OriginName = "0:null"
+					m_nWrittenByInstruction = 6
+					m_nLastReadByInstruction = -1
+				},
+			]
+			m_InstructionEditorIDs = 
+			[
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+			]
+		},
+	]
+	m_DomainValues = 
+	[
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = "Human_Item_Random_Physbox*"
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = "Human_Item_Random_Physbox*"
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = "Boss_SetTarget_Trigger"
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = "Boss_SetTarget_Trigger"
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = "Map_Boss_TheHeart_SetTarget"
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = ""
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+		
+		{
+			m_nType = "ENTITY_NAME"
+			m_Value = "Human_Item_Random_Physbox*"
+			m_RequiredRuntimeType = "PVAL_ENTITY_NAME"
+		},
+	]
+	m_Vars = 
+	[
+	]
+	m_Constants = 
+	[
+		
+		{
+			m_Type = "PVAL_STRING"
+			m_Value = "func_physbox"
+		},
+		
+		{
+			m_Type = "PVAL_INT"
+			m_Value = 0
+		},
+		
+		{
+			m_Type = "PVAL_STRING"
+			m_Value = "func_physbox"
+		},
+		
+		{
+			m_Type = "PVAL_INT"
+			m_Value = 0
+		},
+		
+		{
+			m_Type = "PVAL_STRING"
+			m_Value = "trigger_multiple"
+		},
+		
+		{
+			m_Type = "PVAL_STRING"
+			m_Value = "trigger_multiple"
+		},
+		
+		{
+			m_Type = "PVAL_STRING"
+			m_Value = "player"
+		},
+		
+		{
+			m_Type = "PVAL_INT"
+			m_Value = 0
+		},
+		
+		{
+			m_Type = "PVAL_STRING"
+			m_Value = "func_physbox"
+		},
+		
+		{
+			m_Type = "PVAL_INT"
+			m_Value = 0
+		},
+	]
+	m_PublicOutputs = 
+	[
+	]
+	m_OutputConnections = 
+	[
+		
+		{
+			m_SourceOutput = "Step_EntFire:-1"
+			m_TargetEntity = ""
+			m_TargetInput = "FireUser1"
+			m_Param = ""
+		},
+		
+		{
+			m_SourceOutput = "Step_EntFire:-1"
+			m_TargetEntity = ""
+			m_TargetInput = "FireUser2"
+			m_Param = ""
+		},
+		
+		{
+			m_SourceOutput = "Step_EntFire:-1"
+			m_TargetEntity = "Boss_SetTarget_Trigger"
+			m_TargetInput = "Enable"
+			m_Param = ""
+		},
+		
+		{
+			m_SourceOutput = "Step_EntFire:-1"
+			m_TargetEntity = ""
+			m_TargetInput = "FireUser3"
+			m_Param = ""
+		},
+	]
+	m_InvokeBindings = 
+	[
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					entityType = 1
+					entityName = 2
+				}
+				m_Outparams = 
+				{
+					retval = 3
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::FindAllEntities"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					a = 3
+				}
+				m_Outparams = 
+				{
+					retval = 4
+				}
+			}
+			m_FuncName = "CPulseArraylib::ArrayShuffle"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					hEnt = 6
+				}
+				m_Outparams = 
+				{
+					retval = 7
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::GetEntityName"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					TargetName = 7
+				}
+				m_Outparams = null
+			}
+			m_FuncName = "FireAtName"
+			m_nCellIndex = 1
+			m_nSrcChunk = 0
+			m_nSrcInstruction = 7
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					entityType = 1
+					entityName = 2
+				}
+				m_Outparams = 
+				{
+					retval = 3
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::FindAllEntities"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					a = 3
+				}
+				m_Outparams = 
+				{
+					retval = 4
+				}
+			}
+			m_FuncName = "CPulseArraylib::ArrayShuffle"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					hEnt = 6
+				}
+				m_Outparams = 
+				{
+					retval = 7
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::GetEntityName"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					TargetName = 7
+				}
+				m_Outparams = null
+			}
+			m_FuncName = "FireAtName"
+			m_nCellIndex = 3
+			m_nSrcChunk = 1
+			m_nSrcInstruction = 7
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					TargetName = 1
+				}
+				m_Outparams = null
+			}
+			m_FuncName = "FireAtName"
+			m_nCellIndex = 5
+			m_nSrcChunk = 2
+			m_nSrcInstruction = 1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					entityType = 2
+					entityName = 3
+				}
+				m_Outparams = 
+				{
+					retval = 4
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::FindEntity"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					entityType = 5
+					entityName = 6
+				}
+				m_Outparams = 
+				{
+					retval = 7
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::FindEntity"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					_Target = 8
+					entityType = 9
+					optionalEntityName = 10
+				}
+				m_Outparams = 
+				{
+					retval = 11
+				}
+			}
+			m_FuncName = "CBaseTriggerAPI::FindEntitiesInTrigger"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					a = 11
+				}
+				m_Outparams = 
+				{
+					retval = 12
+				}
+			}
+			m_FuncName = "CPulseArraylib::ArrayShuffle"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					hEntity = 4
+					hEntityTarget = 14
+				}
+				m_Outparams = null
+			}
+			m_FuncName = "CPulseServerFuncs::TeleportEntity"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					entityType = 1
+					entityName = 2
+				}
+				m_Outparams = 
+				{
+					retval = 3
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::FindAllEntities"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					a = 3
+				}
+				m_Outparams = 
+				{
+					retval = 4
+				}
+			}
+			m_FuncName = "CPulseArraylib::ArrayShuffle"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					hEnt = 6
+				}
+				m_Outparams = 
+				{
+					retval = 7
+				}
+			}
+			m_FuncName = "CPulseServerFuncs::GetEntityName"
+			m_nCellIndex = -1
+			m_nSrcChunk = -1
+			m_nSrcInstruction = -1
+		},
+		
+		{
+			m_RegisterMap = 
+			{
+				m_Inparams = 
+				{
+					TargetName = 7
+				}
+				m_Outparams = null
+			}
+			m_FuncName = "FireAtName"
+			m_nCellIndex = 7
+			m_nSrcChunk = 3
+			m_nSrcInstruction = 7
+		},
+	]
+	m_CallInfos = 
+	[
+	]
+}
