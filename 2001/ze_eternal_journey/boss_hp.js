@@ -41,7 +41,7 @@ let GRENADE_DAMAGE = 0;
 let GRENADE_DAMAGE_TICK = 2.00;
 let SAVE_GRENADE_DAMAG_T = GRENADE_DAMAGE_TICK;
 
-Instance.OnGameEvent("round_start", (event) => {
+Instance.OnRoundStart(() => {
     ResetBossS();
     if(InPuts.length > 0)
     {
@@ -58,8 +58,8 @@ Instance.OnGameEvent("round_start", (event) => {
 
             Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Param: ${param} | Func: ${handlerFn.name}`);
 
-            Instance.ConnectOutput(ent, outputName, (arg = param, context) => {
-                handlerFn(param);
+            Instance.ConnectOutput(ent, outputName, ({value = param, caller, activator}) => {
+                handlerFn(value);
             });
         }
     }
@@ -215,7 +215,7 @@ function BuildHud()
         BOSS_HUD_TEXT = BOSS_HUD_TEXT + "]";
     }
     Instance.EntFireAtName(BOSS_HUD_ENT, "SetMessage", BOSS_HUD_TEXT, 0.00);
-    // Instance.Msg(BOSS_HUD_TEXT);
+    Instance.Msg(BOSS_HUD_TEXT);
 }
 
 Instance.OnScriptInput("SubtractHealth", () => {
@@ -315,4 +315,3 @@ function ResetBossS()
     ITEM_DAMAGE = "";
     GRENADE_DAMAGE = 0;
 }
-
