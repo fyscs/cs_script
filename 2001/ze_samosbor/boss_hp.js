@@ -59,7 +59,7 @@ Instance.SetThink(function () {
 
 Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 
-Instance.OnGameEvent("round_start", (event) => {
+Instance.OnRoundStart(() => {
 	ResetBossS();
 	DelayedCalls.length = 0;
     if(InPuts.length > 0)
@@ -77,16 +77,16 @@ Instance.OnGameEvent("round_start", (event) => {
 
             Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Param: ${param} | Func: ${handlerFn.name} | Delay: ${delay}`);
 
-            Instance.ConnectOutput(ent, outputName, (arg = param, context) => {
+            Instance.ConnectOutput(ent, outputName, ({value = param, caller, activator}) => {
                 Delay(function () {
-                    handlerFn(param);
+                    handlerFn(value);
                 }, delay);
             });
         }
     }
 })
 
-Instance.OnGameEvent("round_end", (event) => {
+Instance.OnRoundEnd(() => {
     DelayedCalls.length = 0;
 	ResetBossS();
 })
@@ -339,5 +339,4 @@ function ResetBossS()
     BOSS_HUD_IND = true;
     ITEM_DAMAGE = "";
     GRENADE_DAMAGE = 0;
-
 }
