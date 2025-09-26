@@ -41,7 +41,7 @@ let ang_rot_limit = 10;
 
 let lastTime = null;
 
-Instance.OnGameEvent("round_start", (event) => {
+Instance.OnRoundStart(() => {
     ResetScript();
     Instance.EntFireAtName(b_ScriptEnt_name, "RunScriptInput", "SetBossEntities", 0.50);
     if(b_BossTrain?.IsValid())
@@ -390,4 +390,3 @@ Instance.OnScriptInput("BossKill", () => {
     }
     Instance.EntFireAtTarget(b_ScriptEnt, "RunScriptInput", "ResetScript", 0.10);
 });
-
