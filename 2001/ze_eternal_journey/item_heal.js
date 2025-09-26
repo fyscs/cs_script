@@ -12,7 +12,7 @@ let h_Tick = 0.01;
 const Player_M = new Map();
 let lastTime = null;
 
-Instance.OnGameEvent("round_start", (event) => {
+Instance.OnRoundStart(() => {
     lastTime = null;
 });
 
