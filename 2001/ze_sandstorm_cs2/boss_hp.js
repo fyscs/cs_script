@@ -44,37 +44,13 @@ let GRENADE_DAMAGE = 0;
 let GRENADE_DAMAGE_TICK = 2.00;
 let SAVE_GRENADE_DAMAG_T = GRENADE_DAMAGE_TICK;
 
-// const DelayedCalls = [];
-
-// function Delay(callback, delaySeconds) {
-//     DelayedCalls.push({
-//         time: Instance.GetGameTime() + delaySeconds,
-//         callback: callback
-//     });
-// }
-
-// Instance.SetThink(function () {
-//     const now = Instance.GetGameTime();
-
-//     for (let i = DelayedCalls.length - 1; i >= 0; i--) {
-//         if (DelayedCalls[i].time <= now) {
-//             DelayedCalls[i].callback();
-//             DelayedCalls.splice(i, 1);
-//         }
-//     }
-//     Instance.SetNextThink(now + 0.01);
-// });
-
-// Instance.SetNextThink(Instance.GetGameTime() + 0.01);
-
-Instance.OnGameEvent("round_start", (event) => {
+Instance.OnRoundStart(() => {
     ResetBossS();
     if(InPuts.length > 0)
     {
         for (let i = 0; i < InPuts.length; i++) 
         {
             const [entName, outputName, param, handlerFn] = InPuts[i];
-            // const [entName, outputName, param, handlerFn, delay] = InPuts[i];
 
             const ent = Instance.FindEntityByName(entName);
             if(!ent || !ent?.IsValid())
@@ -84,13 +60,9 @@ Instance.OnGameEvent("round_start", (event) => {
             } 
 
             Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Param: ${param} | Func: ${handlerFn.name}`);
-            // Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Param: ${param} | Func: ${handlerFn.name} | Delay: ${delay}`);
 
-            Instance.ConnectOutput(ent, outputName, (arg = param, context) => {
-                // Delay(function () {
-                //     handlerFn(param);
-                // }, delay);
-                handlerFn(param);
+            Instance.ConnectOutput(ent, outputName, ({value = param, caller, activator}) => {
+                handlerFn(value);
             });
         }
     }
@@ -346,4 +318,3 @@ function ResetBossS()
     ITEM_DAMAGE = "";
     GRENADE_DAMAGE = 0;
 }
-
