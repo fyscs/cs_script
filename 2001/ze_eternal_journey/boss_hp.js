@@ -215,7 +215,7 @@ function BuildHud()
         BOSS_HUD_TEXT = BOSS_HUD_TEXT + "]";
     }
     Instance.EntFireAtName(BOSS_HUD_ENT, "SetMessage", BOSS_HUD_TEXT, 0.00);
-    Instance.Msg(BOSS_HUD_TEXT);
+    // Instance.Msg(BOSS_HUD_TEXT);
 }
 
 Instance.OnScriptInput("SubtractHealth", () => {
