@@ -4,7 +4,7 @@ Instance.OnScriptInput("SpawnCanister", () => {
     let ents = Instance.FindEntitiesByName("Human_Item_Random_Physbox*");
     if(ents.length > 0)
     {
-        let rnd_n = GetRandomNumber(0, ents.length);
+        let rnd_n = GetRandomNumber(0, ents.length - 1);
         let r_ent = ents[rnd_n];
         if(r_ent?.IsValid())
         {
@@ -17,7 +17,7 @@ Instance.OnScriptInput("SpawnItem", () => {
     let ents = Instance.FindEntitiesByName("Human_Item_Random_Physbox*");
     if(ents.length > 0)
     {
-        let rnd_n = GetRandomNumber(0, ents.length);
+        let rnd_n = GetRandomNumber(0, ents.length - 1);
         let r_ent = ents[rnd_n];
         if(r_ent?.IsValid())
         {
@@ -30,7 +30,7 @@ Instance.OnScriptInput("SpawnMeat", () => {
     let ents = Instance.FindEntitiesByName("Human_Item_Random_Physbox*");
     if(ents.length > 0)
     {
-        let rnd_n = GetRandomNumber(0, ents.length);
+        let rnd_n = GetRandomNumber(0, ents.length - 1);
         let r_ent = ents[rnd_n];
         if(r_ent?.IsValid())
         {
