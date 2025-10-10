@@ -96,7 +96,7 @@ function StartBoss(arg)
         BOSS_PERCENT_C = "";
     }
     IS_BOSS_FIGHT = true;
-    Instance.EntFireAtName(BOSS_SCRIPT, "RunScriptInput", "CheckHealth", 0.00);
+    Instance.EntFireAtName({ name: BOSS_SCRIPT, input: "RunScriptInput", value: "CheckHealth", delay: 0.00 });
 }
 
 function AddHealth(arg)
@@ -155,7 +155,7 @@ Instance.OnScriptInput("CheckHealth", () => {
         return;
     }
     BuildHud();
-    Instance.EntFireAtName(BOSS_SCRIPT, "RunScriptInput", "CheckHealth", TICKRATE_B);
+    Instance.EntFireAtName({ name: BOSS_SCRIPT, input: "RunScriptInput", value: "CheckHealth", delay: TICKRATE_B });
 });
 
 function BuildHud()
@@ -194,7 +194,7 @@ function BuildHud()
     BOSS_HUD_TEXT += `${BOSS_NAME}: ${BOSS_HEALTH} (${PERCENT_HP}%)${GrenadeDamage_String}${ITEM_DAMAGE}`;
     if(BOSS_PERCENT_C.length > 0)
     {
-        Instance.EntFireAtName(BOSS_PERCENT_C, "InValue", ""+PERCENT_HP, 0.00);
+        Instance.EntFireAtName({ name: BOSS_PERCENT_C, input: "InValue", value: ""+PERCENT_HP, delay: 0.00 });
     }
     if(BOSS_HUD_IND)
     {
@@ -217,7 +217,7 @@ function BuildHud()
         }
         BOSS_HUD_TEXT = BOSS_HUD_TEXT + "]";
     }
-    Instance.EntFireAtName(BOSS_HUD_ENT, "SetMessage", BOSS_HUD_TEXT, 0.00);
+    Instance.EntFireAtName({ name: BOSS_HUD_ENT, input: "SetMessage", value: BOSS_HUD_TEXT, delay: 0.00 });
     // Instance.Msg(BOSS_HUD_TEXT);
 }
 
@@ -286,9 +286,10 @@ function BossKill()
 {
     BOSS_HEALTH = 0.00;
     IS_BOSS_FIGHT = false;
-    Instance.EntFireAtName(BOSS_ENT, "FireUser3", "", 0.00);
-    Instance.EntFireAtName(BOSS_HUD_ENT, "SetMessage", BOSS_NAME+": 0", 0.00);
-    Instance.EntFireAtName(BOSS_HUD_ENT, "HideHudHint", "", 0.02);
+    Instance.EntFireAtName({ name: BOSS_ENT, input: "FireUser3", value: "", delay: 0.00 });    
+    Instance.EntFireAtName({ name: BOSS_HUD_ENT, input: "SetMessage", value: BOSS_NAME+": 0", delay: 0.00 });
+    Instance.EntFireAtName({ name: BOSS_ENT, input: "HideHudHint", value: "", delay: 0.02 });
+    Instance.EntFireAtName({ name: BOSS_ENT, input: "Kill", value: "", delay: 1.00 });
     ResetBossS();
 }
 

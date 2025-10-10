@@ -1,6 +1,7 @@
 import { Instance } from "cs_script/point_script";
 
 let h_Heal = 200;
+let h_Armor = 100;
 let h_Button = "heal_button";
 let h_Script = "heal_script"
 let h_mAmmo = 150;
@@ -39,11 +40,12 @@ Instance.OnScriptInput("Heal", () => {
                 {
                     if(VectorDistance(player.GetAbsOrigin(), button_h.GetAbsOrigin()) <= h_Radius)
                     {
-                        Instance.EntFireAtTarget(player, "SetDamageFilter", "Block_ZM_Dmg", 0.00);
-                        Instance.EntFireAtTarget(player, "IgniteLifetime", "0", 0.00);
+                        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "Block_ZM_Dmg", delay: 0.00 });
+                        Instance.EntFireAtTarget({ target: player, input: "IgniteLifetime", value: "0", delay: 0.00 });
                         player.SetHealth(h_Heal);
+                        player.SetArmor(h_Armor);
                         let player_weapon = player.GetActiveWeapon();
-                        Instance.EntFireAtTarget(player_weapon, "SetAmmoAmount", ""+h_mAmmo, 0.00);
+                        Instance.EntFireAtTarget({ target: player_weapon, input: "SetAmmoAmount", value: ""+h_mAmmo, delay: 0.00 });
                         Player_M.set(player, player);
                     }
                     let player_h = Player_M.get(player);
@@ -51,14 +53,14 @@ Instance.OnScriptInput("Heal", () => {
                     {
                         if(VectorDistance(player_h.GetAbsOrigin(), button_h.GetAbsOrigin()) > h_Radius)
                         {
-                            Instance.EntFireAtTarget(player_h, "SetDamageFilter", "", 0.00);
+                            Instance.EntFireAtTarget({ target: player_h, input: "SetDamageFilter", value: "", delay: 0.00 });
                             Player_M.delete(player_h);
                         }
                     }
                 }
             }
             h_Duration -= deltaTime;
-            Instance.EntFireAtName(h_Script, "RunScriptInput", "Heal", h_Tick);
+            Instance.EntFireAtName({ name: h_Script, input: "RunScriptInput", value: "Heal", delay: h_Tick });
         }
         else
         {
@@ -73,7 +75,7 @@ function ClearDamageFilter()
     {
         if(value?.IsValid())
         {
-            Instance.EntFireAtTarget(value, "SetDamageFilter", "", 0.00);
+            Instance.EntFireAtTarget({ target: value, input: "SetDamageFilter", value: "", delay: 0.00 });
         }
         
     }

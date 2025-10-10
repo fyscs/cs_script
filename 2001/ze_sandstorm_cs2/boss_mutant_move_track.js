@@ -1,5 +1,7 @@
 import { Instance } from "cs_script/point_script";
 
+const DEBUG = false;
+
 let TARGET = null;
 let STOP_M = false;
 
@@ -43,12 +45,7 @@ let lastTime = null;
 
 Instance.OnRoundStart(() => {
     ResetScript();
-    Instance.EntFireAtName(b_ScriptEnt_name, "RunScriptInput", "SetBossEntities", 0.50);
-    if(b_BossTrain?.IsValid())
-    {
-        Instance.EntFireAtTarget(b_BossTrain, "SetSpeedReal", ""+b_Speed, 0.00);
-        Instance.EntFireAtTarget(b_BossTrain, "SetMaxSpeed", ""+b_Speed, 0.00);
-    }
+    Instance.EntFireAtName({ name: b_ScriptEnt_name, input: "RunScriptInput", value: "SetBossEntities", delay: 0.50 });
 });
 
 Instance.OnScriptInput("StartMove", () => {
@@ -66,14 +63,18 @@ Instance.OnScriptInput("StartMove", () => {
     let deltaTime = currentTime - lastTime;
     lastTime = currentTime;
 
-    Instance.EntFireAtTarget(b_ScriptEnt, "RunScriptInput", "StartMove", Refire_Time_Base);
+    if(!b_BossTrain?.IsValid() || !b_ScriptEnt?.IsValid())
+    {
+        return;
+    }
+    Instance.EntFireAtTarget({ target: b_ScriptEnt, input: "RunScriptInput", value: "StartMove", delay: Refire_Time_Base });
 
     if(Time_N >= Retarget_Time || 
        TARGET == null ||
        !IsValidEntityTeam(TARGET, 3) ||
        TargetPick(TARGET?.GetAbsOrigin()) < 0)
     {
-        Instance.EntFireAtTarget(b_BossTrain, "Stop", "", 0.00);
+        Instance.EntFireAtTarget({ target: b_BossTrain, input: "Stop", value: "", delay: 0.00 });
         FindTarget();
         return;  
     }
@@ -83,7 +84,7 @@ Instance.OnScriptInput("StartMove", () => {
     }
     if(STOP_M)
     {
-        Instance.EntFireAtTarget(b_BossTrain, "Stop", "", 0.00);
+        Instance.EntFireAtTarget({ target: b_BossTrain, input: "Stop", value: "", delay: 0.00 });
         return;
     }
     
@@ -104,28 +105,36 @@ Instance.OnScriptInput("StartMove", () => {
             z: bosst_pos.z - b_MaxZOffset
         }
     }
-    let trace_l = Instance.GetTraceHit(target_t.startpos, target_t.endpos, {ignoreEnt: null, interacts: 1, sphereRadius: 0});
+
+
+    let trace_l = Instance.TraceLine({ start: target_t.startpos, end: target_t.endpos, ignoreEntity: b_PhysBox, ignorePlayers: true });
+    if(DEBUG)
+    {
+        Instance.DebugLine({ start: target_t.startpos, end: trace_l.end, duration: Refire_Time_Base, color: {r: 255, g: 255, b: 0} });
+        Instance.Msg("TARGET: "+TARGET?.GetPlayerController().GetPlayerName()+" | Time_N: "+Time_N);
+    }
+    
     let dist_z = VectorDistance(target_t.startpos, trace_l.end)
     if(dist_z <= b_MaxZOffset)
     {
-        b_BossTrain.Teleport({x: bosst_pos.x, y: bosst_pos.y, z: trace_l.end.z + 8}, null, null);
+        b_BossTrain.Teleport({ position: {x: bosst_pos.x, y: bosst_pos.y, z: trace_l.end.z + 8} });
     }
     if(setg_rangd > 0 && setg_rangd <= ang_rot_limit || setg_rangd < 0 && setg_rangd >= -ang_rot_limit)
     {
         let dist_pb = VectorDistance(npc_m_gto, gto);
         if(dist_pb > b_MaxDistToPl)
         {
-            b_Spath.Teleport({x: gto.x, y: gto.y, z: b_Fpath.GetAbsOrigin().z}, null, null);
-            Instance.EntFireAtTarget(b_BossTrain, "StartForward", "", 0.00);
+            b_Spath.Teleport({ position: {x: gto.x, y: gto.y, z: b_Fpath.GetAbsOrigin().z} });
+            Instance.EntFireAtTarget({ target: b_BossTrain, input: "StartForward", value: "", delay: 0.00 });
         }
         else
         {
-            Instance.EntFireAtTarget(b_BossTrain, "Stop", "", 0.00);
+            Instance.EntFireAtTarget({ target: b_BossTrain, input: "Stop", value: "", delay: 0.00 });
         }  
     }   
     else
     {
-        Instance.EntFireAtTarget(b_BossTrain, "Stop", "", 0.00);
+        Instance.EntFireAtTarget({ target: b_BossTrain, input: "Stop", value: "", delay: 0.00 });
     }
 });
 
@@ -178,11 +187,11 @@ function SetGraduallyAng(ang_t, ent)
     }
     if(ang_dif > add_gs)
     {
-        ent.Teleport(null, {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y + add_gs), roll: ent.GetAbsAngles().roll}, null);
+        ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y + add_gs), roll: ent.GetAbsAngles().roll} });
     }
     else if(ang_dif < -add_gs)
     {
-        ent.Teleport(null, {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y - add_gs), roll: ent.GetAbsAngles().roll}, null);
+        ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y - add_gs), roll: ent.GetAbsAngles().roll} });
     }
     return ang_dif
 }
@@ -217,12 +226,16 @@ function TargetPick(pos)
             z: boss_pos.z + b_ZOffset + normalized.z * b_MaxTDist
         }
     }
-    let b_Trace_line = Instance.GetTraceHit(target_t.startpos, target_t.endpos, {ignoreEnt: b_PhysBox, interacts: 0, sphereRadius: 0});
+    let b_Trace_line = Instance.TraceLine({ start: target_t.startpos, end: target_t.endpos, ignoreEntity: b_PhysBox, ignorePlayers: true });
+    if(DEBUG)
+    {
+        Instance.DebugLine({ start: target_t.startpos, end: b_Trace_line.end, duration: Refire_Time_Base, color: {r: 0, g: 255, b: 255} });
+    }
     
     let dist_tb = VectorDistance(pos, b_Model.GetAbsOrigin());
     let hit_mdist = VectorDistance(b_Trace_line.end, b_Model.GetAbsOrigin());
     let dist_be = hit_mdist - dist_tb;
-    if(b_Trace_line.hitEnt?.GetClassName() == "func_button")
+    if(b_Trace_line.hitEntity?.GetClassName() == "func_button" || b_Trace_line.hitEntity?.GetClassName().includes("weapon_"))
     {
         return 1;
     }
@@ -272,6 +285,8 @@ Instance.OnScriptInput("SetBossEntities", () => {
         if(boss_train?.IsValid())
         {
             b_BossTrain = boss_train;
+            Instance.EntFireAtTarget({ target: b_BossTrain, input: "SetSpeedReal", value: ""+b_Speed, delay: 0.00 });
+            Instance.EntFireAtTarget({ target: b_BossTrain, input: "SetMaxSpeed", value: ""+b_Speed, delay: 0.00 });
         }
         else
         {
@@ -384,9 +399,5 @@ Instance.OnScriptInput("EnableMove", () => {
 
 Instance.OnScriptInput("BossKill", () => {
     BOSS_MOVE_S = false;
-    if(b_PhysBox?.IsValid())
-    {
-        b_PhysBox.Teleport({x: 0, y: 0, z: 0}, null, null);
-    }
-    Instance.EntFireAtTarget(b_ScriptEnt, "RunScriptInput", "ResetScript", 0.10);
+    Instance.EntFireAtTarget({ target: b_ScriptEnt, input: "RunScriptInput", value: "ResetScript", delay: 0.10 });
 });
