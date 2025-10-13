@@ -9,7 +9,7 @@ import { Instance } from "cs_script/point_script";
  * 
  * 此脚本由皮皮猫233编写
  * 如需使用请标明出处
- * 版本V2.1 2025/10/11
+ * 版本V2.2 2025/10/13
  * 
  * V2新版本修复了使用mm等特殊情况要求不能存在同名targetname的info_target问题
  */
@@ -37,10 +37,9 @@ Instance.OnScriptInput("targetname", (context) => {
     // 检查并移除残留info_target与上一个玩家的targetname
     const lastPlayers = Instance.FindEntitiesByName(targetname);
     for (const lastPlayer of lastPlayers) {
-        if (lastPlayer.GetClassName() === "player") {
+        if (lastPlayer.GetClassName() === "player")
             lastPlayer.SetEntityName("");
-        }
-        else
+        else if (lastPlayer.GetClassName() === "info_target")
             Instance.EntFireAtName({ name: lastPlayer.GetEntityName(), input: "Kill" });
     }
     
