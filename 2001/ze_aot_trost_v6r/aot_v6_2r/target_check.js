@@ -6,7 +6,7 @@ import { Instance } from "cs_script/point_script";
  * 
  * 此脚本由皮皮猫233编写
  * 如需使用请标明出处
- * 版本V1.4 2025/10/11
+ * 版本V1.5 2025/10/12
  */
 
 // 配置参数
@@ -31,13 +31,8 @@ function CheckPlayers() {
     
     for (const player of players) {
         if (player && player.IsValid()) {
-            // 检查玩家是否已经有空targetname，如果是则跳过检测
-            const playerName = player.GetEntityName();
-            if (playerName === "") {
-                continue;
-            }
-            
             // 检查玩家名称是否符合player_ltjd_w_?格式
+            const playerName = player.GetEntityName();
             if (playerName && playerName.startsWith("player_ltjd_w_")) {
                 // 检查玩家是否没有手枪（副武器槽位为空）
                 if (!hasPistol(player)) {
