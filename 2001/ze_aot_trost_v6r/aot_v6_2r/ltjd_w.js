@@ -4,7 +4,7 @@ import { Instance } from "cs_script/point_script";
  * 此脚本仅供巨人地图使用
  * 请勿盗用
  * 交流学习请联系作者
- * 2025/10/11
+ * 2025/10/13
  */
 
 /**
@@ -42,7 +42,7 @@ const HOOK_CONFIG = {
     LAUNCH_UPWARD_FORCE: 150,           // 初始向上推力
     CONTROL_FORCE_DECAY_START: 1000,    // 控制力开始衰减的距离
     EFFECT_ARRIVAL_THRESHOLD: 50,       // 特效到达目标点的阈值
-    EFFECT_MOVE_DISTANCE: 100,          // 特效每帧移动距离
+    EFFECT_MOVE_DISTANCE: 75,           // 特效每帧移动距离
     MAX_DISTANCE_BUFFER: 1000,          // 最大距离缓冲值
     TIME_DECAY_START: 2.0,              // 时间衰减开始时间（秒）
     TIME_DECAY_END: 5.0,                // 时间衰减结束时间（秒）
@@ -160,6 +160,10 @@ Instance.OnScriptInput("ltjd", (context) => {
     // 启动钩锁粒子效果 - 使用动态粒子实体名称
     const particleName = "item_ltjd_w_particle_" + playerSuffix;
     Instance.EntFireAtName({ name: particleName, input: "Start" });
+
+    // 启动喷气粒子
+    const steamParticleName = "item_ltjd_w_steam_particle_" + playerSuffix;
+    Instance.EntFireAtName({ name: steamParticleName, input: "Start" });
     
     // 开始Think循环 - 使用绝对时间
     Instance.SetNextThink(Instance.GetGameTime());
@@ -385,10 +389,11 @@ function endGrapple(playerSuffix) {
     if (hookState.isActive) {
         // 停止粒子效果 - 使用动态粒子实体名称
         const particleName = "item_ltjd_w_particle_" + playerSuffix;
-        const endParticleName = "item_ltjd_w_end_particle_" + playerSuffix;
-        
         Instance.EntFireAtName({ name: particleName, input: "Stop" });
-        Instance.EntFireAtName({ name: endParticleName, input: "Stop" });
+
+        // 停止喷气粒子
+        const steamParticleName = "item_ltjd_w_steam_particle_" + playerSuffix;
+        Instance.EntFireAtName({ name: steamParticleName, input: "Stop" });
     }
     
     // 重置状态（但不重置canGrapple，因为这是独立的状态）
