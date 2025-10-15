@@ -9,14 +9,14 @@ import { Instance } from "cs_script/point_script";
  * 
  * 此脚本由皮皮猫233编写
  * 如需使用请标明出处
- * 版本V2.2 2025/10/13
+ * 版本V2.3 2025/10/15
  * 
  * V2新版本修复了使用mm等特殊情况要求不能存在同名targetname的info_target问题
  */
 
-Instance.OnScriptInput("targetname", (context) => {
+Instance.OnScriptInput("targetname", (inputData) => {
     // 获取caller的实体名称
-    const callerName = context.caller.GetEntityName();
+    const callerName = inputData.caller.GetEntityName();
     if (!callerName)
         return;
 
@@ -30,7 +30,7 @@ Instance.OnScriptInput("targetname", (context) => {
     const targetname = callerName.replace(/_target/g, "");
 
     // 获取玩家实体
-    const player = context.activator;
+    const player = inputData.activator;
     if (!player || !player.IsValid())
         return;
     
@@ -40,7 +40,7 @@ Instance.OnScriptInput("targetname", (context) => {
         if (lastPlayer.GetClassName() === "player")
             lastPlayer.SetEntityName("");
         else if (lastPlayer.GetClassName() === "info_target")
-            Instance.EntFireAtName({ name: lastPlayer.GetEntityName(), input: "Kill" });
+            Instance.EntFireAtTarget({ target: lastPlayer, input: "Kill" });
     }
     
     // 设置新的targetname给当前玩家
