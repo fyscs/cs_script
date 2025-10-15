@@ -4,7 +4,7 @@ import { Instance } from "cs_script/point_script";
  * 此脚本仅供巨人地图使用
  * 请勿盗用
  * 交流学习请联系作者
- * 2025/10/13
+ * 2025/10/15
  */
 
 /**
@@ -42,7 +42,7 @@ const HOOK_CONFIG = {
     LAUNCH_UPWARD_FORCE: 150,           // 初始向上推力
     CONTROL_FORCE_DECAY_START: 1000,    // 控制力开始衰减的距离
     EFFECT_ARRIVAL_THRESHOLD: 50,       // 特效到达目标点的阈值
-    EFFECT_MOVE_DISTANCE: 75,           // 特效每帧移动距离
+    EFFECT_MOVE_DISTANCE: 50,           // 特效每帧移动距离
     MAX_DISTANCE_BUFFER: 1000,          // 最大距离缓冲值
     TIME_DECAY_START: 2.0,              // 时间衰减开始时间（秒）
     TIME_DECAY_END: 5.0,                // 时间衰减结束时间（秒）
@@ -62,23 +62,23 @@ Instance.OnRoundStart(() => {
 /**
  * 处理ltjdNoPower输入 - 禁用发射新绳索
  */
-Instance.OnScriptInput("ltjdNoPower", (context) => {
+Instance.OnScriptInput("ltjdNoPower", (inputData) => {
     hookState.canGrapple = false;
 });
 
 /**
  * 处理ltjdPower输入 - 恢复发射新绳索
  */
-Instance.OnScriptInput("ltjdPower", (context) => {
+Instance.OnScriptInput("ltjdPower", (inputData) => {
     hookState.canGrapple = true;
 });
 
 /**
  * 处理钩锁发射输入
  */
-Instance.OnScriptInput("ltjd", (context) => {
+Instance.OnScriptInput("ltjd", (inputData) => {
     // 获取玩家
-    const player = context.activator;
+    const player = inputData.activator;
     if (!player || !player.IsValid()) return;
 
     // 获取玩家名称尾缀
@@ -100,9 +100,8 @@ Instance.OnScriptInput("ltjd", (context) => {
         return;
     }
     
-    // 获取忽略按钮 - 使用动态名称
-    const ignoreButtonName = "item_ltjd_w_button_" + playerSuffix;
-    const ignoreButton = Instance.FindEntityByName(ignoreButtonName);
+    // 获取忽略按钮
+    const ignoreButton = Instance.FindEntitiesByClass("func_button");
     
     // 获取玩家视角方向
     const eyePosition = player.GetEyePosition();
