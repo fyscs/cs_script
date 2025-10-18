@@ -4,7 +4,7 @@ import { Instance } from "cs_script/point_script";
  * 此脚本仅供巨人地图使用
  * 请勿盗用
  * 交流学习请联系作者
- * 2025/10/9
+ * 2025/10/16
  */
 
 /**
@@ -22,7 +22,7 @@ let hookState = {
     effectPosition: null,               // 特效当前位置
     effectReachedTarget: false,         // 特效是否到达目标点
     playerSuffix: "",                   // 玩家名称尾缀
-    canGrapple: true,                   // 是否允许发射新绳索
+    canGrapple: false,                  // 是否允许发射新绳索
     originalTeamNumber: 0               // 玩家发射钩锁时的队伍编号
 };
 
@@ -33,15 +33,20 @@ const HOOK_CONFIG = {
     MAX_DISTANCE: 2000,                 // 最大钩锁距离
     PLAYER_PULL_FORCE: 35,              // 玩家被拉向目标的力
     PLAYER_CONTROL_FORCE: 30,           // 玩家自主控制的力
+    MAX_Z_ACCELERATION: 30,             // 最大z轴正方向加速度（力）
     MIN_DISTANCE: 0,                    // 最小停止距离
     MAX_TRAVEL_TIME: 5,                 // 最大飞行时间
     LOW_GRAVITY_FACTOR: 1,              // 低重力因子 (0-1, 越小重力越弱)
-    TERMINAL_VELOCITY: -500,            // 终端速度 (最大下降速度)
+    TERMINAL_VELOCITY: -650,            // 终端速度 (最大下降速度)
+    MAX_Z_VELOCITY: 1200,               // 最大z轴正方向速度（上升速度限制）
     LAUNCH_UPWARD_FORCE: 150,           // 初始向上推力
     CONTROL_FORCE_DECAY_START: 1000,    // 控制力开始衰减的距离
     EFFECT_ARRIVAL_THRESHOLD: 50,       // 特效到达目标点的阈值
-    EFFECT_MOVE_DISTANCE: 100,          // 特效每帧移动距离
-    MAX_DISTANCE_BUFFER: 1000           // 最大距离缓冲值
+    EFFECT_MOVE_DISTANCE: 75,           // 特效每帧移动距离
+    MAX_DISTANCE_BUFFER: 1000,          // 最大距离缓冲值
+    TIME_DECAY_START: 2.0,              // 时间衰减开始时间（秒）
+    TIME_DECAY_END: 5.0,                // 时间衰减结束时间（秒）
+    MIN_TIME_DECAY_FACTOR: 0.2          // 最小时间衰减因子
 };
 
 // 初始化Think循环
@@ -57,23 +62,23 @@ Instance.OnRoundStart(() => {
 /**
  * 处理ltjdNoPower输入 - 禁用发射新绳索
  */
-Instance.OnScriptInput("ltjdNoPower", (context) => {
+Instance.OnScriptInput("ltjdNoPower", (inputData) => {
     hookState.canGrapple = false;
 });
 
 /**
  * 处理ltjdPower输入 - 恢复发射新绳索
  */
-Instance.OnScriptInput("ltjdPower", (context) => {
+Instance.OnScriptInput("ltjdPower", (inputData) => {
     hookState.canGrapple = true;
 });
 
 /**
  * 处理钩锁发射输入
  */
-Instance.OnScriptInput("ltjd", (context) => {
+Instance.OnScriptInput("ltjd", (inputData) => {
     // 获取玩家
-    const player = context.activator;
+    const player = inputData.activator;
     if (!player || !player.IsValid()) return;
 
     // 获取玩家名称尾缀
@@ -95,9 +100,8 @@ Instance.OnScriptInput("ltjd", (context) => {
         return;
     }
     
-    // 获取忽略按钮 - 使用动态名称
-    const ignoreButtonName = "item_ltjd_w_button_" + playerSuffix;
-    const ignoreButton = Instance.FindEntityByName(ignoreButtonName);
+    // 获取忽略按钮
+    const ignoreButton = Instance.FindEntitiesByClass("func_button");
     
     // 获取玩家视角方向
     const eyePosition = player.GetEyePosition();
@@ -141,12 +145,13 @@ Instance.OnScriptInput("ltjd", (context) => {
     hookState.playerSuffix = playerSuffix;
     hookState.originalTeamNumber = player.GetTeamNumber(); // 记录玩家发射时的队伍编号
     
-    // 在开始推进前给予玩家一个向上的速度
+    // 在开始推进前给予玩家一个向上的速度（但不超过最大z轴速度限制）
     const currentVelocity = player.GetAbsVelocity();
+    const upwardForce = Math.min(HOOK_CONFIG.LAUNCH_UPWARD_FORCE, HOOK_CONFIG.MAX_Z_VELOCITY - currentVelocity.z);
     const launchVelocity = {
         x: currentVelocity.x,
         y: currentVelocity.y,
-        z: currentVelocity.z + HOOK_CONFIG.LAUNCH_UPWARD_FORCE // 向上推力
+        z: currentVelocity.z + upwardForce // 向上推力（受最大z轴速度限制）
     };
     player.Teleport({ velocity: launchVelocity });
     hookState.playerVelocity = launchVelocity;
@@ -154,6 +159,10 @@ Instance.OnScriptInput("ltjd", (context) => {
     // 启动钩锁粒子效果 - 使用动态粒子实体名称
     const particleName = "item_ltjd_w_particle_" + playerSuffix;
     Instance.EntFireAtName({ name: particleName, input: "Start" });
+
+    // 启动喷气粒子
+    const steamParticleName = "item_ltjd_w_steam_particle_" + playerSuffix;
+    Instance.EntFireAtName({ name: steamParticleName, input: "Start" });
     
     // 开始Think循环 - 使用绝对时间
     Instance.SetNextThink(Instance.GetGameTime());
@@ -239,7 +248,7 @@ function applyGrapplePhysics() {
     // 计算钩锁拉力（朝向目标点）
     const pullForce = vectorScale(directionToTarget, HOOK_CONFIG.PLAYER_PULL_FORCE);
     
-    // 计算玩家控制力（基于玩家视角方向），并根据距离衰减
+    // 计算玩家控制力（基于玩家视角方向），并根据距离和时间衰减
     const eyeAngles = player.GetEyeAngles();
     const playerForward = getForward(eyeAngles);
     const controlForce = calculateDecayedControlForce(playerForward, distanceToTarget);
@@ -248,7 +257,12 @@ function applyGrapplePhysics() {
     currentVelocity = applyLowGravity(currentVelocity);
     
     // 结合所有力
-    const totalForce = vectorAdd(pullForce, controlForce);
+    let totalForce = vectorAdd(pullForce, controlForce);
+    
+    // 限制z轴正方向加速度（力）
+    if (totalForce.z > HOOK_CONFIG.MAX_Z_ACCELERATION) {
+        totalForce.z = HOOK_CONFIG.MAX_Z_ACCELERATION;
+    }
     
     // 应用速度变化（模拟加速度）
     const newVelocity = {
@@ -267,6 +281,11 @@ function applyGrapplePhysics() {
         newVelocity.y *= scale;
     }
     
+    // 限制最大z轴正方向速度（上升速度）
+    if (newVelocity.z > HOOK_CONFIG.MAX_Z_VELOCITY) {
+        newVelocity.z = HOOK_CONFIG.MAX_Z_VELOCITY;
+    }
+    
     // 应用最终速度
     player.Teleport({ velocity: newVelocity });
     
@@ -276,7 +295,7 @@ function applyGrapplePhysics() {
 }
 
 /**
- * 计算根据距离衰减的控制力
+ * 计算根据距离和时间衰减的控制力
  * @param {Object} playerForward - 玩家前向向量
  * @param {number} distanceToTarget - 到目标的距离
  * @returns {Object} 衰减后的控制力向量
@@ -285,18 +304,33 @@ function calculateDecayedControlForce(playerForward, distanceToTarget) {
     // 基础控制力
     let controlForce = vectorScale(playerForward, HOOK_CONFIG.PLAYER_CONTROL_FORCE);
     
-    // 如果距离小于衰减起始距离，则应用衰减
+    // 计算距离衰减因子
+    let distanceDecayFactor = 1.0;
     if (distanceToTarget < HOOK_CONFIG.CONTROL_FORCE_DECAY_START) {
         // 线性衰减因子，从1（在CONTROL_FORCE_DECAY_START距离）到0（在MIN_DISTANCE距离）
         const decayFactor = (distanceToTarget - HOOK_CONFIG.MIN_DISTANCE) / 
                            (HOOK_CONFIG.CONTROL_FORCE_DECAY_START - HOOK_CONFIG.MIN_DISTANCE);
         
         // 确保衰减因子在0-1之间
-        const clampedDecayFactor = Math.max(0, Math.min(1, decayFactor));
-        
-        // 应用衰减
-        controlForce = vectorScale(controlForce, clampedDecayFactor);
+        distanceDecayFactor = Math.max(0, Math.min(1, decayFactor));
     }
+    
+    // 计算时间衰减因子
+    let timeDecayFactor = 1.0;
+    if (hookState.travelTime > HOOK_CONFIG.TIME_DECAY_START) {
+        // 线性时间衰减，从1（在TIME_DECAY_START时间）到MIN_TIME_DECAY_FACTOR（在TIME_DECAY_END时间）
+        const timeProgress = (hookState.travelTime - HOOK_CONFIG.TIME_DECAY_START) / 
+                           (HOOK_CONFIG.TIME_DECAY_END - HOOK_CONFIG.TIME_DECAY_START);
+        
+        // 确保时间进度在0-1之间
+        const clampedTimeProgress = Math.max(0, Math.min(1, timeProgress));
+        
+        // 计算时间衰减因子（从1线性减小到MIN_TIME_DECAY_FACTOR）
+        timeDecayFactor = 1 - (1 - HOOK_CONFIG.MIN_TIME_DECAY_FACTOR) * clampedTimeProgress;
+    }
+    
+    // 应用距离和时间衰减
+    controlForce = vectorScale(controlForce, distanceDecayFactor * timeDecayFactor);
     
     return controlForce;
 }
@@ -354,10 +388,11 @@ function endGrapple(playerSuffix) {
     if (hookState.isActive) {
         // 停止粒子效果 - 使用动态粒子实体名称
         const particleName = "item_ltjd_w_particle_" + playerSuffix;
-        const endParticleName = "item_ltjd_w_end_particle_" + playerSuffix;
-        
         Instance.EntFireAtName({ name: particleName, input: "Stop" });
-        Instance.EntFireAtName({ name: endParticleName, input: "Stop" });
+
+        // 停止喷气粒子
+        const steamParticleName = "item_ltjd_w_steam_particle_" + playerSuffix;
+        Instance.EntFireAtName({ name: steamParticleName, input: "Stop" });
     }
     
     // 重置状态（但不重置canGrapple，因为这是独立的状态）
