@@ -4,7 +4,7 @@ import { Instance } from "cs_script/point_script";
  * 此脚本仅供巨人地图使用
  * 请勿盗用
  * 交流学习请联系作者
- * 2025/10/15
+ * 2025/10/16
  */
 
 /**
@@ -42,7 +42,7 @@ const HOOK_CONFIG = {
     LAUNCH_UPWARD_FORCE: 150,           // 初始向上推力
     CONTROL_FORCE_DECAY_START: 1000,    // 控制力开始衰减的距离
     EFFECT_ARRIVAL_THRESHOLD: 50,       // 特效到达目标点的阈值
-    EFFECT_MOVE_DISTANCE: 50,           // 特效每帧移动距离
+    EFFECT_MOVE_DISTANCE: 75,           // 特效每帧移动距离
     MAX_DISTANCE_BUFFER: 1000,          // 最大距离缓冲值
     TIME_DECAY_START: 2.0,              // 时间衰减开始时间（秒）
     TIME_DECAY_END: 5.0,                // 时间衰减结束时间（秒）
