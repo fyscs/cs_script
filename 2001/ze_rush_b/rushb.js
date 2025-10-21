@@ -511,3 +511,9 @@ Instance.OnScriptInput("RemoveKnife", ({activator, caller}) => {
         }
     }
 });
+
+/////////////////////////////////////////////////////////////////////////
+
+Instance.OnScriptInput("ResetSpeed", ({caller, activator}) => {
+    activator.Teleport({velocity: {x: 0, y: 0, z: 0}});
+});
