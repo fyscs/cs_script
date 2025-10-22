@@ -253,22 +253,27 @@ async function parse_text_and_play(text, controller, sound_ent) {
 
     if (controller.GetTeamNumber() == 3 && can_be_said(tokens)) {
         player_next_times[controller.GetPlayerSlot()] = Instance.GetGameTime() + tokens.length;
+        let delayCount = 0.00
         for (const t of tokens) {
             if (controller.GetTeamNumber() == 3) {
                 sound_ent.Teleport({position: controller.GetPlayerPawn().GetAbsOrigin()})
                 sound_ent.SetParent(controller.GetPlayerPawn())
-                Instance.EntFireAtName(SAYSOUNDENT_SUFFIX + controller.GetPlayerSlot(), "SetSoundEventName", "saysound." + HUMAN_SAYSOUNDS[t.toLowerCase()]);
-                Instance.EntFireAtName(SAYSOUNDENT_SUFFIX + controller.GetPlayerSlot(), "StartSound", null, 0.1);
-                await Delay(1);
+                await Delay(0);
+                Instance.EntFireAtName({name: SAYSOUNDENT_SUFFIX+controller.GetPlayerSlot(), input: "SetSoundEventName", value: "saysound." + HUMAN_SAYSOUNDS[t.toLowerCase()], delay: delayCount});
+                Instance.EntFireAtName({name: SAYSOUNDENT_SUFFIX+controller.GetPlayerSlot(), input: "StartSound", delay: delayCount+0.01});
+                delayCount++
             }
         }
     }
     else if (controller.GetTeamNumber() == 2) {
         player_next_times[controller.GetPlayerSlot()] = Instance.GetGameTime() + tokens.length;
+        let delayCount = 0.00
         for (const t of tokens) {
-            Instance.EntFireAtName(SAYSOUNDENT_SUFFIX + controller.GetPlayerSlot(), "SetSoundEventName", "saysound." + ZOMBIE_SAYSOUNDS[random_from_array(ZOMBIE_SAYSOUNDS)]);
-            Instance.EntFireAtName(SAYSOUNDENT_SUFFIX + controller.GetPlayerSlot(), "StartSound", null, 0.1);
-            await Delay(1);
+            if (controller.GetTeamNumber() == 2) {
+                Instance.EntFireAtName({name: SAYSOUNDENT_SUFFIX+controller.GetPlayerSlot(), input: "SetSoundEventName", value: "saysound." + ZOMBIE_SAYSOUNDS[random_from_array(ZOMBIE_SAYSOUNDS)], delay: delayCount})
+                Instance.EntFireAtName({name: SAYSOUNDENT_SUFFIX+controller.GetPlayerSlot(), input: "StartSound", delay: delayCount+0.01})
+                delayCount++
+            }
         }
     }
 }
@@ -281,11 +286,11 @@ function nuke_countdown(context) {
     const SEC_DECIMAL = SEC / 10;
     const SEC_UNIT = SEC % 10;
     if (cd === 0) {
-        Instance.EntFireAtTarget(context.caller, 'Disable');
+        Instance.EntFireAtTarget({target: context.caller, input: 'Disable'});
     }
-    Instance.EntFireAtName("bomb_cd_min", "Skin", MIN.toString());
-    Instance.EntFireAtName("bomb_cd_sec_decimal", "Skin", SEC_DECIMAL.toString());
-    Instance.EntFireAtName("bomb_cd_sec_unit", "Skin", SEC_UNIT.toString());
+    Instance.EntFireAtName({name: "bomb_cd_min", input: "Skin", value: MIN.toString()});
+    Instance.EntFireAtName({name: "bomb_cd_sec_decimal", input: "Skin", value: SEC_DECIMAL.toString()});
+    Instance.EntFireAtName({name: "bomb_cd_sec_unit", input: "Skin", value: SEC_UNIT.toString()});
 }
 
 let player_color_set = [];
@@ -298,7 +303,7 @@ function randomize_rgb(activator) {
         const random_g = parseInt(rand(0, 255));
         const random_b = parseInt(rand(0, 255));
         let random_color = random_r + " " + random_g + " " + random_b;
-        Instance.EntFireAtTarget(activator, "Color", random_color);
+        Instance.EntFireAtTarget({target: activator, input: "Color", value: random_color});
     }
 }
 function reset_colors() {
@@ -343,15 +348,15 @@ function move_crane(direction, mode) {
         case 'w':
             if (!is_pressing_other_keys('w')) {
                 if (mode == "MOVE") {
-                    Instance.EntFireAtTarget(crane_box_front_back, "ClearParent", "");
-                    Instance.EntFireAtTarget(crane_box_up_down, "SetParent", "crane_box_front_back");
-                    Instance.EntFireAtTarget(crane_box_front_back, "StartForward", null, 0.02);
-                    Instance.EntFireAtName("fix_crane_path_pos_timer", "Enable");
+                    Instance.EntFireAtTarget({target: crane_box_front_back, input: "ClearParent"});
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "SetParent", value: 'crane_box_front_back'});
+                    Instance.EntFireAtTarget({target: crane_box_front_back, input: "StartForward", delay: 0.02});
+                    Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Enable"});
                     is_pressing['w'] = true;
                 }
                 else if (mode == "LIFT") {
-                    Instance.EntFireAtTarget(crane_box_up_down, "ClearParent", "");
-                    Instance.EntFireAtTarget(crane_box_up_down, "StartBackward", null, 0.02);
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "ClearParent"});
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "StartBackward", delay: 0.02});
                     is_pressing['w'] = true;
                 }
             }
@@ -359,10 +364,10 @@ function move_crane(direction, mode) {
         case 'a':
             if (!is_pressing_other_keys('a')) {
                 if (mode == "MOVE") {
-                    Instance.EntFireAtTarget(crane_box_front_back, "SetParent", "crane_box_left_right");
-                    Instance.EntFireAtTarget(crane_box_up_down, "SetParent", "crane_box_left_right");
-                    Instance.EntFireAtTarget(crane_box_left_right, "StartForward", null, 0.02);
-                    Instance.EntFireAtName("fix_crane_path_pos_timer", "Enable");
+                    Instance.EntFireAtTarget({target: crane_box_front_back, input: "SetParent", value: "crane_box_left_right"});
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "SetParent", value: 'crane_box_left_right'});
+                    Instance.EntFireAtTarget({target: crane_box_left_right, input: "StartForward", delay: 0.02});
+                    Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Enable"});
                     is_pressing['a'] = true;
                 }
             }
@@ -370,15 +375,15 @@ function move_crane(direction, mode) {
         case 's':
             if (!is_pressing_other_keys('s')) {
                 if (mode == "MOVE") {
-                    Instance.EntFireAtTarget(crane_box_front_back, "ClearParent", "");
-                    Instance.EntFireAtTarget(crane_box_up_down, "SetParent", "crane_box_front_back");
-                    Instance.EntFireAtTarget(crane_box_front_back, "StartBackward", null, 0.02);
-                    Instance.EntFireAtName("fix_crane_path_pos_timer", "Enable");
+                    Instance.EntFireAtTarget({target: crane_box_front_back, input: "ClearParent"});
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "SetParent", value: 'crane_box_front_back'});
+                    Instance.EntFireAtTarget({target: crane_box_front_back, input: "StartBackward", delay: 0.02});
+                    Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Enable"});
                     is_pressing['s'] = true;
                 }
                 if (mode == "LIFT") {
-                    Instance.EntFireAtTarget(crane_box_up_down, "ClearParent", "");
-                    Instance.EntFireAtTarget(crane_box_up_down, "StartForward", null, 0.02);
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "ClearParent"});
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "StartForward", delay: 0.02});
                     is_pressing['s'] = true;
                 }
             }
@@ -386,10 +391,11 @@ function move_crane(direction, mode) {
         case 'd':
             if (!is_pressing_other_keys('d')) {
                 if (mode == "MOVE") {
-                    Instance.EntFireAtTarget(crane_box_front_back, "SetParent", "crane_box_left_right");
-                    Instance.EntFireAtTarget(crane_box_up_down, "SetParent", "crane_box_left_right");
-                    Instance.EntFireAtTarget(crane_box_left_right, "StartBackward", null, 0.02);
-                    Instance.EntFireAtName("fix_crane_path_pos_timer", "Enable");
+
+                    Instance.EntFireAtTarget({target: crane_box_front_back, input: "SetParent", value: "crane_box_left_right"});
+                    Instance.EntFireAtTarget({target: crane_box_up_down, input: "SetParent", value: 'crane_box_left_right'});
+                    Instance.EntFireAtTarget({target: crane_box_left_right, input: "StartBackward", delay: 0.02});
+                    Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Enable"});
                     is_pressing['d'] = true;
                 }
             }
@@ -397,45 +403,46 @@ function move_crane(direction, mode) {
     }
 }
 function stop_move_crane_all() {
-    Instance.EntFireAtTarget(crane_box_front_back, "Stop", "");
-    Instance.EntFireAtTarget(crane_box_up_down, "Stop");
-    Instance.EntFireAtTarget(crane_box_left_right, "Stop");
-    Instance.EntFireAtName("fix_crane_path_pos_timer", "Disable");
+    Instance.EntFireAtTarget({target: crane_box_front_back, input: "Stop"});
+    Instance.EntFireAtTarget({target: crane_box_up_down, input: "Stop"});
+    Instance.EntFireAtTarget({target: crane_box_left_right, input: "Stop"});
+    Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Disable"});
 }
 function stop_move_crane(direction, mode) {
     get_crane_entities();
     switch (direction) {
         case 'w':
             if (mode == "MOVE") {
-                Instance.EntFireAtTarget(crane_box_front_back, "Stop");
-                Instance.EntFireAtName("fix_crane_path_pos_timer", "Disable");
+                Instance.EntFireAtTarget({target: crane_box_front_back, input: "Stop"});
+                Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Disable"});
             }
             else if (mode == "LIFT") {
-                Instance.EntFireAtTarget(crane_box_up_down, "Stop", "");
+                Instance.EntFireAtTarget({target: crane_box_up_down, input: "Stop"});
             }
             is_pressing['w'] = false;
             break;
         case 'a':
             if (mode == "MOVE") {
-                Instance.EntFireAtTarget(crane_box_left_right, "Stop");
-                Instance.EntFireAtName("fix_crane_path_pos_timer", "Disable");
+                Instance.EntFireAtTarget({target: crane_box_left_right, input: "Stop"});
+                Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Disable"});
                 is_pressing['a'] = false;
             }
             break;
         case 's':
             if (mode == "MOVE") {
-                Instance.EntFireAtTarget(crane_box_front_back, "Stop");
-                Instance.EntFireAtName("fix_crane_path_pos_timer", "Disable");
+                Instance.EntFireAtTarget({target: crane_box_front_back, input: "Stop"});
+                Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Disable"});
+                
             }
             if (mode == "LIFT") {
-                Instance.EntFireAtTarget(crane_box_up_down, "Stop");
+                Instance.EntFireAtTarget({target: crane_box_up_down, input: "Stop"});
             }
             is_pressing['s'] = false;
             break;
         case 'd':
             if (mode == "MOVE") {
-                Instance.EntFireAtTarget(crane_box_left_right, "Stop");
-                Instance.EntFireAtName("fix_crane_path_pos_timer", "Disable");
+                Instance.EntFireAtTarget({target: crane_box_left_right, input: "Stop"});
+                Instance.EntFireAtName({name: "fix_crane_path_pos_timer", input: "Disable"});
                 is_pressing['d'] = false;
             }
             break;
@@ -487,20 +494,20 @@ Instance.OnScriptInput("ChangeModeCrane", (context) => {
     stop_move_crane_all();
     if (crane_mode === "MOVE") {
         crane_mode = 'LIFT';
-        Instance.EntFireAtName("Crane01LightLiftMode", "Color", "0 255 0");
-        Instance.EntFireAtName("Crane01LightMoveMode", "Color", "255 255 255");
+        Instance.EntFireAtName({name: "Crane01LightLiftMode", input: "Color", value: "0 255 0"});
+        Instance.EntFireAtName({name: "Crane01LightMoveMode", input: "Color", value: "255 255 255"});
     }
     else if (crane_mode === "LIFT") {
         crane_mode = 'MOVE';
-        Instance.EntFireAtName("Crane01LightMoveMode", "Color", "0 255 0");
-        Instance.EntFireAtName("Crane01LightLiftMode", "Color", "255 255 255");
+        Instance.EntFireAtName({name: "Crane01LightMoveMode", input: "Color", value: "0 255 0"});
+        Instance.EntFireAtName({name: "Crane01LightLiftMode", input: "Color", value: "255 255 255"});
     }
 });
 Instance.OnScriptInput("StopMoveCraneAll", () => {
     stop_move_crane_all();
-    Instance.EntFireAtName("crane_ui", "deactivate");
-    Instance.EntFireAtName("crane_button", "Unlock", null, 0.04);
-    Instance.EntFireAtName("crane_button", "Color", "0 255 0");
+    Instance.EntFireAtName({name: "crane_ui", input: "deactivate"});
+    Instance.EntFireAtName({name: "crane_button", input: "Unlock", delay: 0.04});
+    Instance.EntFireAtName({name: "crane_button", input: "Color", value: "0 255 0"});
 });
 Instance.OnScriptInput("StopMoveCraneW", () => {
     stop_move_crane('w', crane_mode);
@@ -528,26 +535,24 @@ Instance.OnScriptInput("MoveCraneD", () => {
 });
 Instance.OnScriptInput("AttachContainerToCrane", (context) => {
     if (context.activator.GetClassName() == "prop_physics_override" && context.activator.GetEntityName() == "spawn_phys_props") {
-        // let crane_box_up_down_origin = Instance.FindEntityByName("crane_box_up_down").GetAbsOrigin()
-        // context.activator.Teleport(new Vec3(crane_box_up_down_origin.x, crane_box_up_down_origin.y, crane_box_up_down_origin.z), new Euler(0, 0, 0), new Vec3(0, 0, 0))
-        Instance.EntFireAtTarget(context.activator, "DisableMotion");
-        Instance.EntFireAtTarget(context.activator, "SetParent", "crane_box_up_down");
+        Instance.EntFireAtTarget({target: context.activator, input: "DisableMotion"});
+        Instance.EntFireAtTarget({target: context.activator, input: "SetParent", value: "crane_box_up_down"});
     }
 });
 Instance.OnScriptInput("ChangeMagnetCrane", () => {
     if (crane_magnet == "ON") {
         crane_magnet = "OFF";
-        Instance.EntFireAtName("spawn_phys_props", "ClearParent");
-        Instance.EntFireAtName("spawn_phys_props", "EnableMotion", null, 0.02);
-        Instance.EntFireAtName("Crane01LightMagnetOFF", "Color", "0 255 0");
-        Instance.EntFireAtName("Crane01LightMagnetON", "Color", "255 255 255");
-        Instance.EntFireAtName("magnet_trigger", "Disable");
+        Instance.EntFireAtName({name: "spawn_phys_props", input: "ClearParent"});
+        Instance.EntFireAtName({name: "spawn_phys_props", input: "EnableMotion", delay: 0.02});
+        Instance.EntFireAtName({name: "Crane01LightMagnetOFF", input: "Color", value: "0 255 0"});
+        Instance.EntFireAtName({name: "Crane01LightMagnetON", input: "Color", value: "255 255 255"});
+        Instance.EntFireAtName({name: "magnet_trigger", input: "Disable"});
     }
     else {
         crane_magnet = "ON";
-        Instance.EntFireAtName("Crane01LightMagnetON", "Color", "0 255 0");
-        Instance.EntFireAtName("Crane01LightMagnetOFF", "Color", "255 255 255");
-        Instance.EntFireAtName("magnet_trigger", "Enable");
+        Instance.EntFireAtName({name: "Crane01LightMagnetON", input: "Color", value: "0 255 0"});
+        Instance.EntFireAtName({name: "Crane01LightMagnetOFF", input: "Color", value: "255 255 255"});
+        Instance.EntFireAtName({name: "magnet_trigger", input: "Enable"});
     }
 });
 Instance.OnScriptInput("fixCranePathPos", () => {
