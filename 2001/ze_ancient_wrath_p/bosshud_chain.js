@@ -36,7 +36,7 @@ Instance.OnScriptInput("StartBoss", () => {
     chain_e = true;
     chain_s = true;
     chain_w = true;
-    Instance.EntFireAtName("bhud_timer", "Enable", "", 0);
+    Instance.EntFireAtName({ name: "bhud_timer", input: "Enable" });
     checkHealthNorth();
     checkHealthEast();
     checkHealthSouth();
@@ -68,40 +68,40 @@ function checkHealthNorth() {
         return;
     if (hp_n <= 0) {
         chain_n = false;
-        Instance.EntFireAtName(n_relay, "Trigger", "", 0);
+        Instance.EntFireAtName({ name: n_relay, input: "Trigger" });
     }
     buildHudNorth();
-    Instance.EntFireAtName(script_name, "RunScriptInput", "checkHealthNorth", 0.01);
+    Instance.EntFireAtName({ name: script_name, input: "RunScriptInput", value: "checkHealthNorth", delay: 0.01 });
 }
 function checkHealthEast() {
     if (!chain_e)
         return;
     if (hp_e <= 0) {
         chain_e = false;
-        Instance.EntFireAtName(e_relay, "Trigger", "", 0);
+        Instance.EntFireAtName({ name: e_relay, input: "Trigger" });
     }
     buildHudEast();
-    Instance.EntFireAtName(script_name, "RunScriptInput", "checkHealthEast", 0.01);
+    Instance.EntFireAtName({ name: script_name, input: "RunScriptInput", value: "checkHealthEast", delay: 0.01 });
 }
 function checkHealthSouth() {
     if (!chain_s)
         return;
     if (hp_s <= 0) {
         chain_s = false;
-        Instance.EntFireAtName(s_relay, "Trigger", "", 0);
+        Instance.EntFireAtName({ name: s_relay, input: "Trigger" });
     }
     buildHudSouth();
-    Instance.EntFireAtName(script_name, "RunScriptInput", "checkHealthSouth", 0.01);
+    Instance.EntFireAtName({ name: script_name, input: "RunScriptInput", value: "checkHealthSouth", delay: 0.01 });
 }
 function checkHealthWest() {
     if (!chain_w)
         return;
     if (hp_w <= 0) {
         chain_w = false;
-        Instance.EntFireAtName(w_relay, "Trigger", "", 0);
+        Instance.EntFireAtName({ name: w_relay, input: "Trigger" });
     }
     buildHudWest();
-    Instance.EntFireAtName(script_name, "RunScriptInput", "checkHealthWest", 0.01);
+    Instance.EntFireAtName({ name: script_name, input: "RunScriptInput", value: "checkHealthWest", delay: 0.01 });
 }
 function buildHudNorth() {
     if (!chain_n) {
@@ -139,17 +139,17 @@ function buildHud() {
     if (!chain_n && !chain_e && !chain_s && !chain_w)
         return;
     let bhud_text = north_text + east_text + south_text + west_text;
-    Instance.EntFireAtName("bhud_hudhint", "SetMessage", bhud_text, 0);
-    Instance.EntFireAtName(script_name, "RunScriptInput", "buildHud", 0.01);
+    Instance.EntFireAtName({ name: "bhud_hudhint", input: "SetMessage", value: bhud_text });
+    Instance.EntFireAtName({ name: script_name, input: "RunScriptInput", value: "buildHud", delay: 0.01 });
 }
 Instance.OnScriptInput("Fail", () => {
     chain_n = false;
     chain_e = false;
     chain_s = false;
     chain_w = false;
-    Instance.EntFireAtName("bhud_hudhint", "SetMessage", "", 3);
-    Instance.EntFireAtName("bhud_timer", "Disable", "", 3);
-    Instance.EntFireAtName("hide_hud", "CountPlayersInZone", "", 3);
+    Instance.EntFireAtName({ name: "bhud_hudhint", input: "SetMessage", value: "", delay: 3 });
+    Instance.EntFireAtName({ name: "bhud_timer", input: "Disable", delay: 3 });
+    Instance.EntFireAtName({ name: "hide_hud", input: "CountPlayersInZone", delay: 3 });
 });
 function resetScript() {
     chain_n = false;
@@ -168,9 +168,9 @@ function resetScript() {
     east_text = "";
     south_text = "";
     west_text = "";
-    Instance.EntFireAtName("bhud_hudhint", "SetMessage", "", 0);
-    Instance.EntFireAtName("bhud_timer", "Disable", "", 0);
-    Instance.EntFireAtName("hide_hud", "CountPlayersInZone", "", 0);
+    Instance.EntFireAtName({ name: "bhud_hudhint", input: "SetMessage", value: "" });
+    Instance.EntFireAtName({ name: "bhud_timer", input: "Disable" });
+    Instance.EntFireAtName({ name: "hide_hud", input: "CountPlayersInZone" });
 }
 Instance.OnScriptInput("checkHealthNorth", checkHealthNorth);
 Instance.OnScriptInput("checkHealthEast", checkHealthEast);
