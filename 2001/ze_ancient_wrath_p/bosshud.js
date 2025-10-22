@@ -98,7 +98,7 @@ function addHealth(health) {
 }
 Instance.OnScriptInput("StartBoss", () => {
     bossfight = true;
-    Instance.EntFireAtName("bhud_timer", "Enable", "", 0);
+    Instance.EntFireAtName({ name: "bhud_timer", input: "Enable" });
     checkHealth();
 });
 Instance.OnScriptInput("BossDamage", () => {
@@ -130,8 +130,8 @@ function checkHealth() {
         return;
     if (hp <= 0) {
         bossfight = false;
-        Instance.EntFireAtName(boss_relay, "Trigger", "", 0);
-        Instance.EntFireAtName("bhud_timer", "Disable", "", 0);
+        Instance.EntFireAtName({ name: boss_relay, input: "Trigger" });
+        Instance.EntFireAtName({ name: "bhud_timer", input: "Disable" });
         resetScript();
         return;
     }
@@ -157,7 +157,7 @@ function checkHealth() {
         }
     }
     buildHud();
-    Instance.EntFireAtName(script_name, "RunScriptInput", "CheckHealth", 0.01);
+    Instance.EntFireAtName({ name: script_name, input: "RunScriptInput", value: "CheckHealth", delay: 0.01 });
 }
 function buildHud() {
     if (!bossfight)
@@ -165,10 +165,11 @@ function buildHud() {
     let percentage = hp / hp_max;
     if (health_sprite !== "") {
         let n = Math.ceil(percentage * segments);
-        Instance.EntFireAtName(health_sprite, "setalphascale", n, 0);
+        Instance.EntFireAtName({ name: health_sprite, input: "setalphascale", value: n });
     }
     bhud_text = bossname + ": " + hp + " [" + Math.ceil(percentage * 100) + "%]" + he_damage_text + item_damage_text;
-    Instance.EntFireAtName("bhud_hudhint", "SetMessage", bhud_text, 0);
+    Instance.EntFireAtName({ name: "bhud_hudhint", input: "SetMessage", value: bhud_text });
+
 }
 function itemDamage(item_name, item_dmg) {
     if (!bossfight)
@@ -203,8 +204,8 @@ function resetScript() {
     he_tick = 0;
     bossfight = false;
     boss_relay = "";
-    Instance.EntFireAtName("bhud_hudhint", "SetMessage", "", 0);
-    Instance.EntFireAtName("hide_hud", "CountPlayersInZone", "", 0);
+    Instance.EntFireAtName({ name: "bhud_hudhint", input: "SetMessage", value: "" });
+    Instance.EntFireAtName({ name: "hide_hud", input: "CountPlayersInZone" });
 }
 Instance.OnScriptInput("CheckHealth", checkHealth);
 Instance.OnScriptInput("ResetScript", resetScript);
