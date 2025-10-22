@@ -49,16 +49,16 @@ Instance.OnScriptInput("SetParticle0", () => {
     setParticle(0);
 });
 function setParticle(arg) {
-    let n = arg - 1;
+    const n = arg - 1;
     if (n < 0) {
-        Instance.EntFireAtName("flamethrower_indicator_particle", "Stop", "", 0);
+        Instance.EntFireAtName({ name: "flamethrower_indicator_particle", input: "Stop" });
     }
     else {
-        let percentage = n / 14;
-        let r = Math.trunc((1 - percentage) * 255);
-        let g = Math.trunc(percentage * 255);
-        let color_string = String(r) + " " + String(g) + " " + "0";
-        Instance.EntFireAtName("flamethrower_indicator_particle", "setcolortint", color_string, 0);
-        Instance.EntFireAtName("flamethrower_indicator_particle", "Start", "", 0);
+        const percentage = n / 14;
+        const r = Math.trunc((1 - percentage) * 255);
+        const g = Math.trunc(percentage * 255);
+        const color_string = String(r) + " " + String(g) + " " + "0";
+        Instance.EntFireAtName({ name: "flamethrower_indicator_particle", input: "setcolortint", value: color_string });
+        Instance.EntFireAtName({ name: "flamethrower_indicator_particle", input: "Start" });
     }
 }
