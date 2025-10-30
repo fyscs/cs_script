@@ -15,10 +15,10 @@ import { Instance } from "cs_script/point_script";
  */
 const vipPlayers = {
     // Mygo乐队成员
-    tomoriPlayers: [],
+    tomorrinPlayers: [],
     anonPlayers: [],
     takiPlayers: [],
-    sakiPlayers: [],
+    soyorinPlayers: [],
     ranaPlayers: [],
     
     // Mujica乐队成员
@@ -40,6 +40,8 @@ Instance.OnRoundStart(() => {
         Instance.EntFireAtName({ name: "mujica_mutsumi_filter", input: "TestActivator", activator: player });
         Instance.EntFireAtName({ name: "mygo_nana_filter", input: "TestActivator", activator: player });
         Instance.EntFireAtName({ name: "mygo_tomorrin_filter", input: "TestActivator", activator: player });
+        Instance.EntFireAtName({ name: "mygo_anon_filter", input: "TestActivator", activator: player });
+        Instance.EntFireAtName({ name: "mygo_soyorrin_filter", input: "TestActivator", activator: player });
     }
 });
 
@@ -66,8 +68,8 @@ Instance.OnScriptInput("kanaAdd", (inputData) => {
     AddVipPlayer(inputData, "kanaPlayers");
 });
 
-Instance.OnScriptInput("tomoriAdd", (inputData) => {
-    AddVipPlayer(inputData, "tomoriPlayers");
+Instance.OnScriptInput("tomorrinAdd", (inputData) => {
+    AddVipPlayer(inputData, "tomorrinPlayers");
 });
 
 Instance.OnScriptInput("anonAdd", (inputData) => {
@@ -78,8 +80,8 @@ Instance.OnScriptInput("takiAdd", (inputData) => {
     AddVipPlayer(inputData, "takiPlayers");
 });
 
-Instance.OnScriptInput("sakiAdd", (inputData) => {
-    AddVipPlayer(inputData, "sakiPlayers");
+Instance.OnScriptInput("soyorinAdd", (inputData) => {
+    AddVipPlayer(inputData, "soyorinPlayers");
 });
 
 Instance.OnScriptInput("ranaAdd", (inputData) => {
