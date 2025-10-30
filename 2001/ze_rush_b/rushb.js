@@ -517,3 +517,33 @@ Instance.OnScriptInput("RemoveKnife", ({activator, caller}) => {
 Instance.OnScriptInput("ResetSpeed", ({caller, activator}) => {
     activator.Teleport({velocity: {x: 0, y: 0, z: 0}});
 });
+
+/////////////////////////////////////////////////////////////////////////
+
+function SetHealthCt(health, activator) {
+    let player = activator;
+    if (player?.IsValid() && player?.GetTeamNumber() === 3) {
+        player.SetHealth(health);
+    }
+}
+
+function SetHealthT(health, activator) {
+    let player = activator;
+    if (player?.IsValid() && player?.GetTeamNumber() === 2) {
+        player.SetHealth(health);
+    }
+}
+
+Instance.OnScriptInput("hp_vendingmachine", ({ activator }) => {
+    SetHealthCt(175, activator);
+});
+
+Instance.OnScriptInput("zm_hp_jihad", ({ activator }) => {
+    SetHealthT(50000, activator);
+});
+
+Instance.OnScriptInput("zm_hp_fidget", ({ activator }) => {
+    SetHealthT(50000, activator);
+});
+
+/////////////////////////////////////////////////////////////////////////
