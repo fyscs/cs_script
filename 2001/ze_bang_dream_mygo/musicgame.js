@@ -5,10 +5,11 @@ import { Instance } from "cs_script/point_script";
  * 此脚本仅供MyGO地图使用
  * 目前此脚本存在许多问题
  * 需等待后续重构
+ * 2025/10/29
  */
 
 // 调试开关 - 设置为true启用调试信息，false禁用
-let DEBUG_ENABLED = true;
+let DEBUG_ENABLED = false;
 
 // 游戏状态变量
 let gameActive = false;
