@@ -5,11 +5,11 @@ import { Instance, Entity } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/10/28
+ * 2025/10/29
  */
 
 const MG_CONFIG = {
-    EVENT_TIME: 1,          // 检测时长
+    EVENT_TIME: 1.5,        // 检测时长
     PUNISH_DAMAGE: 15       // 惩罚伤害
 };
 
