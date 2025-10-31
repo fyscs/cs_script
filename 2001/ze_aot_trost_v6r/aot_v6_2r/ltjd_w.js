@@ -388,7 +388,8 @@ function endGrapple(playerSuffix) {
     if (hookState.isActive) {
         // 停止粒子效果 - 使用动态粒子实体名称
         const particleName = "item_ltjd_w_particle_" + playerSuffix;
-        Instance.EntFireAtName({ name: particleName, input: "Stop" });
+        Instance.EntFireAtName({ name: particleName, input: "DestroyImmediately" });
+        Instance.EntFireAtName({ name:"item_ltjd_w_end_sound_" + playerSuffix, input: "StartSound" });
 
         // 停止喷气粒子
         const steamParticleName = "item_ltjd_w_steam_particle_" + playerSuffix;
