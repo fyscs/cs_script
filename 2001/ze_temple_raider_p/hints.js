@@ -4,6 +4,7 @@ let holdTimerCase
 let hudHint
 let holdTime
 let yolo
+const yoloTime = 100
 
 const introText = 'The world is falling apart! Fight your way to the temple and escape.'
 
@@ -23,9 +24,8 @@ Instance.OnScriptInput("SetYoloMode", (context) => {
 })
 
 Instance.OnScriptInput("YoloCountdown", (context) => {
-    let yoloTime = 100
-    let timer = yoloTime
     Instance.FindEntitiesByClass("player").forEach((p) => {
+        let timer = yoloTime
         for(let i=0; i<yoloTime; i++){
             let s = (timer > 1 ? 'S' : '')
             Instance.EntFireAtTarget({target: hudHint, input: "SetMessage", value: `BOMB EXPLODING IN ${timer} SECOND${s}`, delay: i})
