@@ -5,9 +5,10 @@ Instance.OnScriptInput("GetHandles", () => {
     soundevents = Instance.FindEntitiesByName("client_soundevent");
 });
 Instance.OnScriptInput("PlaySound", (context) => {
-    let activator = context.activator;
-    let slot = activator.GetPlayerController().GetPlayerSlot();
-    activator.SetEntityName("client" + slot);
-    Instance.EntFireAtTarget(soundevents[slot], "SetSourceEntity", "client" + slot, 0);
-    Instance.EntFireAtTarget(soundevents[slot], "StartSound", "", 0.1);
+    const activator = context.activator;
+    const slot = activator.GetPlayerController().GetPlayerSlot();
+    const clientname = "client" + slot;
+    activator.SetEntityName(clientname);
+    Instance.EntFireAtTarget({ target: soundevents[slot], input: "SetSourceEntity", value: clientname });
+    Instance.EntFireAtTarget({ target: soundevents[slot], input: "StartSound", delay: 0.1 });
 });
