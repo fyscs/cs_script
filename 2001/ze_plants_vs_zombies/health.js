@@ -1,27 +1,22 @@
 import { Instance } from "cs_script/point_script";
 
-// 当接收到"Health"输入时处理加血
-Instance.OnScriptInput("Health", (context) => {
-    // 检查激活者是否存在且有效
-    if (!context.activator || typeof context.activator.IsValid !== 'function' || !context.activator.IsValid()) {
+/**
+ * 血量恢复功能
+ * 此脚本由皮皮猫233编写
+ * 2025/11/3
+ */
+
+Instance.OnScriptInput("Health", (inputData) => {
+    if (!inputData.activator || !inputData.activator.IsValid()) {
         return;
     }
     
-    // 检查实体是否为玩家
-    try {
-        const className = context.activator.GetClassName();
-        if (!className || !className.includes("player")) {
-            return; // 不是玩家实体，不处理
-        }
-    } catch (e) {
-        return; // 获取类名失败，不处理
+    // 检查是否为玩家
+    const className = inputData.activator.GetClassName();
+    if (!className || !className === "player") {
+        return;
     }
     
-    // 直接给玩家加血
-    try {
-        const currentHealth = context.activator.GetHealth();
-        context.activator.SetHealth(currentHealth + 2500);
-    } catch (e) {
-        // 忽略错误，避免服务器崩溃
-    }
+    const currentHealth = inputData.activator.GetHealth();
+    inputData.activator.SetHealth(currentHealth + 2500);
 });
