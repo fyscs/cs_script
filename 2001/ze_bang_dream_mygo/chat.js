@@ -1,311 +1,263 @@
-import { Instance, Entity, PointTemplate } from "cs_script/point_script";
+import { Instance, Entity, BaseModelEntity } from "cs_script/point_script";
 
 /**
- * 气泡系统
+ * 高松灯神器
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
  * 2025/11/11
  */
 
-// ========== 全局变量定义 ==========
+// 技能开始标志
+let skill1Flag = false;
+let skill2Flag = false;
 
-/**
- * VIP玩家分组 - 包含MyGO和Mujica乐队所有人物
- * @type {Object.<string, Entity[]>}
- */
-const vipPlayers = {
-    // Mygo乐队成员
-    tomorrinPlayers: [],
-    anonPlayers: [],
-    takiPlayers: [],
-    soyorinPlayers: [],
-    ranaPlayers: [],
+// 玩家状态存储
+let monitoredPlayers = new Map();
+
+// 目标实体存储
+/** @type {Entity|undefined} */
+let targetEntity = undefined;
+
+// 模型实体存储
+/** @type {BaseModelEntity|undefined} */
+let modelEntity = undefined;
+let glowStartTime = 0;
+
+// 初始化Think
+Instance.SetThink(TomorrinSkill);
+
+// 当接收到skill1输入时开始技能一
+Instance.OnScriptInput("skill1", (context) => {
+    // 在技能开始时获取目标实体并检查有效性
+    targetEntity = Instance.FindEntityByName("item_human_tomorrin_rota");
+    if (!targetEntity || !targetEntity.IsValid()) return;
     
-    // Mujica乐队成员
-    mutsumiPlayers: [],
-    sakiPlayers: [],
-    umiriPlayers: [],
-    nyamuPlayers: [],
-    kanaPlayers: []
-};
-
-// ========== 事件监听器 ==========
-
-/**
- * 添加VIP玩家 - 各角色添加函数
- */
-Instance.OnScriptInput("mutsumiAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "mutsumiPlayers");
+    // 获取模型实体并开始发光效果
+    modelEntity = /** @type {BaseModelEntity} */ (Instance.FindEntityByName("item_human_tomorrin_model"));
+    if (!modelEntity || !modelEntity.IsValid()) return;
+    
+    skill1Flag = true;
+    glowStartTime = Instance.GetGameTime();
+    Instance.SetNextThink(Instance.GetGameTime());
 });
 
-Instance.OnScriptInput("sakiAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "sakiPlayers");
+// 当接收到skill2输入时开始技能一
+Instance.OnScriptInput("skill2", (context) => {
+    // 在技能开始时获取目标实体并检查有效性
+    targetEntity = Instance.FindEntityByName("item_human_tomorrin_rota");
+    if (!targetEntity || !targetEntity.IsValid()) return;
+    
+    // 获取模型实体并开始发光效果
+    modelEntity = /** @type {BaseModelEntity} */ (Instance.FindEntityByName("item_human_tomorrin_model"));
+    if (!modelEntity || !modelEntity.IsValid()) return;
+    
+    skill2Flag = true;
+    glowStartTime = Instance.GetGameTime();
+    Instance.SetNextThink(Instance.GetGameTime());
 });
 
-Instance.OnScriptInput("umiriAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "umiriPlayers");
+// 当接收到stop时停止循环并清除玩家状态
+Instance.OnScriptInput("stop", (context) => {
+    // 停止循环标志
+    skill1Flag = false;
+    skill2Flag = false;
+    
+    // 停止发光效果
+    if (modelEntity && modelEntity.IsValid()) {
+        modelEntity.Unglow();
+    }
+
+    // 清除玩家状态
+    monitoredPlayers.clear();
 });
 
-Instance.OnScriptInput("nyamuAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "nyamuPlayers");
+// 当接收到playerAdd时将给予玩家添加状态
+Instance.OnScriptInput("playerAdd", (context) => {
+    if (!context.activator) {
+        return;
+    }
+
+    // 检查玩家是否已经在监测中
+    if (monitoredPlayers.has(context.activator)) {
+        return;
+    }
+    
+    // 为玩家创建新的监测状态，包括冻结开始时间
+    monitoredPlayers.set(context.activator, {
+        freezeStartTime: Instance.GetGameTime()
+    });
 });
 
-Instance.OnScriptInput("kanaAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "kanaPlayers");
-});
+// 当接收到playerRemove时将移除玩家添加状态
+Instance.OnScriptInput("playerRemove", (context) => {
+    if (!context.activator) {
+        return;
+    }
 
-Instance.OnScriptInput("tomorrinAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "tomorrinPlayers");
-});
-
-Instance.OnScriptInput("anonAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "anonPlayers");
-});
-
-Instance.OnScriptInput("takiAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "takiPlayers");
-});
-
-Instance.OnScriptInput("soyorinAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "soyorinPlayers");
-});
-
-Instance.OnScriptInput("ranaAdd", (inputData) => {
-    AddVipPlayer(inputData.activator, "ranaPlayers");
-});
-
-/**
- * 检测玩家聊天消息
- */
-Instance.OnPlayerChat((event) => {
-    if (!event.player || !event.player.IsValid()) return;
-
-    const player = event.player.GetPlayerPawn();
-    if (!player || !player.IsValid()) return;
-
-    // 为VIP玩家处理特殊聊天效果
-    if (IsVip(player)) {
-        ProcessVipChat(player, event.text);
+    // 检查玩家是否在监测中并将玩家状态移除
+    if (monitoredPlayers.has(context.activator)) {
+        monitoredPlayers.delete(context.activator);
     }
 });
 
-// ========== 核心功能函数 ==========
-
-/**
- * 处理VIP玩家聊天
- * @param {Entity} player - 玩家实体
- * @param {string} text - 聊天文本
- */
-function ProcessVipChat(player, text) {
-    // 获取聊天模板实体
-    const chatTemp = /** @type {PointTemplate} */ (Instance.FindEntityByName("chat_temp"));
-    if (!chatTemp || !chatTemp.IsValid()) return;
-    
-    // 计算生成位置和角度
-    const currentOrigin = player.GetAbsOrigin();
-    const randomOffset = GetRandomOffset();
-    const newOrigin = { 
-        x: currentOrigin.x + randomOffset.x, 
-        y: currentOrigin.y + randomOffset.y, 
-        z: currentOrigin.z + 150 + randomOffset.z
-    };
-
-    const currentAngles = player.GetAbsAngles();
-    const newAngles = { 
-        pitch: 0, 
-        yaw: currentAngles.yaw + 90, 
-        roll: 0 
-    };
-
-    // 生成聊天实体
-    const side = getForward(newAngles);
-
-    const chatEntities = chatTemp.ForceSpawn(newOrigin, newAngles);
-    if (!chatEntities) return;
-
-    // 生成角色专属表情
-    GenerateCharacterEmoji(player, currentOrigin);
-
-    // 处理聊天气泡和文本
-    ProcessChatEntities(chatEntities, player, text, side, newOrigin);
+function TomorrinSkill() {
+    if (skill1Flag) {
+        monitoredPlayers.forEach((state, player) => {
+            if (player && player.IsValid()) {
+                Skill1Effect(player);
+                // 应用冻结效果
+                freezeEffect(player, state);
+            } else {
+                monitoredPlayers.delete(player);
+            }
+        });
+        // 更新发光效果
+        TomorrinGlow();
+        
+        Instance.SetNextThink(Instance.GetGameTime());
+    }
+    else if (skill2Flag) {
+        monitoredPlayers.forEach((state, player) => {
+            if (player && player.IsValid()) {
+                Skill2Effect(player);
+                // 应用冻结效果
+                freezeEffect(player, state);
+            } else {
+                monitoredPlayers.delete(player);
+            }
+        });
+        // 更新发光效果
+        TomorrinGlow();
+        
+        Instance.SetNextThink(Instance.GetGameTime());
+    }
+    else return;
 }
 
 /**
- * 生成角色专属表情
- * @param {Entity} player - 玩家实体
- * @param {import("cs_script/point_script").Vector} currentOrigin - 玩家当前位置
+ * 技能一效果
+ * @param {Entity} player 
  */
-function GenerateCharacterEmoji(player, currentOrigin) {
-    const character = GetPlayerCharacter(player);
+function Skill1Effect(player) {
+    // 获取目标实体的角度
+    if (!targetEntity || !targetEntity.IsValid()) return;
+    const targetAngles = targetEntity.GetAbsAngles();
     
-    if (character) {
-        const characterChatTemp = /** @type {PointTemplate} */ (Instance.FindEntityByName(`chat_${character}_temp`));
-        if (characterChatTemp && characterChatTemp.IsValid()) {
-            const characterRandomOffset = GetRandomOffset();
-            const characterOrigin = { 
-                x: currentOrigin.x + characterRandomOffset.x, 
-                y: currentOrigin.y + characterRandomOffset.y, 
-                z: currentOrigin.z + 100 + characterRandomOffset.z
-            };
-            
-            const newAngles = { pitch: 0, yaw: 0, roll: 0 };
+    // 设置玩家的角度与目标实体一致，但强制垂直角度为水平面
+    player.Teleport({ 
+        angles: { 
+            pitch: 0,                // 强制垂直角度为水平面
+            yaw: targetAngles.yaw,   // 使用目标实体的水平角度
+            roll: 0 
+        } 
+    });
+}
 
-            const characterEntities = characterChatTemp.ForceSpawn(characterOrigin, newAngles);
-            if (!characterEntities) return;
-            
-            for (const entity of characterEntities) {
-                if (entity.GetEntityName() === `chat_${character}_particle`) {
-                    Instance.EntFireAtTarget({ target: entity, input: "SetParent", value: "!activator", activator: player });
-                    Instance.EntFireAtTarget({ target: entity, input: "Kill", delay: 5 });
-                }
+/**
+ * 技能二效果
+ * @param {Entity} player 
+ */
+function Skill2Effect(player) {
+    // 获取玩家眼睛位置和目标实体位置
+    const playerEyePos = player.GetEyePosition();
+
+    if (!targetEntity || !targetEntity.IsValid()) return;
+    const targetPos = targetEntity.GetAbsOrigin();
+    
+    // 计算从玩家到目标实体的方向向量
+    const direction = {
+        x: targetPos.x - playerEyePos.x,
+        y: targetPos.y - playerEyePos.y,
+        z: targetPos.z - playerEyePos.z
+    };
+    
+    // 计算偏航角（水平方向）
+    const yaw = Math.atan2(direction.y, direction.x) * 180 / Math.PI;
+    
+    // 设置玩家的视角角度，强制垂直角度为水平面
+    player.Teleport({ 
+        angles: { 
+            pitch: 0,        // 强制垂直角度为水平面
+            yaw: yaw,        // 使用计算出的水平角度
+            roll: 0 
+        } 
+    });
+}
+
+// 给予Tomorrin一个颜色变化的Glow
+function TomorrinGlow() {
+    if (!modelEntity || !modelEntity.IsValid()) {
+        return;
+    }
+    
+    // 基于时间的颜色渐变
+    const currentTime = Instance.GetGameTime();
+    const elapsedTime = currentTime - glowStartTime;
+    
+    // 使用正弦函数创建平滑的颜色变化
+    // 红色分量 - 随时间周期性变化
+    const red = Math.floor(127 + 127 * Math.sin(elapsedTime * 2));
+    // 绿色分量 - 相位偏移的周期性变化
+    const green = Math.floor(127 + 127 * Math.sin(elapsedTime * 2 + Math.PI * 2 / 3));
+    // 蓝色分量 - 相位偏移的周期性变化
+    const blue = Math.floor(127 + 127 * Math.sin(elapsedTime * 2 + Math.PI * 4 / 3));
+    
+    // 设置发光颜色
+    modelEntity.Glow({
+        r: red,
+        g: green,
+        b: blue,
+        a: 255
+    });
+}
+
+/**
+ * 冻结效果
+ * @param {Entity} player 
+ * @param {Object} state 
+ * @param {number} state.freezeStartTime
+ * @returns 
+ */
+function freezeEffect(player, state) {
+    // 计算冻结进度（0到1之间）
+    const currentTime = Instance.GetGameTime();
+    const freezeProgress = Math.min(1, (currentTime - state.freezeStartTime) / 3);
+    
+    // 如果已经完成冻结，设置速度为0
+    if (freezeProgress >= 1) {
+        player.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
+        return;
+    }
+    
+    // 获取当前速度
+    const currentVelocity = player.GetAbsVelocity();
+    
+    // 计算减速因子（从1逐渐减少到0）
+    const decelerationFactor = 1 - freezeProgress;
+    
+    // 应用减速
+    const newVelocity = {
+        x: currentVelocity.x * decelerationFactor,
+        y: currentVelocity.y * decelerationFactor,
+        z: currentVelocity.z * decelerationFactor
+    };
+    
+    // 设置新速度
+    player.Teleport({ velocity: newVelocity });
+}
+
+// 当玩家断开连接时移除其状态
+Instance.OnPlayerDisconnect((event) => {
+    const playerSlot = event.playerSlot;
+    
+    // 查找对应的玩家实体并移除其状态
+    monitoredPlayers.forEach((state, player) => {
+        if (player && player.IsValid()) {
+            const controller = player.GetPlayerController();
+            if (controller && controller.GetPlayerSlot() === playerSlot) {
+                monitoredPlayers.delete(player);
             }
         }
-    }
-}
-
-/**
- * 处理聊天实体（气泡和文本）
- * @param {Array<Entity>} chatEntities - 聊天实体数组
- * @param {Entity} player - 玩家实体
- * @param {string} text - 聊天文本
- * @param {import("cs_script/point_script").Vector} side - 方向向量
- * @param {import("cs_script/point_script").Vector} newOrigin - 生成位置
- */
-function ProcessChatEntities(chatEntities, player, text, side, newOrigin) {
-    for (const chatEntity of chatEntities) {
-        if (chatEntity.GetEntityName() === "chat_particle") {
-            // 处理聊天气泡
-            const textLength = CalculateTextLength(text);
-            const particlePosition = vectorAdd(vectorScale(side, textLength), newOrigin);
-            
-            chatEntity.Teleport({ position: particlePosition });
-            Instance.EntFireAtTarget({ target: chatEntity, input: "SetParent", value: "!activator", activator: player });
-            Instance.EntFireAtTarget({ target: chatEntity, input: "Kill", delay: 5 });
-        } else if (chatEntity.GetEntityName() === "chat_text") {
-            // 处理聊天文本
-            Instance.EntFireAtTarget({ target: chatEntity, input: "SetMessage", value: text });
-            Instance.EntFireAtTarget({ target: chatEntity, input: "SetParent", value: "!activator", activator: player });
-            Instance.EntFireAtTarget({ target: chatEntity, input: "Kill", delay: 5 });
-        }
-    }
-}
-
-// ========== 辅助功能函数 ==========
-
-/**
- * 检查玩家是否为VIP
- * @param {Entity} player - 玩家实体
- * @returns {boolean} 是否为VIP
- */
-function IsVip(player) {
-    return Object.values(vipPlayers).some(band => 
-        band.includes(player)
-    );
-}
-
-/**
- * 获取玩家所属角色
- * @param {Entity} player - 玩家实体
- * @returns {string|null} 角色名称
- */
-function GetPlayerCharacter(player) {
-    for (const [character, players] of Object.entries(vipPlayers)) {
-        if (players.includes(player)) {
-            return character.replace("Players", "");
-        }
-    }
-    return null;
-}
-
-/**
- * 添加VIP玩家到指定分组
- * @param {Entity|undefined} player - 输入数据
- * @param {string} playerGroup - 玩家分组
- */
-function AddVipPlayer(player, playerGroup) {
-    if (player && player.IsValid()) {
-        if (!vipPlayers[playerGroup].includes(player)) {
-            vipPlayers[playerGroup].push(player);
-        }
-    }
-}
-
-/**
- * 计算字符串显示长度
- * @param {string} text - 输入文本
- * @returns {number} 计算后的长度
- */
-function CalculateTextLength(text) {
-    let length = 0;
-    for (const char of text) {
-        if (char.match(/[^\x00-\xff]/)) {
-            length += 8.4; // 全角字符
-        } else if (char >= 'A' && char <= 'Z') {
-            length += 5.55; // 大写字母
-        } else {
-            length += 4.75; // 半角字符和小写字母
-        }
-    }
-    return length;
-}
-
-/**
- * 生成随机偏移位置
- * @returns {import("cs_script/point_script").Vector} 随机偏移向量
- */
-function GetRandomOffset() {
-    const range = 30;
-    return {
-        x: (Math.random() - 0.5) * 2 * range,
-        y: (Math.random() - 0.5) * 2 * range,
-        z: (Math.random() - 0.5) * 2 * range
-    };
-}
-
-// ========== 数学工具函数 ==========
-
-/**
- * 向量加法
- * @param {import("cs_script/point_script").Vector} vec1 - 向量1
- * @param {import("cs_script/point_script").Vector} vec2 - 向量2
- * @returns {import("cs_script/point_script").Vector} 相加后的向量
- */
-function vectorAdd(vec1, vec2) {
-    return { 
-        x: vec1.x + vec2.x, 
-        y: vec1.y + vec2.y, 
-        z: vec1.z + vec2.z 
-    };
-}
-
-/**
- * 向量缩放
- * @param {import("cs_script/point_script").Vector} vec - 向量
- * @param {number} scale - 缩放比例
- * @returns {import("cs_script/point_script").Vector} 缩放后的向量
- */
-function vectorScale(vec, scale) {
-    return { 
-        x: vec.x * scale, 
-        y: vec.y * scale, 
-        z: vec.z * scale 
-    };
-}
-
-/**
- * 将角度转换为前向向量
- * @param {import("cs_script/point_script").QAngle} angles - 角度对象 {pitch, yaw, roll}
- * @returns {import("cs_script/point_script").Vector} 前向向量
- */
-function getForward(angles) {
-    const pitchRadians = (angles.pitch * Math.PI) / 180;
-    const yawRadians = (angles.yaw * Math.PI) / 180;
-    const hScale = Math.cos(pitchRadians);
-    
-    return {
-        x: Math.cos(yawRadians) * hScale,
-        y: Math.sin(yawRadians) * hScale,
-        z: -Math.sin(pitchRadians)
-    };
-}
+    });
+});
