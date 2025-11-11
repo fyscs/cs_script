@@ -1,17 +1,18 @@
-import { Instance } from "cs_script/point_script";
+import { Instance, Entity, PointTemplate } from "cs_script/point_script";
 
 /**
  * 气泡系统
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/10/29
+ * 2025/11/11
  */
 
 // ========== 全局变量定义 ==========
 
 /**
  * VIP玩家分组 - 包含MyGO和Mujica乐队所有人物
+ * @type {Object.<string, Entity[]>}
  */
 const vipPlayers = {
     // Mygo乐队成员
@@ -23,7 +24,7 @@ const vipPlayers = {
     
     // Mujica乐队成员
     mutsumiPlayers: [],
-    sakikoPlayers: [],
+    sakiPlayers: [],
     umiriPlayers: [],
     nyamuPlayers: [],
     kanaPlayers: []
@@ -32,66 +33,54 @@ const vipPlayers = {
 // ========== 事件监听器 ==========
 
 /**
- * 回合重启时检查是否为VIP玩家
- */
-Instance.OnRoundStart(() => {
-    const players = Instance.FindEntitiesByClass("player");
-    for (const player of players) {
-        Instance.EntFireAtName({ name: "mujica_mutsumi_filter", input: "TestActivator", activator: player });
-        Instance.EntFireAtName({ name: "mygo_nana_filter", input: "TestActivator", activator: player });
-        Instance.EntFireAtName({ name: "mygo_tomorrin_filter", input: "TestActivator", activator: player });
-        Instance.EntFireAtName({ name: "mygo_anon_filter", input: "TestActivator", activator: player });
-        Instance.EntFireAtName({ name: "mygo_soyorrin_filter", input: "TestActivator", activator: player });
-    }
-});
-
-/**
  * 添加VIP玩家 - 各角色添加函数
  */
 Instance.OnScriptInput("mutsumiAdd", (inputData) => {
-    AddVipPlayer(inputData, "mutsumiPlayers");
+    AddVipPlayer(inputData.activator, "mutsumiPlayers");
 });
 
-Instance.OnScriptInput("sakikoAdd", (inputData) => {
-    AddVipPlayer(inputData, "sakikoPlayers");
+Instance.OnScriptInput("sakiAdd", (inputData) => {
+    AddVipPlayer(inputData.activator, "sakiPlayers");
 });
 
 Instance.OnScriptInput("umiriAdd", (inputData) => {
-    AddVipPlayer(inputData, "umiriPlayers");
+    AddVipPlayer(inputData.activator, "umiriPlayers");
 });
 
 Instance.OnScriptInput("nyamuAdd", (inputData) => {
-    AddVipPlayer(inputData, "nyamuPlayers");
+    AddVipPlayer(inputData.activator, "nyamuPlayers");
 });
 
 Instance.OnScriptInput("kanaAdd", (inputData) => {
-    AddVipPlayer(inputData, "kanaPlayers");
+    AddVipPlayer(inputData.activator, "kanaPlayers");
 });
 
 Instance.OnScriptInput("tomorrinAdd", (inputData) => {
-    AddVipPlayer(inputData, "tomorrinPlayers");
+    AddVipPlayer(inputData.activator, "tomorrinPlayers");
 });
 
 Instance.OnScriptInput("anonAdd", (inputData) => {
-    AddVipPlayer(inputData, "anonPlayers");
+    AddVipPlayer(inputData.activator, "anonPlayers");
 });
 
 Instance.OnScriptInput("takiAdd", (inputData) => {
-    AddVipPlayer(inputData, "takiPlayers");
+    AddVipPlayer(inputData.activator, "takiPlayers");
 });
 
 Instance.OnScriptInput("soyorinAdd", (inputData) => {
-    AddVipPlayer(inputData, "soyorinPlayers");
+    AddVipPlayer(inputData.activator, "soyorinPlayers");
 });
 
 Instance.OnScriptInput("ranaAdd", (inputData) => {
-    AddVipPlayer(inputData, "ranaPlayers");
+    AddVipPlayer(inputData.activator, "ranaPlayers");
 });
 
 /**
  * 检测玩家聊天消息
  */
 Instance.OnPlayerChat((event) => {
+    if (!event.player || !event.player.IsValid()) return;
+
     const player = event.player.GetPlayerPawn();
     if (!player || !player.IsValid()) return;
 
@@ -105,12 +94,12 @@ Instance.OnPlayerChat((event) => {
 
 /**
  * 处理VIP玩家聊天
- * @param {Object} player - 玩家实体
+ * @param {Entity} player - 玩家实体
  * @param {string} text - 聊天文本
  */
 function ProcessVipChat(player, text) {
     // 获取聊天模板实体
-    const chatTemp = Instance.FindEntityByName("chat_temp");
+    const chatTemp = /** @type {PointTemplate} */ (Instance.FindEntityByName("chat_temp"));
     if (!chatTemp || !chatTemp.IsValid()) return;
     
     // 计算生成位置和角度
@@ -119,7 +108,7 @@ function ProcessVipChat(player, text) {
     const newOrigin = { 
         x: currentOrigin.x + randomOffset.x, 
         y: currentOrigin.y + randomOffset.y, 
-        z: currentOrigin.z + 100 + randomOffset.z
+        z: currentOrigin.z + 150 + randomOffset.z
     };
 
     const currentAngles = player.GetAbsAngles();
@@ -131,7 +120,9 @@ function ProcessVipChat(player, text) {
 
     // 生成聊天实体
     const side = getForward(newAngles);
+
     const chatEntities = chatTemp.ForceSpawn(newOrigin, newAngles);
+    if (!chatEntities) return;
 
     // 生成角色专属表情
     GenerateCharacterEmoji(player, currentOrigin);
@@ -142,14 +133,14 @@ function ProcessVipChat(player, text) {
 
 /**
  * 生成角色专属表情
- * @param {Object} player - 玩家实体
- * @param {Object} currentOrigin - 玩家当前位置
+ * @param {Entity} player - 玩家实体
+ * @param {import("cs_script/point_script").Vector} currentOrigin - 玩家当前位置
  */
 function GenerateCharacterEmoji(player, currentOrigin) {
     const character = GetPlayerCharacter(player);
     
     if (character) {
-        const characterChatTemp = Instance.FindEntityByName(`chat_${character}_temp`);
+        const characterChatTemp = /** @type {PointTemplate} */ (Instance.FindEntityByName(`chat_${character}_temp`));
         if (characterChatTemp && characterChatTemp.IsValid()) {
             const characterRandomOffset = GetRandomOffset();
             const characterOrigin = { 
@@ -159,7 +150,9 @@ function GenerateCharacterEmoji(player, currentOrigin) {
             };
             
             const newAngles = { pitch: 0, yaw: 0, roll: 0 };
+
             const characterEntities = characterChatTemp.ForceSpawn(characterOrigin, newAngles);
+            if (!characterEntities) return;
             
             for (const entity of characterEntities) {
                 if (entity.GetEntityName() === `chat_${character}_particle`) {
@@ -173,11 +166,11 @@ function GenerateCharacterEmoji(player, currentOrigin) {
 
 /**
  * 处理聊天实体（气泡和文本）
- * @param {Array} chatEntities - 聊天实体数组
- * @param {Object} player - 玩家实体
+ * @param {Array<Entity>} chatEntities - 聊天实体数组
+ * @param {Entity} player - 玩家实体
  * @param {string} text - 聊天文本
- * @param {Object} side - 方向向量
- * @param {Object} newOrigin - 生成位置
+ * @param {import("cs_script/point_script").Vector} side - 方向向量
+ * @param {import("cs_script/point_script").Vector} newOrigin - 生成位置
  */
 function ProcessChatEntities(chatEntities, player, text, side, newOrigin) {
     for (const chatEntity of chatEntities) {
@@ -202,7 +195,7 @@ function ProcessChatEntities(chatEntities, player, text, side, newOrigin) {
 
 /**
  * 检查玩家是否为VIP
- * @param {Object} player - 玩家实体
+ * @param {Entity} player - 玩家实体
  * @returns {boolean} 是否为VIP
  */
 function IsVip(player) {
@@ -213,7 +206,7 @@ function IsVip(player) {
 
 /**
  * 获取玩家所属角色
- * @param {Object} player - 玩家实体
+ * @param {Entity} player - 玩家实体
  * @returns {string|null} 角色名称
  */
 function GetPlayerCharacter(player) {
@@ -227,13 +220,13 @@ function GetPlayerCharacter(player) {
 
 /**
  * 添加VIP玩家到指定分组
- * @param {Object} inputData - 输入数据
+ * @param {Entity|undefined} player - 输入数据
  * @param {string} playerGroup - 玩家分组
  */
-function AddVipPlayer(inputData, playerGroup) {
-    if (inputData.activator && inputData.activator.IsValid()) {
-        if (!vipPlayers[playerGroup].includes(inputData.activator)) {
-            vipPlayers[playerGroup].push(inputData.activator);
+function AddVipPlayer(player, playerGroup) {
+    if (player && player.IsValid()) {
+        if (!vipPlayers[playerGroup].includes(player)) {
+            vipPlayers[playerGroup].push(player);
         }
     }
 }
@@ -259,7 +252,7 @@ function CalculateTextLength(text) {
 
 /**
  * 生成随机偏移位置
- * @returns {Object} 随机偏移向量
+ * @returns {import("cs_script/point_script").Vector} 随机偏移向量
  */
 function GetRandomOffset() {
     const range = 30;
@@ -274,9 +267,9 @@ function GetRandomOffset() {
 
 /**
  * 向量加法
- * @param {Object} vec1 - 向量1
- * @param {Object} vec2 - 向量2
- * @returns {Object} 相加后的向量
+ * @param {import("cs_script/point_script").Vector} vec1 - 向量1
+ * @param {import("cs_script/point_script").Vector} vec2 - 向量2
+ * @returns {import("cs_script/point_script").Vector} 相加后的向量
  */
 function vectorAdd(vec1, vec2) {
     return { 
@@ -288,9 +281,9 @@ function vectorAdd(vec1, vec2) {
 
 /**
  * 向量缩放
- * @param {Object} vec - 向量
+ * @param {import("cs_script/point_script").Vector} vec - 向量
  * @param {number} scale - 缩放比例
- * @returns {Object} 缩放后的向量
+ * @returns {import("cs_script/point_script").Vector} 缩放后的向量
  */
 function vectorScale(vec, scale) {
     return { 
@@ -302,8 +295,8 @@ function vectorScale(vec, scale) {
 
 /**
  * 将角度转换为前向向量
- * @param {Object} angles - 角度对象 {pitch, yaw, roll}
- * @returns {Object} 前向向量
+ * @param {import("cs_script/point_script").QAngle} angles - 角度对象 {pitch, yaw, roll}
+ * @returns {import("cs_script/point_script").Vector} 前向向量
  */
 function getForward(angles) {
     const pitchRadians = (angles.pitch * Math.PI) / 180;
