@@ -34,7 +34,7 @@ Instance.OnScriptInput("SetTemplate", (context) => {
     let maker = context.caller;
     let maker_name = maker.GetEntityName();
     let template = "";
-    Instance.EntFireAtName("cmd", "Command", "say hold for 10 seconds", 0);
+    Instance.EntFireAtName({ name: "cmd", input: "Command", value: "say hold for 10 seconds" });
     if (templates_tmp.length === 0) {
         templates_tmp = templates.slice();
     }
@@ -45,9 +45,9 @@ Instance.OnScriptInput("SetTemplate", (context) => {
             (template === "platform_template" || template === "seph_template")));
     last_template = template;
     templates_tmp = removeString(templates_tmp, template);
-    Instance.EntFireAtTarget(maker, "KeyValue", "EntityTemplate " + template, 0);
-    Instance.EntFireAtTarget(maker, "ForceSpawn", "", 5);
-    Instance.EntFireAtName("fall_hurt_train", "StartForward", "", 10);
+    Instance.EntFireAtTarget({ target: maker, input: "KeyValue", value: "EntityTemplate " + template });
+    Instance.EntFireAtTarget({ target: maker, input: "ForceSpawn", delay: 5 });
+    Instance.EntFireAtName({ name: "fall_hurt_train", input: "StartForward", delay: 10 });
 
     Instance.Msg("spawning " + template + " at maker " + maker_name);
 });
