@@ -22,7 +22,7 @@ class Boss {
 }
 // Quadralex Phase 1
 Instance.OnScriptInput("InitBossQuad1", () => {
-    let boss = new Boss("Quadralex", 1, 8888, 240, "quad_1_dead");
+    let boss = new Boss("Quadralex", 1, 8000, 200, "quad_1_dead");
     boss.he_damage = 45;
     initBoss(boss);
 });
@@ -34,7 +34,7 @@ Instance.OnScriptInput("Quad1DamageElectro", () => {
 });
 // Quadralex Phase 2
 Instance.OnScriptInput("InitBossQuad2", () => {
-    let boss = new Boss("Quadralex", 1, 5500, 185, "boss_quad_arena_die_relay");
+    let boss = new Boss("Quadralex", 1, 5000, 175, "boss_quad_arena_die_relay");
     boss.he_damage = 45;
     initBoss(boss);
 });
@@ -45,12 +45,12 @@ Instance.OnScriptInput("InitBossWorm1", () => {
 });
 // Worm 2
 Instance.OnScriptInput("InitBossWorm2", () => {
-    let boss = new Boss("Worm", 50, 12000, 40, "worm_2_dead");
+    let boss = new Boss("Worm", 50, 3500, 40, "worm_2_dead");
     initBoss(boss);
 });
 // Worm 3
 Instance.OnScriptInput("InitBossWorm3", () => {
-    let boss = new Boss("Worm", 1, 12000, 35, "worm_3_dead");
+    let boss = new Boss("Worm", 1, 1000, 35, "worm_3_dead");
     initBoss(boss);
 });
 let bossname = "";
