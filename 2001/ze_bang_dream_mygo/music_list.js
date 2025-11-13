@@ -5,14 +5,14 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/11/11
+ * 2025/11/12
  */
 
 let currentMusic = "";
 
 const pickNumber = 5;
 
-const musicList = ["SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku"];
+const musicList = ["SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 
 Instance.OnScriptInput("Start", (inputData) => {
     const entity = Instance.FindEntityByName("music_game_init_relay");
@@ -44,6 +44,10 @@ Instance.OnScriptInput("PickRandom", (inputData) => {
     }
 });
 
+Instance.OnScriptInput("SilhouetteDance", (inputData) => {
+    currentMusic = "SilhouetteDance";
+});
+
 Instance.OnScriptInput("SpringSunshine", (inputData) => {
     currentMusic = "SpringSunshine";
 });
@@ -70,6 +74,34 @@ Instance.OnScriptInput("Mayoiuta", (inputData) => {
 
 Instance.OnScriptInput("Hitoshizuku", (inputData) => {
     currentMusic = "Hitoshizuku";
+});
+
+Instance.OnScriptInput("BeepBeepImASheep", (inputData) => {
+    currentMusic = "BeepBeepImASheep";
+});
+
+Instance.OnScriptInput("TheOtherSide", (inputData) => {
+    currentMusic = "TheOtherSide";
+});
+
+Instance.OnScriptInput("MyDemons", (inputData) => {
+    currentMusic = "MyDemons";
+});
+
+Instance.OnScriptInput("Mujinku", (inputData) => {
+    currentMusic = "Mujinku";
+});
+
+Instance.OnScriptInput("Rrharil", (inputData) => {
+    currentMusic = "Rrharil";
+});
+
+Instance.OnScriptInput("Terrasphere", (inputData) => {
+    currentMusic = "Terrasphere";
+});
+
+Instance.OnScriptInput("DossolesHoliday", (inputData) => {
+    currentMusic = "DossolesHoliday";
 });
 
 /**
