@@ -5,7 +5,7 @@ import { Instance, Entity } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/10/29
+ * 2025/11/11
  */
 
 const MG_CONFIG = {
@@ -104,7 +104,7 @@ Instance.OnPlayerJump((event) => {
 Instance.OnPlayerDisconnect((event) => {
     if (!mgState.isActive)
         return;
-    const player = Instance.GetPlayerController(event.playerSlot).GetPlayerPawn();
+    const player = Instance.GetPlayerController(event.playerSlot)?.GetPlayerPawn();
     if (mgState.player.has(player))
         mgState.player.delete(player);
 });

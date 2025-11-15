@@ -1,4 +1,12 @@
-import { Instance } from "cs_script/point_script";
+import { Instance, Entity, BaseModelEntity } from "cs_script/point_script";
+
+/**
+ * 高松灯神器
+ * 此脚本由皮皮猫233编写
+ * 仅供MyGO地图使用
+ * 交流学习请联系作者
+ * 2025/11/11
+ */
 
 // 技能开始标志
 let skill1Flag = false;
@@ -8,99 +16,89 @@ let skill2Flag = false;
 let monitoredPlayers = new Map();
 
 // 目标实体存储
-let targetEntity = null;
-let hasValidTarget = false;
+/** @type {Entity|undefined} */
+let targetEntity = undefined;
 
 // 模型实体存储
-let modelEntity = null;
-let hasValidModel = false;
+/** @type {BaseModelEntity|undefined} */
+let modelEntity = undefined;
 let glowStartTime = 0;
 
 // 初始化Think
 Instance.SetThink(TomorrinSkill);
 
 // 当接收到skill1输入时开始技能一
-Instance.OnScriptInput("skill1", (context) => {
+Instance.OnScriptInput("skill1", (inputData) => {
     // 在技能开始时获取目标实体并检查有效性
     targetEntity = Instance.FindEntityByName("item_human_tomorrin_rota");
-    hasValidTarget = targetEntity && targetEntity.IsValid();
+    if (!targetEntity || !targetEntity.IsValid()) return;
     
     // 获取模型实体并开始发光效果
-    modelEntity = Instance.FindEntityByName("item_human_tomorrin_model");
-    hasValidModel = modelEntity && modelEntity.IsValid();
+    modelEntity = /** @type {BaseModelEntity|undefined} */ (Instance.FindEntityByName("item_human_tomorrin_model"));
+    if (!modelEntity || !modelEntity.IsValid()) return;
     
-    if (hasValidTarget && hasValidModel) {
-        skill1Flag = true;
-        glowStartTime = Instance.GetGameTime();
-        Instance.SetNextThink(Instance.GetGameTime());
-    }
+    skill1Flag = true;
+    glowStartTime = Instance.GetGameTime();
+    Instance.SetNextThink(Instance.GetGameTime());
 });
 
 // 当接收到skill2输入时开始技能一
-Instance.OnScriptInput("skill2", (context) => {
+Instance.OnScriptInput("skill2", (inputData) => {
     // 在技能开始时获取目标实体并检查有效性
     targetEntity = Instance.FindEntityByName("item_human_tomorrin_rota");
-    hasValidTarget = targetEntity && targetEntity.IsValid();
+    if (!targetEntity || !targetEntity.IsValid()) return;
     
     // 获取模型实体并开始发光效果
-    modelEntity = Instance.FindEntityByName("item_human_tomorrin_model");
-    hasValidModel = modelEntity && modelEntity.IsValid();
+    modelEntity = /** @type {BaseModelEntity|undefined} */ (Instance.FindEntityByName("item_human_tomorrin_model"));
+    if (!modelEntity || !modelEntity.IsValid()) return;
     
-    if (hasValidTarget && hasValidModel) {
-        skill2Flag = true;
-        glowStartTime = Instance.GetGameTime();
-        Instance.SetNextThink(Instance.GetGameTime());
-    }
+    skill2Flag = true;
+    glowStartTime = Instance.GetGameTime();
+    Instance.SetNextThink(Instance.GetGameTime());
 });
 
 // 当接收到stop时停止循环并清除玩家状态
-Instance.OnScriptInput("stop", (context) => {
+Instance.OnScriptInput("stop", (inputData) => {
     // 停止循环标志
     skill1Flag = false;
     skill2Flag = false;
-    hasValidTarget = false;
     
     // 停止发光效果
     if (modelEntity && modelEntity.IsValid()) {
         modelEntity.Unglow();
     }
-    hasValidModel = false;
 
     // 清除玩家状态
     monitoredPlayers.clear();
 });
 
 // 当接收到playerAdd时将给予玩家添加状态
-Instance.OnScriptInput("playerAdd", (context) => {
-    if (!context.activator) {
-        return;
-    }
+Instance.OnScriptInput("playerAdd", (inputData) => {
+    if (!inputData.activator || !inputData.activator.IsValid()) return;
 
     // 检查玩家是否已经在监测中
-    if (monitoredPlayers.has(context.activator)) {
+    if (monitoredPlayers.has(inputData.activator)) {
         return;
     }
     
     // 为玩家创建新的监测状态，包括冻结开始时间
-    monitoredPlayers.set(context.activator, {
+    monitoredPlayers.set(inputData.activator, {
         freezeStartTime: Instance.GetGameTime()
     });
 });
 
 // 当接收到playerRemove时将移除玩家添加状态
-Instance.OnScriptInput("playerRemove", (context) => {
-    if (!context.activator) {
-        return;
-    }
+Instance.OnScriptInput("playerRemove", (inputData) => {
+    if (!inputData.activator || !inputData.activator.IsValid()) return;
 
     // 检查玩家是否在监测中并将玩家状态移除
-    if (monitoredPlayers.has(context.activator)) {
-        monitoredPlayers.delete(context.activator);
+    if (monitoredPlayers.has(inputData.activator)) {
+        monitoredPlayers.delete(inputData.activator);
     }
 });
 
 function TomorrinSkill() {
-    if (skill1Flag && hasValidTarget) {
+    if (skill1Flag) {
         monitoredPlayers.forEach((state, player) => {
             if (player && player.IsValid()) {
                 Skill1Effect(player);
@@ -110,15 +108,12 @@ function TomorrinSkill() {
                 monitoredPlayers.delete(player);
             }
         });
-        
         // 更新发光效果
-        if (hasValidModel) {
-            TomorrinGlow();
-        }
+        TomorrinGlow();
         
         Instance.SetNextThink(Instance.GetGameTime());
     }
-    else if (skill2Flag && hasValidTarget) {
+    else if (skill2Flag) {
         monitoredPlayers.forEach((state, player) => {
             if (player && player.IsValid()) {
                 Skill2Effect(player);
@@ -128,20 +123,21 @@ function TomorrinSkill() {
                 monitoredPlayers.delete(player);
             }
         });
-        
         // 更新发光效果
-        if (hasValidModel) {
-            TomorrinGlow();
-        }
+        TomorrinGlow();
         
         Instance.SetNextThink(Instance.GetGameTime());
     }
     else return;
 }
 
-// 技能一效果
+/**
+ * 技能一效果
+ * @param {Entity} player 
+ */
 function Skill1Effect(player) {
     // 获取目标实体的角度
+    if (!targetEntity || !targetEntity.IsValid()) return;
     const targetAngles = targetEntity.GetAbsAngles();
     
     // 设置玩家的角度与目标实体一致，但强制垂直角度为水平面
@@ -154,10 +150,15 @@ function Skill1Effect(player) {
     });
 }
 
-// 技能二效果
+/**
+ * 技能二效果
+ * @param {Entity} player 
+ */
 function Skill2Effect(player) {
     // 获取玩家眼睛位置和目标实体位置
     const playerEyePos = player.GetEyePosition();
+
+    if (!targetEntity || !targetEntity.IsValid()) return;
     const targetPos = targetEntity.GetAbsOrigin();
     
     // 计算从玩家到目标实体的方向向量
@@ -183,7 +184,6 @@ function Skill2Effect(player) {
 // 给予Tomorrin一个颜色变化的Glow
 function TomorrinGlow() {
     if (!modelEntity || !modelEntity.IsValid()) {
-        hasValidModel = false;
         return;
     }
     
@@ -208,7 +208,13 @@ function TomorrinGlow() {
     });
 }
 
-// 冻结效果 - 在3秒内逐渐将玩家速度限制到0
+/**
+ * 冻结效果
+ * @param {Entity} player 
+ * @param {Object} state 
+ * @param {number} state.freezeStartTime
+ * @returns 
+ */
 function freezeEffect(player, state) {
     // 计算冻结进度（0到1之间）
     const currentTime = Instance.GetGameTime();
