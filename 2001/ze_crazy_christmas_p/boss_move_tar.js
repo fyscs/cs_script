@@ -9,11 +9,9 @@ const RETARGET_TIME = 5.00;
 
 const boss_model = "boss_santa_model";
 const boss_move_physbox = "boss_santa_move";
-const boss_script_ent = "boss_santa_script";
+const boss_script_ent = "santa_script";
 
 let p = null;
-// let boss_id = "";
-// let boss_script_ent = null;
 let bmphy = null;
 let bmdl = null;
 let ttime = 0.00;
