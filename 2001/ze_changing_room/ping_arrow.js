@@ -1,11 +1,13 @@
-import { CSPlayerPawn, Entity, Instance, PointTemplate } from "cs_script/point_script";
+import { Instance } from "cs_script/point_script";
 
 // by 凯岩城的狼
 
 const state = {
-    activeArrows: new Map(), // 存储活跃的箭头实体
-    arrowCounter: 0, // 箭头计数器，用于生成唯一ID
-    lastUseTime: 0 // 记录最后使用时间（全局冷却）
+    activeArrows: new Map(),
+    arrowCounter: 0,
+    lastUseTime: 0,
+    cachedTemplate: null,
+    lastCacheTime: 0
 };
 
 // 箭头配置
@@ -18,7 +20,7 @@ const TEAM_CT = 3; // CT队伍ID
 // 向量3D类
 class Vector3 {
     constructor(x, y, z) {
-        if (y == undefined && z == undefined) {
+        if (y === undefined && z === undefined) {
             this.x = x.x;
             this.y = x.y;
             this.z = x.z;
@@ -68,7 +70,7 @@ function VectorToAngles(forward) {
     let yaw;
     let pitch;
     
-    if (forward.y == 0 && forward.x == 0) {
+    if (forward.y === 0 && forward.x === 0) {
         yaw = 0;
         if (forward.z > 0)
             pitch = 270;
@@ -79,15 +81,15 @@ function VectorToAngles(forward) {
         if (yaw < 0)
             yaw += 360;
 
-        let tmp = Math.sqrt(forward.x * forward.x + forward.y * forward.y);
+        const tmp = Math.sqrt(forward.x * forward.x + forward.y * forward.y);
         pitch = (Math.atan2(-forward.z, tmp) * 180 / Math.PI);
         if (pitch < 0)
             pitch += 360;
     }
     
     return {
-        pitch: pitch,
-        yaw: yaw,
+        pitch,
+        yaw,
         roll: 0
     };
 }
@@ -122,7 +124,6 @@ function CalculateAimPosition(player) {
             };
         }
     } catch (error) {
-        Instance.Msg(`计算瞄准位置时出错: ${error.message}`);
         return null;
     }
 }
@@ -161,9 +162,14 @@ function CreateArrow(pingPosition, player) {
             z: pingPosition.z + 5 // 稍微抬高5单位
         };
 
-        // 使用工作的模板 @ar_temp
-        const template = Instance.FindEntityByName("@ar_temp");
-        if (!template) {
+        const currentTime = Instance.GetGameTime();
+        if (currentTime - state.lastCacheTime > 30 || !state.cachedTemplate || !state.cachedTemplate.IsValid()) {
+            state.cachedTemplate = Instance.FindEntityByName("@ar_temp");
+            state.lastCacheTime = currentTime;
+        }
+        
+        const template = state.cachedTemplate;
+        if (!template || !template.IsValid()) {
             return null;
         }
 
@@ -201,7 +207,7 @@ function CanUseArrow() {
         return true; // 第一次使用
     }
     
-    const currentTime = Date.now() / 1000;
+    const currentTime = Instance.GetGameTime();
     const elapsed = currentTime - state.lastUseTime;
     
     return elapsed >= ARROW_CONFIG.cooldownTime;
@@ -213,7 +219,7 @@ function GetRemainingCooldown() {
         return 0;
     }
     
-    const currentTime = Date.now() / 1000;
+    const currentTime = Instance.GetGameTime();
     const elapsed = currentTime - state.lastUseTime;
     const remaining = ARROW_CONFIG.cooldownTime - elapsed;
     
@@ -260,7 +266,7 @@ Instance.OnPlayerPing((event) => {
         try {
             CreateArrow(targetPosition, playerPawn);
             // 记录全局使用时间
-            state.lastUseTime = Date.now() / 1000;
+            state.lastUseTime = Instance.GetGameTime();
         } catch (error) {
             // 静默处理错误
         }

@@ -1,17 +1,15 @@
-import { CSPlayerPawn, Entity, Instance, PointTemplate } from "cs_script/point_script";
+import { Instance } from "cs_script/point_script";
 
-//by 凯岩城的狼
-// 状态管理
+// by 凯岩城的狼
 const state = {
-    spiders: new Map(),
+    spider: null,
     isActive: false,
     stuckMode: false,
     stuckPlayer: null,
-    // 缓存常用数据
     cache: {
         lastPlayerUpdate: 0,
         validPlayers: [],
-        updateInterval: 0.5 // 每0.5秒更新一次玩家列表
+        updateInterval: 0.5
     }
 };
 
@@ -20,7 +18,7 @@ function getValidPlayers() {
     const currentTime = Instance.GetGameTime();
     if (currentTime - state.cache.lastPlayerUpdate > state.cache.updateInterval) {
         state.cache.validPlayers = Instance.FindEntitiesByClass("player")
-            .filter(player => player?.IsValid() && player.IsAlive() && player.GetTeamNumber() === 3);
+            .filter(player => player && typeof player.IsValid === "function" && player.IsValid() && player.IsAlive() && player.GetTeamNumber() === 3);
         state.cache.lastPlayerUpdate = currentTime;
     }
     return state.cache.validPlayers;
@@ -87,10 +85,8 @@ class SpiderState {
         this.stuckPlayer = null;
         this.lastTargetPos = null; // 上次目标位置
         this.targetVelocity = null; // 目标移动速度
-        this.consecutiveMisses = 0; // 连续失误次数
-        this.lastJumpSuccess = true; // 上次跳跃是否成功
-        this.groundStabilization = true; // 地面稳定系统
-        this.lastGroundCheck = 0; // 上次地面检查时间
+        this.consecutiveMisses = 0;
+        this.lastJumpSuccess = true;
     }
 
     // 检查是否可以跳跃
@@ -183,22 +179,9 @@ class SpiderState {
         const stableAngles = { pitch: angles.pitch, yaw: angles.yaw, roll: 0 };
         this.entity.Teleport({ angles: stableAngles });
         
-        // 使用物理计算来优化跳跃力度
         const jumpResult = this.calculateOptimalJumpVelocity(direction, distance, heightDiff);
-        const jumpVelocity = jumpResult.velocity;
-        const accuracyFactor = jumpResult.accuracyFactor;
-        const flightTime = jumpResult.flightTime;
-        
-        // 应用速度
-        this.entity.Teleport({ velocity: jumpVelocity });
+        this.entity.Teleport({ velocity: jumpResult.velocity });
         this.lastJumpTime = Instance.GetGameTime();
-        
-        // 记录跳跃类型用于统计
-        this.lastJumpType = jumpResult.jumpType;
-        
-        // 不需要更新目标位置记录
-        
-        // 设置跳跃结果检测定时器
         this.scheduleJumpResultCheck(distance);
         
         return true;
@@ -315,11 +298,11 @@ class SpiderState {
     // 获取跳跃参数
     getJumpParams(horizontalDistance) {
         const params = [
-            { max: 20, flightTime: 0.30, accuracy: 0.70, maxH: 180, minV: 80,  maxV: 320, type: "precision" },
-            { max: 120, flightTime: 0.48, accuracy: 0.80, maxH: 260, minV: 95,  maxV: 380, type: "close_range" },
-            { max: 300, flightTime: 0.65, accuracy: 0.90, maxH: 340, minV: 120, maxV: 460, type: "medium_range" },
-            { max: 500, flightTime: 0.95, accuracy: 1.00, maxH: 420, minV: 170, maxV: 560, type: "long_range" },
-            { max: Infinity, flightTime: 1.15, accuracy: 1.05, maxH: 520, minV: 200, maxV: 650, type: "extreme_range" }
+            { max: 20, flightTime: 0.30, accuracy: 0.70, maxH: 180, minV: 80,  maxV: 320 },
+            { max: 120, flightTime: 0.48, accuracy: 0.80, maxH: 260, minV: 95,  maxV: 380 },
+            { max: 300, flightTime: 0.65, accuracy: 0.90, maxH: 340, minV: 120, maxV: 460 },
+            { max: 500, flightTime: 0.95, accuracy: 1.00, maxH: 420, minV: 170, maxV: 560 },
+            { max: Infinity, flightTime: 1.15, accuracy: 1.05, maxH: 520, minV: 200, maxV: 650 }
         ];
         
         const param = params.find(p => horizontalDistance < p.max);
@@ -328,8 +311,7 @@ class SpiderState {
             accuracyFactor: param.accuracy,
             maxHorizontalSpeed: param.maxH,
             minVerticalSpeed: param.minV,
-            maxVerticalSpeed: param.maxV,
-            jumpType: param.type
+            maxVerticalSpeed: param.maxV
         };
     }
 
@@ -443,73 +425,7 @@ class SpiderState {
             return true; // 击中其他实体算障碍物
         }
         
-        return false; // 没有击中任何实体
-    }
-
-    // 地面稳定系统
-    stabilizeOnGround() {
-        if (!this.groundStabilization) return;
-        
-        const currentTime = Instance.GetGameTime();
-        // 每0.1秒检查一次地面状态
-        if (currentTime - this.lastGroundCheck < 0.1) return;
-        this.lastGroundCheck = currentTime;
-        
-        const spiderPos = new Vector3(this.entity.GetAbsOrigin());
-        const velocity = this.entity.GetAbsVelocity();
-        const speed = new Vector3(velocity).Length();
-        
-        // 如果蜘蛛移动速度很慢
-        if (speed < 50) {
-            // 检查地面
-            const groundPos = this.findGroundPosition(spiderPos);
-            if (groundPos) {
-                // 如果当前位置与地面位置差异较大，进行修正
-                const heightDiff = Math.abs(spiderPos.z - groundPos.z);
-                if (heightDiff > 5) {
-                    // 修正位置到地面
-                    const correctedPos = new Vector3(spiderPos.x, spiderPos.y, groundPos.z);
-                    this.entity.Teleport({ 
-                        position: correctedPos,
-                        velocity: { x: 0, y: 0, z: 0 } // 停止移动
-                    });
-                }
-            }
-            
-            // 稳定旋转
-            this.stabilizeRotation();
-        }
-    }
-    
-    // 查找地面位置
-    findGroundPosition(spiderPos) {
-        // 向下发射射线检测地面
-        const traceResult = Instance.TraceLine({
-            start: spiderPos,
-            end: new Vector3(spiderPos.x, spiderPos.y, spiderPos.z - 200), // 向下200单位
-            ignorePlayers: true
-        });
-        
-        if (traceResult.didHit) {
-            return new Vector3(traceResult.end);
-        }
-        
-        return null;
-    }
-    
-    // 稳定旋转
-    stabilizeRotation() {
-        const currentAngles = this.entity.GetAbsAngles();
-        
-
-        const stabilizedAngles = {
-            pitch: currentAngles.pitch,
-            yaw: currentAngles.yaw,
-            roll: 0 
-        };
-        
-
-        this.entity.Teleport({ angles: stabilizedAngles });
+        return false;
     }
 
     // 粘附到玩家身上
@@ -568,107 +484,54 @@ class SpiderState {
     }
 }
 
-// 初始化函数 
-function Init() {
-    Instance.SetNextThink(0.1);
-}
-
-// 主循环函数
 function Tick() {
     try {
-        // 只有在激活状态下才执行追踪逻辑
         if (!state.isActive) {
             Instance.SetNextThink(0.1);
             return;
         }
 
-        // 更新所有蜘蛛
-        updateAllSpiders();
-
-        // 动态调整更新频率以提高性能
-        const spiderCount = state.spiders.size;
-        let updateInterval = 0.1; // 默认更新间隔
-        
-        if (spiderCount > 5) {
-            updateInterval = 0.15; // 蜘蛛多时降低更新频率
-        } else if (spiderCount === 0) {
-            updateInterval = 0.5; // 没有蜘蛛时大幅降低更新频率
+        // 获取单个spider实体
+        if (!state.spider || !state.spider.entity.IsValid()) {
+            const spiders = Instance.FindEntitiesByName("@spider_1");
+            if (spiders.length > 0 && spiders[0].IsValid()) {
+                state.spider = new SpiderState(spiders[0]);
+            } else {
+                Instance.SetNextThink(0.1);
+                return;
+            }
         }
 
-        Instance.SetNextThink(updateInterval);
+        // 更新单个spider
+        updateSpider(state.spider);
+        
+        // 检查是否有待处理的跳跃结果
+        if (state.spider.pendingJumpCheck) {
+            const currentTime = Instance.GetGameTime();
+            if (currentTime >= state.spider.pendingJumpCheck.checkTime) {
+                state.spider.checkJumpResult(state.spider.pendingJumpCheck.initialDistance);
+                state.spider.pendingJumpCheck = null;
+            }
+        }
+
+        Instance.SetNextThink(0.1);
     } catch (error) {
         Instance.SetNextThink(0.1);
     }
 }
 
-// 更新所有蜘蛛 
-function updateAllSpiders() {
-    // 获取@spider_1实体
-    const spiders = Instance.FindEntitiesByName("@spider_1");
-    
-    // 清理无效的蜘蛛状态
-    for (const [entityName, spiderState] of state.spiders) {
-        if (!spiderState.entity.IsValid()) {
-            state.spiders.delete(entityName);
-        }
-    }
-
-    // 为每个蜘蛛创建或更新状态
-    for (const spider of spiders) {
-        if (!spider.IsValid()) continue;
-
-        const entityName = spider.GetEntityName();
-        if (!entityName) continue;
-
-        let spiderState = state.spiders.get(entityName);
-        if (!spiderState) {
-            spiderState = new SpiderState(spider);
-            state.spiders.set(entityName, spiderState);
-        }
-
-        // 更新蜘蛛状态
-        updateSpider(spiderState);
-        
-        // 应用地面稳定系统
-        spiderState.stabilizeOnGround();
-        
-        // 检查是否有待处理的跳跃结果
-        if (spiderState.pendingJumpCheck) {
-            const currentTime = Instance.GetGameTime();
-            if (currentTime >= spiderState.pendingJumpCheck.checkTime) {
-                spiderState.checkJumpResult(spiderState.pendingJumpCheck.initialDistance);
-                spiderState.pendingJumpCheck = null; // 清除待检查项
-            }
-        }
-    }
-}
-
-// 更新单个蜘蛛
 function updateSpider(spiderState) {
     if (!spiderState.entity.IsValid()) return;
-
-    // 如果是粘附模式
     if (state.stuckMode && state.stuckPlayer) {
         spiderState.stickToPlayer(state.stuckPlayer);
     }
-
-    // 如果蜘蛛被粘附，只更新位置，不执行跳跃
     if (spiderState.isStuck) {
         spiderState.updateStuckPosition();
-        return; // 直接返回，不执行后续的跳跃逻辑
+        return;
     }
-
-    // 只有在非stuck状态下才执行追踪和跳跃
-    if (!spiderState.isStuck) {
-        // 正常追踪模式 
-        const spiderPos = new Vector3(spiderState.entity.GetAbsOrigin());
-        
-        // 直接尝试跳跃（每次随机选择目标）
-        spiderState.jump();
-    }
+    spiderState.jump();
 }
 
-// 智能目标选择算法 
 function findBestTarget(spiderPos) {
     const validTargets = getValidPlayers()
         .map(player => ({
@@ -681,7 +544,6 @@ function findBestTarget(spiderPos) {
     return validTargets.length > 0 ? selectTarget(validTargets) : null;
 }
 
-// 计算优先级 
 function calculatePriority(spiderPos, player) {
     const distance = spiderPos.Distance(new Vector3(player.GetAbsOrigin()));
     const heightDiff = player.GetAbsOrigin().z - spiderPos.z;
@@ -695,60 +557,42 @@ function calculatePriority(spiderPos, player) {
     return distanceScore + heightScore + speedScore + randomScore;
 }
 
-// 选择目标 
 function selectTarget(targets) {
     const topTargets = targets.slice(0, Math.min(3, targets.length));
     return Math.random() < 0.7 ? topTargets[0].player : topTargets[Math.floor(Math.random() * topTargets.length)].player;
 }
 
-// 启动追踪功能
 function StartTracking() {
     state.isActive = true;
     state.stuckMode = false;
     state.stuckPlayer = null;
-    
-    for (const spiderState of state.spiders.values()) {
-        spiderState.target = null;
+    if (state.spider) {
+        state.spider.target = null;
     }
 }
 
-// 停止追踪功能
 function StopTracking() {
     state.isActive = false;
     state.stuckMode = false;
     state.stuckPlayer = null;
-    
-    for (const spiderState of state.spiders.values()) {
-        spiderState.unstick();
-        spiderState.target = null;
-        spiderState.entity.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
+    if (state.spider && state.spider.entity.IsValid()) {
+        state.spider.unstick();
+        state.spider.target = null;
+        state.spider.entity.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     }
 }
 
-// 粘附模式 
 function StuckMode(activator) {
-    if (!activator || !activator.IsValid()) {
-        return;
-    }
-
+    if (!activator || !activator.IsValid()) return;
     const playerController = activator.GetPlayerController();
-    if (!playerController) {
-        return;
-    }
-
+    if (!playerController) return;
     state.stuckMode = true;
     state.stuckPlayer = activator;
-    
-    let spiderCount = 0;
-    for (const spiderState of state.spiders.values()) {
-        if (spiderState.entity.IsValid()) {
-            spiderState.stickToPlayer(activator);
-            spiderCount++;
-        }
+    if (state.spider && state.spider.entity.IsValid()) {
+        state.spider.stickToPlayer(activator);
     }
 }
 
-// 工具函数
 function VectorToAngles(forward) {
     let yaw, pitch;
     
@@ -767,133 +611,13 @@ function VectorToAngles(forward) {
     return { pitch, yaw, roll: 0 };
 }
 
-// 事件监听
-Instance.OnActivate(() => {
-    Init();
-});
-
-Instance.OnScriptReload({
-    after: () => {
-        Init();
-    }
-});
-
-// 脚本输入处理
-Instance.OnScriptInput("start", (inputData) => {
-    StartTracking();
-});
-
-Instance.OnScriptInput("stop", (inputData) => {
-    StopTracking();
-});
-
+Instance.OnActivate(() => {});
+Instance.OnScriptReload({ after: () => {} });
+Instance.OnScriptInput("start", () => StartTracking());
+Instance.OnScriptInput("stop", () => StopTracking());
 Instance.OnScriptInput("stuck", (inputData) => {
-    const activator = inputData.activator;
-    StuckMode(activator);
+    StuckMode(inputData && inputData.activator ? inputData.activator : null);
 });
-
-// 手动测试输入
-Instance.OnScriptInput("test_spider", (inputData) => {
-    const spiders = Instance.FindEntitiesByName("@spider");
-    for (const spider of spiders) {
-        if (spider.IsValid()) {
-            const pos = spider.GetAbsOrigin();
-        }
-    }
-});
-
-// 检查蜘蛛状态
-Instance.OnScriptInput("check_spiders", (inputData) => {
-    for (const [name, spiderState] of state.spiders) {
-        if (spiderState.entity.IsValid()) {
-            const pos = spiderState.entity.GetAbsOrigin();
-            const targetName = spiderState.target ? spiderState.target.GetPlayerController()?.GetPlayerName() : "无";
-        } else {
-        }
-    }
-});
-
-// 通用统计函数
-function getSpiderStats() {
-    let stats = {
-        totalSpiders: 0,
-        totalMisses: 0,
-        activeTargets: 0,
-        jumpTypes: {},
-        stabilizationEnabled: true
-    };
-    
-    for (const [name, spiderState] of state.spiders) {
-        if (spiderState.entity.IsValid()) {
-            stats.totalSpiders++;
-            stats.totalMisses += spiderState.consecutiveMisses;
-            if (spiderState.target?.IsValid()) stats.activeTargets++;
-            if (spiderState.lastJumpType) {
-                stats.jumpTypes[spiderState.lastJumpType] = (stats.jumpTypes[spiderState.lastJumpType] || 0) + 1;
-            }
-            stats.stabilizationEnabled = spiderState.groundStabilization;
-        }
-    }
-    
-    return stats;
-}
-
-// 显示统计信息
-function displayStats(title, stats) {
-    Instance.Msg(`=== ${title} ===`);
-    Instance.Msg(`总蜘蛛数: ${stats.totalSpiders}`);
-    Instance.Msg(`活跃目标数: ${stats.activeTargets}`);
-    Instance.Msg(`总失误次数: ${stats.totalMisses}`);
-    
-    if (stats.jumpTypes && Object.keys(stats.jumpTypes).length > 0) {
-        Instance.Msg(`跳跃类型分布:`);
-        Object.entries(stats.jumpTypes).forEach(([type, count]) => {
-            Instance.Msg(`  ${type}: ${count}`);
-        });
-    }
-}
-
-// 简化的输入处理
-Instance.OnScriptInput("jump_stats", () => displayStats("蜘蛛跳跃统计", getSpiderStats()));
-
-Instance.OnScriptInput("distance_stats", (inputData) => {
-    const stats = getSpiderStats();
-    Instance.Msg(`=== 距离优化统计 ===`);
-    
-    for (const [name, spiderState] of state.spiders) {
-        if (spiderState.entity.IsValid()) {
-            const spiderPos = new Vector3(spiderState.entity.GetAbsOrigin());
-            const currentTarget = findBestTarget(spiderPos);
-            
-            if (currentTarget) {
-                const distance = spiderPos.Distance(new Vector3(currentTarget.GetAbsOrigin()));
-                const cooldown = spiderState.calculateDistanceBasedCooldown(distance);
-                
-                Instance.Msg(`蜘蛛 ${name}: 距离=${distance.toFixed(1)}, 冷却=${cooldown.toFixed(2)}s, 失误=${spiderState.consecutiveMisses}`);
-            }
-        }
-    }
-});
-
-Instance.OnScriptInput("toggle_stabilization", () => {
-    for (const spiderState of state.spiders.values()) {
-        spiderState.groundStabilization = !spiderState.groundStabilization;
-    }
-    Instance.Msg(`地面稳定系统: ${state.spiders.values().next().value?.groundStabilization ? '开启' : '关闭'}`);
-});
-
-Instance.OnScriptInput("stabilize_all", () => {
-    let count = 0;
-    for (const spiderState of state.spiders.values()) {
-        if (spiderState.entity.IsValid()) {
-            spiderState.stabilizeOnGround();
-            count++;
-        }
-    }
-    Instance.Msg(`已稳定 ${count} 只蜘蛛`);
-});
-
-// 设置思考函数
 Instance.SetThink(Tick);
 Instance.SetNextThink(0.1);
 
