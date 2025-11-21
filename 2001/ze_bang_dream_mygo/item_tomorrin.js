@@ -5,7 +5,7 @@ import { Instance, Entity, BaseModelEntity } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/11/11
+ * 2025/11/14
  */
 
 // 技能开始标志
@@ -95,6 +95,21 @@ Instance.OnScriptInput("playerRemove", (inputData) => {
     if (monitoredPlayers.has(inputData.activator)) {
         monitoredPlayers.delete(inputData.activator);
     }
+});
+
+// 回合重启时清空状态
+Instance.OnRoundStart(() => {
+    // 停止循环标志
+    skill1Flag = false;
+    skill2Flag = false;
+    
+    // 停止发光效果
+    if (modelEntity && modelEntity.IsValid()) {
+        modelEntity.Unglow();
+    }
+
+    // 清除玩家状态
+    monitoredPlayers.clear();
 });
 
 function TomorrinSkill() {
