@@ -5,14 +5,14 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/11/23
+ * 2025/11/26
  */
 
 let currentMusic = "";
 
 const pickNumber = 5;
 
-const musicList = ["InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 
 Instance.OnScriptInput("Start", (inputData) => {
     const entity = Instance.FindEntityByName("music_game_init_relay");
@@ -42,6 +42,10 @@ Instance.OnScriptInput("PickRandom", (inputData) => {
             }
         }
     }
+});
+
+Instance.OnScriptInput("SeeYouAgain", (inputData) => {
+    currentMusic = "SeeYouAgain";
 });
 
 Instance.OnScriptInput("HatedByLife", (inputData) => {
