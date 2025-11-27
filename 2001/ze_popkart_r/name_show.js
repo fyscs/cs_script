@@ -1,8 +1,15 @@
-import { Instance } from "cs_script/point_script";
+import { Instance, CSPlayerPawn } from "cs_script/point_script";
+
+/**
+ * 冠军名称显示脚本
+ * 此脚本由皮皮猫233编写
+ * 2025/11/23
+ */
 
 Instance.OnScriptInput("nameShow", (context) => {
-    const player = context.activator;
-    if (!player || !player.IsValid())
-        return;
-    Instance.EntFireAtName({ name: "kart_1st_text", input: "SetMessage", value: player.GetPlayerController().GetPlayerName() });
+    const player = /** @type {CSPlayerPawn|undefined} */ (context.activator);
+    if (!player || !player.IsValid()) return;
+    const playerController = player.GetPlayerController();
+    if (!playerController || !playerController.IsValid()) return;
+    Instance.EntFireAtName({ name: "kart_1st_text", input: "SetMessage", value: playerController.GetPlayerName() });
 });
