@@ -30,8 +30,8 @@ Instance.OnScriptInput("Trigger", (inputData) => {
     const currentPosition = player.GetAbsOrigin();
     const currentVelocity = player.GetAbsVelocity();
     // 预测玩家位置
-    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z + 100 });
-    pathPositon = { x: playerPosition.x, y: playerPosition.y, z:playerPosition.z + 60 };
+    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z + 10 });
+    pathPositon = { x: playerPosition.x, y: playerPosition.y, z:playerPosition.z + 100 };
 
     startTime = Instance.GetGameTime();
     Instance.SetNextThink(startTime);
@@ -46,10 +46,10 @@ Instance.SetThink(() => {
         // 0~0.3秒上升
         const elapsed = currentTime - startTime;
         const position = vectorLerp(squashPosition, pathPositon, elapsed, 0.3);
-        squash.Teleport({ position: position });
+        squash.Teleport({ position: position, angles: GetCorrectAngles(squash) });
     } else if (currentTime < startTime + 0.5){
         // 0.3~0.5秒滞空
-        squash.Teleport({ position: pathPositon });
+        squash.Teleport({ position: pathPositon, angles: GetCorrectAngles(squash) });
     } else if (currentTime < startTime + 0.6) {
         // 0.5~0.6秒砸下
         const elapsed = currentTime - startTime - 0.5;
@@ -71,6 +71,16 @@ function GetSuffix(entityName) {
         return suffix[suffix.length - 1];
     }
     return null;
+}
+
+/**
+ * 角度回正
+ * @param {Entity} entity 
+ * @returns {import("cs_script/point_script").QAngle}
+ */
+function GetCorrectAngles(entity) {
+    const angles = entity.GetAbsAngles();
+    return { pitch: 0, yaw: angles.yaw, roll: 0 };
 }
 
 /**
