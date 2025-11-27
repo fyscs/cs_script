@@ -1,0 +1,127 @@
+import { Instance, Entity } from "cs_script/point_script";
+
+/**
+ * 窝瓜神器脚本
+ * 此脚本由皮皮猫233编写
+ * 2025/11/28
+ */
+
+let squash = /** @type {undefined|Entity} */ (undefined);
+
+let playerPosition = { x: 0.0, y: 0.0, z: 0.0 };
+let squashPosition = { x: 0.0, y: 0.0, z: 0.0 };
+let pathPositon = { x: 0.0, y: 0.0, z: 0.0 };
+
+let startTime = 0;
+
+Instance.OnScriptInput("Trigger", (inputData) => {
+    const player = inputData.activator;
+    if (!player || !player.IsValid()) return;
+    
+    if (!inputData.caller || !inputData.caller.IsValid()) return;
+    const squashPhyName = inputData.caller.GetEntityName();
+    const suffix = GetSuffix(squashPhyName);
+    if (!suffix) return;
+
+    squash = Instance.FindEntityByName("item_squash_phy_" + suffix);
+    if (!squash || !squash.IsValid()) return;
+
+    squashPosition = squash.GetAbsOrigin();    
+    const currentPosition = player.GetAbsOrigin();
+    const currentVelocity = player.GetAbsVelocity();
+    // 预测玩家位置
+    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z + 10 });
+    pathPositon = { x: playerPosition.x, y: playerPosition.y, z:playerPosition.z + 100 };
+
+    startTime = Instance.GetGameTime();
+    Instance.SetNextThink(startTime);
+});
+
+Instance.SetThink(() => {
+    // 检查窝瓜是否存在，防止提前被僵尸啃掉
+    if (!squash || !squash.IsValid()) return;
+
+    const currentTime = Instance.GetGameTime();
+    if (currentTime < startTime + 0.3) {
+        // 0~0.3秒上升
+        const elapsed = currentTime - startTime;
+        const position = vectorLerp(squashPosition, pathPositon, elapsed, 0.3);
+        squash.Teleport({ position: position, angles: GetCorrectAngles(squash) });
+    } else if (currentTime < startTime + 0.5){
+        // 0.3~0.5秒滞空
+        squash.Teleport({ position: pathPositon, angles: GetCorrectAngles(squash) });
+    } else if (currentTime < startTime + 0.6) {
+        // 0.5~0.6秒砸下
+        const elapsed = currentTime - startTime - 0.5;
+        const position = vectorLerp(pathPositon, playerPosition, elapsed, 0.1);
+        squash.Teleport({ position: position });
+    } else return;
+
+    Instance.SetNextThink(Instance.GetGameTime() + 1 / 64);
+});
+
+/**
+ * 获取name fixup自动生成的后缀
+ * @param {string} entityName 
+ * @returns {string|null}
+ */
+function GetSuffix(entityName) {
+    const suffix = entityName.split('_');
+    if (suffix.length > 0) {
+        return suffix[suffix.length - 1];
+    }
+    return null;
+}
+
+/**
+ * 角度回正
+ * @param {Entity} entity 
+ * @returns {import("cs_script/point_script").QAngle}
+ */
+function GetCorrectAngles(entity) {
+    const angles = entity.GetAbsAngles();
+    return { pitch: 0, yaw: angles.yaw, roll: 0 };
+}
+
+/**
+ * 线性插值
+ * @param {import("cs_script/point_script").Vector} start 
+ * @param {import("cs_script/point_script").Vector} end 
+ * @param {number} elapsed 
+ * @param {number} duration 
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorLerp(start, end, elapsed, duration) {
+    const position = vectorAdd(start, vectorScale((vectorSubtract(end, start)), (elapsed / duration)));
+    return position;
+}
+
+/**
+ * 向量加法
+ * @param {import("cs_script/point_script").Vector} vec1
+ * @param {import("cs_script/point_script").Vector} vec2
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorAdd(vec1, vec2) {
+    return { x: vec1.x + vec2.x, y: vec1.y + vec2.y, z: vec1.z + vec2.z };
+}
+
+/**
+ * 向量减法
+ * @param {import("cs_script/point_script").Vector} vec1
+ * @param {import("cs_script/point_script").Vector} vec2
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorSubtract(vec1, vec2) {
+    return { x: vec1.x - vec2.x, y: vec1.y - vec2.y, z: vec1.z - vec2.z };
+}
+
+/**
+ * 向量缩放
+ * @param {import("cs_script/point_script").Vector} vec
+ * @param {number} scale
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorScale(vec, scale) {
+    return { x: vec.x * scale, y: vec.y * scale, z: vec.z * scale };
+}
