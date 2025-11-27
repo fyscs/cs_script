@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSGearSlot } from "cs_script/point_script";
 /**
  * 玩家武器剥离脚本
  * 此脚本由皮皮猫233编写
- * 2025/11/23
+ * 2025/11/28
  */
 
 let active = false;
@@ -24,11 +24,14 @@ Instance.OnScriptInput("GiveWeapon", () => {
         // 主武器检查
         const rifle = player.FindWeaponBySlot(CSGearSlot.RIFLE);
         if (!rifle) {
-            player.GiveNamedItem("weapon_ak47");
+            player.GiveNamedItem("weapon_ak47", true);
+            player.GiveNamedItem("weapon_knife");
+            player.GiveNamedItem("weapon_glock");
         }
     }
 })
 
+// 回合重启时重置循环
 Instance.OnRoundStart(() => {
     active = false;
 });
@@ -51,10 +54,16 @@ Instance.SetThink(() => {
             player.DestroyWeapon(pistol);
         }
 
-        // 切换至匕首
+        // 匕首检查
         const knife = player.FindWeaponBySlot(CSGearSlot.KNIFE);
         if (knife && knife.IsValid()) {
-            player.SwitchToWeapon(knife);
+            player.DestroyWeapon(knife);
+        }
+
+        // 投掷物检查
+        const grenades = player.FindWeaponBySlot(CSGearSlot.GRENADES);
+        if (grenades && grenades.IsValid()) {
+            player.DestroyWeapon(grenades);
         }
     }
     Instance.SetNextThink(Instance.GetGameTime() + 1);
