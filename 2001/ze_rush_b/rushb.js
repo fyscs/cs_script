@@ -547,3 +547,27 @@ Instance.OnScriptInput("zm_hp_fidget", ({ activator }) => {
 });
 
 /////////////////////////////////////////////////////////////////////////
+
+function PlaySoundOnClients(sound)
+{
+    let players = Instance.FindEntitiesByClass("player");
+    for(let i = 0; i < players.length; i++)
+    {
+        let player = players[i];
+        let player_c = player?.GetPlayerController();
+        let player_s = player_c?.GetPlayerSlot();
+        Instance.ClientCommand(player_s, "play "+sound);
+    }
+}
+
+Instance.OnScriptInput("JihadSound_Play", () => {
+    let sound = "sounds/rush_b/jihad.vsnd";
+    PlaySoundOnClients(sound);
+});
+
+Instance.OnScriptInput("FidgetSound_Play", () => {
+    let sound = "sounds/rush_b/die_fidget.vsnd";
+    PlaySoundOnClients(sound);
+});
+
+/////////////////////////////////////////////////////////////////////////
