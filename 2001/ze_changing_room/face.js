@@ -1,17 +1,17 @@
-import { CSPlayerPawn, Entity, Instance, PointTemplate } from "cs_script/point_script";
+import { Instance } from "cs_script/point_script";
 
-// 状态管理
 const state = {
     target: null,
     speed: 0.0,
-    speedAcceleration: 0.08,  // 加速度
-    speedMax: 12.0,            // 最大速度
+    speedAcceleration: 0.08,
+    speedMax: 12.0,
     retarget: 14,
     lastThinkTime: 0,
-    isActive: false  // 添加激活状态
+    isActive: false,
+    cachedSelf: null,
+    lastCacheTime: 0
 };
 
-// Vector3 工具类
 class Vector3 {
     constructor(x, y, z) {
         if (y === undefined && z === undefined) {
@@ -52,35 +52,33 @@ class Vector3 {
     }
 }
 
-// 初始化函数
-function Init() {
-    
-}
-
-// 主循环函数
 function Tick() {
     try {
-        // 只有在激活状态下才执行追踪逻辑
         if (!state.isActive) {
-            Instance.SetNextThink(0.1); // 降低频率等待激活
+            Instance.SetNextThink(0.1);
             return;
         }
 
         const currentTime = Instance.GetGameTime();
-        const deltaTime = currentTime - state.lastThinkTime;
         state.lastThinkTime = currentTime;
+        
+        if (currentTime - state.lastCacheTime > 5 || !state.cachedSelf || !state.cachedSelf.IsValid()) {
+            state.cachedSelf = Instance.FindEntityByName("eyes_boom");
+            state.lastCacheTime = currentTime;
+        }
+        
+        const self = state.cachedSelf;
+        if (!self || !self.IsValid()) {
+            Instance.SetNextThink(0.1);
+            return;
+        }
 
         if (state.target && state.target.IsValid() && state.target.IsAlive()) {
             state.retarget -= 0.02;
-            
-            const self = Instance.FindEntityByName("eyes_boom"); // 需要根据实际情况调整
-            if (!self || !self.IsValid()) return;
 
             const selfPos = self.GetAbsOrigin();
             const targetPos = state.target.GetAbsOrigin();
             targetPos.z += 48;
-
-            // 始终根据目标位置旋转并推进
             if (state.retarget <= 0.0) {
                 SearchTarget();
             }
@@ -103,18 +101,14 @@ function Tick() {
             SearchTarget();
         }
 
-        Instance.SetNextThink(0.01);
+        Instance.SetNextThink(0.05);
     } catch (error) {
-        // 静默处理错误
         Instance.SetNextThink(0.1);
     }
 }
 
-
-// 搜索目标函数
 function SearchTarget() {
     try {
-        // 检查当前目标是否有效
         if (state.target && state.target.IsValid() && state.target.IsAlive()) {
             return;
         }
@@ -122,7 +116,13 @@ function SearchTarget() {
         state.target = null;
         state.speed = 0.0;
 
-        const self = Instance.FindEntityByName("eyes_boom"); // 需要根据实际情况调整
+        const currentTime = Instance.GetGameTime();
+        if (currentTime - state.lastCacheTime > 5 || !state.cachedSelf || !state.cachedSelf.IsValid()) {
+            state.cachedSelf = Instance.FindEntityByName("eyes_boom");
+            state.lastCacheTime = currentTime;
+        }
+        
+        const self = state.cachedSelf;
         if (!self || !self.IsValid()) return;
 
         const selfPos = self.GetAbsOrigin();
@@ -132,12 +132,10 @@ function SearchTarget() {
 
         for (const player of players) {
             if (!player || !player.IsValid() || !player.IsAlive()) continue;
-            if (player.GetTeamNumber() !== 3) continue; // 团队3
+            if (player.GetTeamNumber() !== 3) continue;
 
             const playerPos = player.GetAbsOrigin();
             playerPos.z += 48;
-
-            // 计算距离，选择最近CT
             const dx = playerPos.x - selfPos.x;
             const dy = playerPos.y - selfPos.y;
             const dz = playerPos.z - selfPos.z;
@@ -153,17 +151,8 @@ function SearchTarget() {
             state.target = nearestPlayer;
         }
     } catch (error) {
-        // 静默处理错误
     }
 }
-
-
-// 工具函数
-function GetRandomValue(max) {
-    return Math.floor(Math.random() * (max + 1));
-}
-
-// 用距离最近策略
 
 function VectorToAngles(forward) {
     let yaw, pitch;
@@ -183,51 +172,32 @@ function VectorToAngles(forward) {
     return { pitch, yaw, roll: 0 };
 }
 
-// 启动追踪功能
 function StartTracking() {
     state.isActive = true;
-    state.speed = 0.0; // 重置速度
-    state.retarget = 14; // 重置重新选择目标时间
-    SearchTarget(); // 立即搜索目标
-    Instance.Msg("目标追踪已启动");
+    state.speed = 0.0;
+    state.retarget = 14;
+    SearchTarget();
 }
 
-// 停止追踪功能
 function StopTracking() {
     state.isActive = false;
     state.target = null;
     state.speed = 0.0;
-    Instance.Msg("目标追踪已停止");
 }
 
-// 事件监听
-Instance.OnActivate(() => {
-    Init();
-});
-
-Instance.OnScriptReload({
-    after: () => {
-        Init();
-    }
-});
-
-// 脚本输入处理
-Instance.OnScriptInput("start", (inputData) => {
+Instance.OnActivate(() => {});
+Instance.OnScriptReload({ after: () => {} });
+Instance.OnScriptInput("start", () => {
     try {
         StartTracking();
     } catch (error) {
-        // 静默处理错误
     }
 });
-
-Instance.OnScriptInput("stop", (inputData) => {
+Instance.OnScriptInput("stop", () => {
     try {
         StopTracking();
     } catch (error) {
-        // 静默处理错误
     }
 });
-
-// 设置思考函数
 Instance.SetThink(Tick);
-Instance.SetNextThink(0.1); // 初始频率较低，等待激活
+Instance.SetNextThink(0.1);
