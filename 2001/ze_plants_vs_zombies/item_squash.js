@@ -3,7 +3,7 @@ import { Instance, Entity } from "cs_script/point_script";
 /**
  * 窝瓜神器脚本
  * 此脚本由皮皮猫233编写
- * 2025/11/28
+ * 2025/12/8
  */
 
 let squash = /** @type {undefined|Entity} */ (undefined);
@@ -30,8 +30,12 @@ Instance.OnScriptInput("Trigger", (inputData) => {
     const currentPosition = player.GetAbsOrigin();
     const currentVelocity = player.GetAbsVelocity();
     // 预测玩家位置
-    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z + 10 });
-    pathPositon = { x: playerPosition.x, y: playerPosition.y, z:playerPosition.z + 100 };
+    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z - 15 });
+    pathPositon = { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z + 150 };
+
+    // 动态计算窝瓜伤害（最低2w）
+    const damage = Math.max(GetAverageHealth(), 20000) * 2;
+    Instance.EntFireAtName({ name: "item_squash_hurt_" + suffix, input: "SetDamage", value: damage });
 
     startTime = Instance.GetGameTime();
     Instance.SetNextThink(startTime);
@@ -59,6 +63,28 @@ Instance.SetThink(() => {
 
     Instance.SetNextThink(Instance.GetGameTime() + 1 / 64);
 });
+
+/**
+ * 计算低于5w血僵尸的平均血量
+ * @returns {number}
+ */
+function GetAverageHealth() {
+    let playerHealth = 0;
+    let satisfyPlayer = 0;
+    const players = Instance.FindEntitiesByClass("player");
+    for (const player of players) {
+        if (!player || !player.IsValid()) return 0;
+        const health = player.GetHealth();
+
+        // 过滤超过5w血的僵尸
+        if (health <= 50000) {
+            playerHealth =+ health;
+            satisfyPlayer ++;
+        }
+    }
+    const averageHealth = satisfyPlayer > 0 ? playerHealth / satisfyPlayer : 0;
+    return averageHealth;
+}
 
 /**
  * 获取name fixup自动生成的后缀
