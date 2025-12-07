@@ -1,5 +1,6 @@
-import { CSPlayerPawn, Entity, Instance, PointTemplate } from "cs_script/point_script";
-//by 凯岩城的狼
+import { Instance } from "cs_script/point_script";
+
+// by 凯岩城的狼
 const TEAM_CT = 3;
 
 const boomTemplates = {
@@ -9,7 +10,9 @@ const boomTemplates = {
 
 const state = {
     lastTriggerTime: 0,
-    cooldown: 5.0
+    cooldown: 5.0,
+    cachedTemplates: {},
+    lastCacheTime: 0
 };
 
 function GetAllPlayers() {
@@ -20,8 +23,7 @@ function GetAllPlayers() {
 function GetCTPlayers() {
     return GetAllPlayers().filter(player => {
         try {
-            const teamNumber = player.GetTeamNumber();
-            return teamNumber === TEAM_CT;
+            return player.GetTeamNumber() === TEAM_CT;
         } catch (error) {
             return false;
         }
@@ -44,21 +46,16 @@ function GetRandomBoomTemplate() {
 
 function SpawnBoomAtPosition(position) {
     try {
-        const selectedTemplate = GetRandomBoomTemplate();
-        const boomTemplate = Instance.FindEntityByName(selectedTemplate);
-        
-        if (!boomTemplate) {
-            return false;
+        const templateName = GetRandomBoomTemplate();
+        const currentTime = Instance.GetGameTime();
+        if (currentTime - state.lastCacheTime > 30 || !state.cachedTemplates[templateName] || !state.cachedTemplates[templateName].IsValid()) {
+            state.cachedTemplates[templateName] = Instance.FindEntityByName(templateName);
+            state.lastCacheTime = currentTime;
         }
-
+        const boomTemplate = state.cachedTemplates[templateName];
+        if (!boomTemplate || !boomTemplate.IsValid()) return false;
         const entities = boomTemplate.ForceSpawn(position, { pitch: 0, yaw: 0, roll: 0 });
-        
-        if (!entities || entities.length === 0) {
-            return false;
-        }
-
-
-        return true;
+        return !!(entities && entities.length > 0);
     } catch (error) {
         return false;
     }
@@ -67,27 +64,12 @@ function SpawnBoomAtPosition(position) {
 function SpawnBoomAtRandomCT() {
     try {
         const ctPlayers = GetCTPlayers();
-        
-        if (ctPlayers.length === 0) {
-            return;
-        }
-
+        if (ctPlayers.length === 0) return;
         const randomCT = GetRandomElement(ctPlayers);
-        
-        if (!randomCT || !randomCT.IsValid()) {
-            return;
-        }
-
+        if (!randomCT || !randomCT.IsValid()) return;
         const playerOrigin = randomCT.GetAbsOrigin();
-        const boomPosition = {
-            x: playerOrigin.x,
-            y: playerOrigin.y,
-            z: playerOrigin.z + 46
-        };
-
-        SpawnBoomAtPosition(boomPosition);
+        SpawnBoomAtPosition({ x: playerOrigin.x, y: playerOrigin.y, z: playerOrigin.z + 46 });
     } catch (error) {
-        // 静默处理错误
     }
 }
 
@@ -102,27 +84,11 @@ function HandleTriggerActivation(inputData) {
         state.lastTriggerTime = currentTime;
         SpawnBoomAtRandomCT();
     } catch (error) {
-        // 静默处理错误
     }
 }
 
-// 初始化函数
-function Init() {
-    Instance.SetNextThink(0.1);
-}
-
-// 脚本输入处理
 Instance.OnScriptInput("boom_trigger", HandleTriggerActivation);
 Instance.OnScriptInput("body_trigger", HandleTriggerActivation);
 Instance.OnScriptInput("explosion_trigger", HandleTriggerActivation);
-
-// 脚本激活和重载处理
-Instance.OnActivate(() => {
-    Init();
-});
-
-Instance.OnScriptReload({
-    after: () => {
-        Init();
-    }
-});
+Instance.OnActivate(() => {});
+Instance.OnScriptReload({ after: () => {} });

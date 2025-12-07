@@ -1,10 +1,11 @@
-import { CSPlayerPawn, Entity, Instance, PointTemplate } from "cs_script/point_script";
+import { Instance } from "cs_script/point_script";
 
 // by 凯岩城的狼
 
 const SLIDE_SPEED = 150; // 水平滑行速度（单位/秒）
 const MIN_ANGULAR_SPEED = 270; // 最小角速度（度/秒）
 const MAX_ANGULAR_SPEED = 720; // 最大角速度（度/秒）
+const THINK_INTERVAL = 0.01; // 脚本思考间隔（秒）
 
 const state = {
     lastThinkTime: 0,
@@ -55,12 +56,12 @@ function StartSpinSlide(activator) {
         }
 
         if (!state.activePlayers[playerSlot]) {
-            const ang = activator.GetEyeAngles?.() || activator.GetAbsAngles();
+            const ang = (typeof activator.GetEyeAngles === "function" ? activator.GetEyeAngles() : activator.GetAbsAngles()) || {};
             state.activePlayers[playerSlot] = {
-                dir: YawToHorizontalUnit(ang?.yaw ?? 0),
+                dir: YawToHorizontalUnit(ang.yaw !== undefined ? ang.yaw : 0),
                 angularSpeed: RandomAngularSpeed(),
-                yaw: ang?.yaw ?? 0,
-                basePitch: ang?.pitch ?? 0,
+                yaw: ang.yaw !== undefined ? ang.yaw : 0,
+                basePitch: ang.pitch !== undefined ? ang.pitch : 0,
             };
         }
     } catch (e) {
@@ -127,7 +128,7 @@ function UpdatePlayerMotion(dt) {
 
 function ScriptThink() {
     const now = Instance.GetGameTime();
-    const dt = state.lastThinkTime > 0 ? Math.max(0, now - state.lastThinkTime) : 0.001;
+    const dt = state.lastThinkTime > 0 ? Math.max(0, now - state.lastThinkTime) : THINK_INTERVAL;
     state.lastThinkTime = now;
 
     try {
@@ -136,15 +137,13 @@ function ScriptThink() {
         // 静默
     }
 
-    Instance.SetNextThink(0.001);
+    Instance.SetNextThink(THINK_INTERVAL);
 }
 
 function Init() {
     state.lastThinkTime = Instance.GetGameTime();
-    Instance.SetNextThink(0.001);
 }
 
-// 脚本输入
 Instance.OnScriptInput("start", (inputData) => {
     StartSpinSlide(inputData.activator);
 });
@@ -153,7 +152,6 @@ Instance.OnScriptInput("stop", (inputData) => {
     StopSpinSlide(inputData.activator);
 });
 
-// 生命周期
 Instance.OnActivate(() => {
     Init();
 });
@@ -165,6 +163,4 @@ Instance.OnScriptReload({
 });
 
 Instance.SetThink(ScriptThink);
-Instance.SetNextThink(0.1);
-
-
+Instance.SetNextThink(THINK_INTERVAL);

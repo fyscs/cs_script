@@ -5,8 +5,8 @@ let wallhp = 0;
 const boss_door = "boss_door_final";
 const wall_script_ent = "wall_script";
 const hud_ent = "boss_wall_hud";
-const HpBase = 2000; 
-const HpAdd = 1000; 
+const HpBase = 3000; 
+const HpAdd = 2500; 
 const dis = 5000; 
 let dontTakeHp = true;
 let wallBroken = false;
@@ -104,8 +104,8 @@ Instance.OnScriptInput("OnWallBroken", () => {
 });
 
 Instance.OnRoundStart(() => {
-    let Show = false;
-    let wallhp = 0;
-	let dontTakeHp = true;
-    let wallBroken = false;
+    Show = false;
+    wallhp = 0;
+	dontTakeHp = true;
+    wallBroken = false;
 });
