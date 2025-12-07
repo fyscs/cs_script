@@ -73,7 +73,9 @@ function GetAverageHealth() {
     let satisfyPlayer = 0;
     const players = Instance.FindEntitiesByClass("player");
     for (const player of players) {
-        if (!player || !player.IsValid()) return 0;
+        if (!player || !player.IsValid()) continue;
+        // 剔除人类玩家
+        if (player.GetTeamNumber() != 2) continue;
         const health = player.GetHealth();
 
         // 过滤超过5w血的僵尸
