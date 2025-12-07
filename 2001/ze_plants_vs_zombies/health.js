@@ -3,19 +3,15 @@ import { Instance } from "cs_script/point_script";
 /**
  * 血量恢复功能
  * 此脚本由皮皮猫233编写
- * 2025/11/3
+ * 2025/11/24
  */
 
 Instance.OnScriptInput("Health", (inputData) => {
-    if (!inputData.activator || !inputData.activator.IsValid()) {
-        return;
-    }
+    if (!inputData.activator || !inputData.activator.IsValid()) return;
     
     // 检查是否为玩家
     const className = inputData.activator.GetClassName();
-    if (!className || !className === "player") {
-        return;
-    }
+    if (!(className === "player")) return;
     
     const currentHealth = inputData.activator.GetHealth();
     inputData.activator.SetHealth(currentHealth + 2500);
