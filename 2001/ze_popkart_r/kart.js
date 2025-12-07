@@ -1,10 +1,10 @@
-import { Instance } from "cs_script/point_script";
+import { Instance, Entity } from "cs_script/point_script";
 
 /**
  * 卡丁车控制脚本
  * 此脚本由皮皮猫233编写
  * 如需使用请与我联系
- * 2025/10/18
+ * 2025/11/23
  */
 
 /**
@@ -23,7 +23,8 @@ const keyState = {
  */
 const kartState = {
     start: false,
-    player: null,
+    /**@type {Entity|undefined} */
+    player: undefined,
     suffix: "",
     currentTurnSpeed: 0,
     isActive: false,
@@ -54,6 +55,7 @@ const kartConfig = {
 // 输入事件处理
 Instance.OnScriptInput("Activate", (inputData) => {
     kartState.isActive = true;
+    if (!inputData.activator || !inputData.activator.IsValid()) return;
     kartState.player = inputData.activator;
     const kartUi = inputData.caller;
     
@@ -77,7 +79,7 @@ Instance.OnScriptInput("Deactivate", (inputData) => {
     keyState.isSpeedPressed = false;
     
     // 重置卡丁车状态
-    kartState.player = null;
+    kartState.player = undefined;
     kartState.currentTurnSpeed = 0;
     kartState.isDrift = false;
     kartState.turnDirection = 0;
@@ -100,7 +102,7 @@ Instance.OnScriptInput("Deactivate", (inputData) => {
 });
 
 Instance.OnScriptInput("Start", (inputData) => {
-    keyState.start = true;
+    kartState.start = true;
 });
 
 Instance.OnScriptInput("PressedForward", (inputData) => {
@@ -124,7 +126,7 @@ Instance.OnScriptInput("PressedMoveRight", (inputData) => {
 });
 
 Instance.OnScriptInput("PressedSpeed", (inputData) => {
-    if (keyState.start) {
+    if (kartState.start) {
         keyState.isSpeedPressed = true;
         updateKartState();
     }
@@ -331,7 +333,10 @@ function updateKartState() {
     Instance.SetNextThink(Instance.GetGameTime());
 }
 
-// 辅助功能函数
+/**
+ * 辅助功能函数
+ * @param {number} force - 推力力度
+ */
 function applyForce(force) {
     if (force !== kartState.lastAppliedForce) {
         Instance.EntFireAtName({ name: "kart_push_" + kartState.suffix, input: "SetPushSpeed", value: force });
@@ -339,6 +344,10 @@ function applyForce(force) {
     }
 }
 
+/**
+ * 
+ * @param {number} direction - 转向速度
+ */
 function setTurnDirection(direction) {
     kartState.turnDirection = direction;
 }
@@ -417,7 +426,11 @@ function updateBoostDisplay() {
     }
 }
 
-// 提取尾缀
+/**
+ * 提取尾缀
+ * @param {string} entityName 
+ * @returns {string}
+ */
 function extractSuffix(entityName) {
     const parts = entityName.split('_');
     if (parts.length > 0) {
@@ -430,8 +443,8 @@ function extractSuffix(entityName) {
 
 /**
  * 将角度转换为前向向量
- * @param {Object} angles - 角度对象 {pitch, yaw, roll}
- * @returns {Object} 前向向量
+ * @param {import("cs_script/point_script").QAngle} angles
+ * @returns {import("cs_script/point_script").Vector}
  */
 function getForward(angles) {
     const pitchRadians = (angles.pitch * Math.PI) / 180;
@@ -446,9 +459,9 @@ function getForward(angles) {
 
 /**
  * 向量缩放
- * @param {Object} vec - 向量
+ * @param {import("cs_script/point_script").Vector} vec - 向量
  * @param {number} scale - 缩放比例
- * @returns {Object} 缩放后的向量
+ * @returns {import("cs_script/point_script").Vector} 缩放后的向量
  */
 function vectorScale(vec, scale) {
     return { 
@@ -460,9 +473,9 @@ function vectorScale(vec, scale) {
 
 /**
  * 向量加法
- * @param {Object} vec1 - 向量1
- * @param {Object} vec2 - 向量2
- * @returns {Object} 相加后的向量
+ * @param {import("cs_script/point_script").Vector} vec1 - 向量1
+ * @param {import("cs_script/point_script").Vector} vec2 - 向量2
+ * @returns {import("cs_script/point_script").Vector} 相加后的向量
  */
 function vectorAdd(vec1, vec2) {
     return { 
