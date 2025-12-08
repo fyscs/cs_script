@@ -3,7 +3,7 @@ import { Instance, Entity } from "cs_script/point_script";
 /**
  * 窝瓜神器脚本
  * 此脚本由皮皮猫233编写
- * 2025/12/8
+ * 2025/12/9
  */
 
 let squash = /** @type {undefined|Entity} */ (undefined);
@@ -29,8 +29,10 @@ Instance.OnScriptInput("Trigger", (inputData) => {
     squashPosition = squash.GetAbsOrigin();    
     const currentPosition = player.GetAbsOrigin();
     const currentVelocity = player.GetAbsVelocity();
+    currentPosition.z = currentPosition.z - 15;
     // 预测玩家位置
-    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z - 15 });
+    const forecastDistance = vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6);
+    playerPosition = vectorAdd(vectorMax(vectorMin(forecastDistance, 300), -300), currentPosition);
     pathPositon = { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z + 150 };
 
     // 动态计算窝瓜伤害（最低2w）
@@ -152,4 +154,24 @@ function vectorSubtract(vec1, vec2) {
  */
 function vectorScale(vec, scale) {
     return { x: vec.x * scale, y: vec.y * scale, z: vec.z * scale };
+}
+
+/**
+ * 向量最小
+ * @param {import("cs_script/point_script").Vector} vec
+ * @param {number} min
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorMin(vec, min) {
+    return { x: Math.min(vec.x, min), y: Math.min(vec.y, min), z: Math.min(vec.z, min) };
+}
+
+/**
+ * 向量最大
+ * @param {import("cs_script/point_script").Vector} vec
+ * @param {number} max
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorMax(vec, max) {
+    return { x: Math.max(vec.x, max), y: Math.max(vec.y, max), z: Math.max(vec.z, max) };
 }
