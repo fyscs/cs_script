@@ -751,9 +751,14 @@ function map_modifier() {
                 const laser_origin = randomPointOnSphere(fuck_you_lol.GetAbsOrigin(), LASERSLOP_DIST);
                 const angles = Vector3Utils.directionTowards(laser_origin, fuck_you_lol.GetAbsOrigin());
                 const angles_fix = Vector3Utils.vectorAngles(angles);
-                laser_temp.ForceSpawn(laser_origin, angles_fix);
+                const ents = laser_temp.ForceSpawn(laser_origin, angles_fix);
+                for (const ent of ents) {
+                    if (ent.GetClassName() == "trigger_hurt") {
+                        Instance.EntFireAtTarget({ target: ent, input: "SetDamage", value: 49 });
+                    }
+                }
             }
-        }, 10 * 1000);
+        }, 5 * 1000);
     }
     else if (MODE == "Ice Skating") {
         xmas_presents_default();
@@ -816,6 +821,20 @@ function map_modifier() {
         Instance.EntFireAtName({ name: "ending_classic", input: "Enable" });
         Instance.EntFireAtName({ name: "hmm_ultima", input: "PickRandomShuffle" });
         FAIL_NADES = true;
+        const interval = setInterval(() => {
+            if (CLEAR_ALL_INTERVAL) {
+                clearInterval(interval);
+                return;
+            }
+            else {
+                const players = Instance.FindEntitiesByClass("player");
+                for (const player of players) {
+                    if (player?.IsValid() && player.GetTeamNumber() == 3 && player.FindWeapon("weapon_hegrenade") == undefined) {
+                        player.GiveNamedItem("weapon_hegrenade");
+                    }
+                }
+            }
+        }, 1 * 1000);
     }
     else if (MODE == "Pizzatime") {
         xmas_presents_default();
@@ -863,35 +882,48 @@ Instance.OnGrenadeThrow((stuff) => {
         });
     }
     if (FAIL_NADES) {
-        const id_explode = Instance.ConnectOutput(grenade, "OnExplode", (stuff) => {
-            const players = Instance.FindEntitiesByClass("player");
-            for (const player of players) {
-                const distance = Vector3Utils.distance(player.GetAbsOrigin(), grenade.GetAbsOrigin());
-                const trace_hit = Instance.TraceLine({ start: grenade.GetAbsOrigin(), end: player_head(player), ignoreEntity: grenade, ignorePlayers: false });
-                const tract_dist = Vector3Utils.distance(trace_hit.end, player_head(player));
-                //Instance.DebugLine({ start: trace_hit.end, end: player_head(player), duration: 10, color: { r: 255, g: 255, b: 0 } });
-                if (player?.IsValid() && player.GetTeamNumber() == 2 && distance < FAIL_NADE_DIST && tract_dist < FAIL_NADE_TRACE_APPROX) {
-                    const exp_origin = Vector3Utils.add(grenade.GetAbsOrigin(), FAIL_NADE_OFFSET);
-                    let velocity = Vector3Utils.directionTowards(exp_origin, player.GetAbsOrigin());
-                    velocity = Vector3Utils.scale(velocity, scaleValue(distance, 0, FAIL_NADE_DIST, FAIL_NADE_PUSH, 0));
-                    player.Teleport({ velocity: velocity });
-                }
-                else if (player?.IsValid() && player.GetTeamNumber() == 3 && player.FindWeapon("weapon_hegrenade") == undefined) {
-                    setTimeout(() => {
-                        if (player?.IsValid() && player.GetTeamNumber() == 3) {
-                            player.GiveNamedItem("weapon_hegrenade");
-                        }
-                    }, 5000);
-                }
+        grenade.SetModelScale(8);
+        Instance.EntFireAtTarget({ target: grenade, input: "setmass", value: 9000 });
+        Instance.EntFireAtTarget({ target: grenade, input: "disabledrag" });
+        Instance.EntFireAtTarget({ target: grenade, input: "disablegravity" });
+        const interval = setInterval(() => {
+            if (!grenade?.IsValid() || Vector3Utils.equals(grenade.GetAbsVelocity(), { x: 0, y: 0, z: 0 })) {
+                clearInterval(interval);
+                return;
             }
-            Instance.DisconnectOutput(id_explode);
-        });
+            const old_vel = grenade.GetAbsVelocity();
+            const old_dir = Vector3Utils.normalize(old_vel);
+            const new_vel = Vector3Utils.scale(old_dir, FAIL_NADE_AUTISM);
+            grenade.Teleport({ velocity: new_vel });
+        }, 0.05 * 1000);
     }
+    // if(FAIL_NADES){
+    //     const id_explode = Instance.ConnectOutput(grenade,"OnExplode",(stuff)=>{
+    //         const players = Instance.FindEntitiesByClass("player") as CSPlayerPawn[];
+    //         for(const player of players){
+    //             const distance = Vector3Utils.distance(player.GetAbsOrigin(),grenade.GetAbsOrigin());
+    //             const trace_hit = Instance.TraceLine({start:grenade.GetAbsOrigin(),end:player_head(player),ignoreEntity:grenade,ignorePlayers:false}) as TraceResult;
+    //             const tract_dist = Vector3Utils.distance(trace_hit.end,player_head(player));
+    //             //Instance.DebugLine({ start: trace_hit.end, end: player_head(player), duration: 10, color: { r: 255, g: 255, b: 0 } });
+    //             if(player?.IsValid()&&player.GetTeamNumber()==2&&distance<FAIL_NADE_DIST&&tract_dist<FAIL_NADE_TRACE_APPROX){
+    //                 const exp_origin = Vector3Utils.add(grenade.GetAbsOrigin(),FAIL_NADE_OFFSET);
+    //                 let velocity = Vector3Utils.directionTowards(exp_origin,player.GetAbsOrigin());
+    //                 velocity = Vector3Utils.scale(velocity,scaleValue(distance,0,FAIL_NADE_DIST,FAIL_NADE_PUSH,0));
+    //                 player.Teleport({velocity:velocity});
+    //             }
+    //             else if(player?.IsValid()&&player.GetTeamNumber()==3&&player.FindWeapon("weapon_hegrenade")==undefined){
+    //                 const timeout = setTimeout(()=>{
+    //                     if(player?.IsValid()&&player.GetTeamNumber()==3){
+    //                         player.GiveNamedItem("weapon_hegrenade");
+    //                     }
+    //                 },5000);
+    //             }
+    //         }
+    //         Instance.DisconnectOutput(id_explode);
+    //     }) as number;
+    // }
 });
-const FAIL_NADE_TRACE_APPROX = 32;
-const FAIL_NADE_PUSH = 4096;
-const FAIL_NADE_DIST = 1024;
-const FAIL_NADE_OFFSET = { x: 0, y: 0, z: -64 };
+const FAIL_NADE_AUTISM = 2000;
 const DEBUG = false;
 Instance.OnScriptInput("input_bahamut_fight", () => {
     BAHAMUT_FIGHT = true;
@@ -944,6 +976,7 @@ let mother_zm_found = false;
 Instance.OnRoundStart(() => {
     clearTasks();
     find_templates();
+    REBIRTH_STOP_INTERVAL = false;
     BAHAMUT_FIGHT = false;
     mother_zm_found = false;
     CLEAR_ALL_INTERVAL = false;
@@ -1049,6 +1082,7 @@ Instance.OnRoundStart(() => {
     }
     else if (LEVEL == 4) {
         spawn_rebirth_triggers();
+        Instance.EntFireAtName({ name: "GrisDoor1_button", input: "Lock" });
         Instance.EntFireAtName({ name: "epstein_button", input: "Lock" });
         Instance.EntFireAtName({ name: "CloudTracktrain", input: "Kill" });
         Instance.EntFireAtName({ name: "sky_xmas", input: "FireUser1" });
@@ -1059,6 +1093,13 @@ Instance.OnRoundStart(() => {
     setTimeout(() => {
         radio_new_song();
     }, 8 * 1000);
+    const spam_interval = setInterval(() => {
+        if (CLEAR_ALL_INTERVAL) {
+            clearInterval(spam_interval);
+            return;
+        }
+        player_text_spam_fix();
+    }, 10 * 1000);
 });
 let EX2_EARTH_TROLLING = false;
 let KNIFE_PARTY = false;
@@ -1092,6 +1133,11 @@ Instance.OnBeforePlayerDamage((stuff) => {
     if (WET_ANUS) {
         if (attacker?.IsValid() && player?.IsValid() && attacker.GetTeamNumber() == 3 && player.GetTeamNumber() == 2 && stuff.weapon?.GetData().GetName() == "weapon_ssg08") {
             return { damage: 167.5 };
+        }
+    }
+    if (FAIL_NADES) {
+        if (attacker?.IsValid() && player?.IsValid() && attacker.GetTeamNumber() == 3 && stuff.inflictor?.GetClassName() == "hegrenade_projectile") {
+            return { damage: 2048 };
         }
     }
 });
@@ -1441,8 +1487,6 @@ Instance.OnPlayerDamage((stuff) => {
     }
 });
 function scaleValue(value, min, max, baseMin, baseMax) {
-    if (min === max)
-        return baseMin; // avoid division by zero
     // normalize where 'value' is between min and max (0–1)
     const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
     // interpolate between baseMin and baseMax
@@ -1522,6 +1566,7 @@ Instance.OnRoundEnd((stuff) => {
     WET_ANUS = false;
     HEAL = false;
     FAIL_NADES = false;
+    LENNY = false;
     Instance.ServerCommand("zr_infect_spawn_mz_ratio 7");
     Instance.ServerCommand("sv_friction 5.2");
     Instance.EntFireAtName({ name: "reset_misc", input: "Trigger" });
@@ -1603,6 +1648,13 @@ function run_heal() {
         }
     }, GRIS_HEAL_TICK * 1000);
 }
+Instance.OnScriptInput("input_connect_heal_1", (stuff) => {
+    const init_relay = stuff.caller;
+    const wep = Instance.FindEntityByName(init_relay.GetEntityName().replace("connect_heal_1", "elite_heal_1"));
+    if (wep?.IsValid()) {
+        wep.rebirth_wep = true;
+    }
+});
 Instance.OnScriptInput("input_toggle_heal", () => {
     if (!HEAL) {
         HEAL = true;
@@ -1625,6 +1677,7 @@ Instance.OnPlayerActivate((stuff) => {
     }
 });
 const ITEM_TICK = 0.05;
+let LENNY = false;
 Instance.OnPlayerChat((stuff) => {
     const player_controller = stuff.player;
     if (!player_controller?.IsValid() || player_controller == undefined || !player_controller.GetPlayerPawn()?.IsValid()) {
@@ -1685,6 +1738,8 @@ Instance.OnPlayerChat((stuff) => {
                 Instance.EntFireAtName({ name: "shake_lenny", input: "StartShake", delay: 10 });
                 Instance.EntFireAtName({ name: "music_fader", input: "SetFloatValue", value: 1, delay: 210 });
                 Instance.EntFireAtName({ name: "overlay_lenny", input: "Stop", delay: 210 });
+                LENNY = true;
+                setTimeout(() => { LENNY = false; }, 210 * 1000);
             }
         }
         if (text.includes("!xmas") && player.sfx_ent?.IsValid() && player.sfx_cd < Instance.GetGameTime()) {
@@ -2014,7 +2069,14 @@ Instance.OnScriptInput("input_connect_ultima", (stuff) => {
     let relay = Instance.FindEntityByName(init_relay.GetEntityName().replace(connector, item + "Relay"));
     button.wep = wep;
     button.relay = relay;
-    Instance.ConnectOutput(button, "OnPressed", (stuff) => {
+    button.once = false;
+    wep.rebirth_wep = true;
+    const id = Instance.ConnectOutput(button, "OnPressed", (stuff) => {
+        Instance.DisconnectOutput(id);
+        if (button.once) {
+            return;
+        }
+        button.once = true;
         let player = stuff.activator;
         if (player?.IsValid() && player == button.wep.GetOwner()) {
             Instance.EntFireAtTarget({ target: button.relay, input: "Trigger", activator: player });
@@ -2039,7 +2101,12 @@ Instance.OnScriptInput("input_connect_ultima_zm", (stuff) => {
     let relay = Instance.FindEntityByName(init_relay.GetEntityName().replace(connector, item + "Relay"));
     button.wep = wep;
     button.relay = relay;
-    Instance.ConnectOutput(button, "OnPressed", (stuff) => {
+    const id = Instance.ConnectOutput(button, "OnPressed", (stuff) => {
+        Instance.DisconnectOutput(id);
+        if (button.once) {
+            return;
+        }
+        button.once = true;
         let player = stuff.activator;
         if (player?.IsValid() && player == button.wep.GetOwner()) {
             Instance.EntFireAtTarget({ target: button.relay, input: "Trigger", activator: player });
@@ -2067,6 +2134,11 @@ Instance.OnScriptInput("input_connect_trolltima_ct", (stuff) => {
     button.wep = wep;
     button.relay = relay;
     const id = Instance.ConnectOutput(button, "OnPressed", (stuff) => {
+        Instance.DisconnectOutput(id);
+        if (button.once) {
+            return;
+        }
+        button.once = true;
         let player = stuff.activator;
         if (player?.IsValid() && player == button.wep.GetOwner()) {
             Instance.EntFireAtTarget({ target: button.relay, input: "Trigger", activator: player });
@@ -2078,9 +2150,6 @@ Instance.OnScriptInput("input_connect_trolltima_ct", (stuff) => {
                     }
                 }
             }, 20 * 1000);
-        }
-        if (id != undefined) {
-            Instance.DisconnectOutput(id);
         }
     });
     Instance.EntFireAtTarget({ target: button.wep, input: "ToggleCanBePickedUp" });
@@ -2095,6 +2164,10 @@ Instance.OnScriptInput("input_connect_trolltima_zm", (stuff) => {
     button.wep = wep;
     button.relay = relay;
     const id = Instance.ConnectOutput(button, "OnPressed", (stuff) => {
+        Instance.DisconnectOutput(id);
+        if (button.once) {
+            return;
+        }
         let player = stuff.activator;
         if (player?.IsValid() && player == button.wep.GetOwner()) {
             Instance.EntFireAtTarget({ target: button.relay, input: "Trigger", activator: player });
@@ -2106,9 +2179,6 @@ Instance.OnScriptInput("input_connect_trolltima_zm", (stuff) => {
                     }
                 }
             }, 20 * 1000);
-        }
-        if (id != undefined) {
-            Instance.DisconnectOutput(id);
         }
     });
     Instance.EntFireAtTarget({ target: button.wep, input: "ToggleCanBePickedUp" });
@@ -2804,7 +2874,7 @@ Instance.OnPlayerConnect((stuff) => {
 });
 Instance.OnPlayerReset((stuff) => {
     const player = stuff.player;
-    if (player?.IsValid() && player.GetTeamNumber() == 3 && player.top_def) {
+    if (player?.IsValid() && player.GetTeamNumber() == 3 && player.top_def && (!player.mapper || !player.friend)) {
         const guts_cunt = player?.GetPlayerController();
         if (guts_cunt?.IsValid()) {
             Instance.ServerCommand("say " + guts_cunt.GetPlayerName() + " is the top defender!!?!? He is the Black Swordsman!");
@@ -2876,27 +2946,82 @@ Instance.OnPlayerReset((stuff) => {
         }
     }
 });
+function player_text_spam_fix() {
+    const players = Instance.FindEntitiesByClass("player");
+    for (const player of players) {
+        if (player.sfx_ent == undefined && player.text_ent == undefined) {
+            const autsim_temp = Instance.FindEntityByName("temp_player_text");
+            const ents = autsim_temp.ForceSpawn(player.GetAbsOrigin());
+            for (const ent of ents) {
+                if (ent?.IsValid() && ent.GetClassName() == "point_worldtext") {
+                    player.text_ent = ent;
+                }
+                if (ent?.IsValid() && ent.GetClassName() == "point_soundevent") {
+                    player.sfx_ent = ent;
+                }
+                if (ent?.IsValid() && ent.GetClassName() == "info_particle_system") {
+                    ent.SetParent(player);
+                }
+            }
+        }
+    }
+}
 let REBIRTH_COUNTER = 0;
 let REBIRTH_COUNTER_2 = 0;
 Instance.OnScriptInput("input_crimson_ceremony_pickup", (stuff) => {
     const player = stuff.activator;
     const player_controller = player.GetPlayerController();
     Instance.ServerCommand("say *** " + player_controller.GetPlayerName() + " has found the Book of Crimson Ceremony. ***");
+    Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "SetMessage", value: "You collected the Book of Crimson Ceremony - you need to bring this to the end! (You cannot be infected holding this key item)" });
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "ShowHudHint", activator: player });
+    rebirth_pickup_ez();
 });
 Instance.OnScriptInput("input_lost_memories_pickup", (stuff) => {
     const player = stuff.activator;
     const player_controller = player.GetPlayerController();
     Instance.ServerCommand("say *** " + player_controller.GetPlayerName() + " has found the Book of Lost Memories. ***");
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "SetMessage", value: "You collected the Book of Lost Memories - you need to bring this to the end! (You cannot be infected holding this key item)" });
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "ShowHudHint", activator: player });
+    Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
+    rebirth_pickup_ez();
 });
 Instance.OnScriptInput("input_obsidian_goblet_pickup", (stuff) => {
     const player = stuff.activator;
     const player_controller = player.GetPlayerController();
     Instance.ServerCommand("say *** " + player_controller.GetPlayerName() + " has found the Obsidian Goblet. ***");
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "SetMessage", value: "You collected the Obsidian Goblet - you need to bring this to the end! (You cannot be infected holding this key item)" });
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "ShowHudHint", activator: player });
+    Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
+    rebirth_pickup_ez();
 });
 Instance.OnScriptInput("input_white_chrism_pickup", (stuff) => {
     const player = stuff.activator;
     const player_controller = player.GetPlayerController();
     Instance.ServerCommand("say *** " + player_controller.GetPlayerName() + " has found the White Chrism. ***");
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "SetMessage", value: "You collected the White Chrism - you need to bring this to the end! (You cannot be infected holding this key item)" });
+    Instance.EntFireAtName({ name: "hh_rebirth", input: "ShowHudHint", activator: player });
+    Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
+    rebirth_pickup_ez();
+});
+function rebirth_pickup_ez() {
+    Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
+    const players = Instance.FindEntitiesByClass("player");
+    for (const player of players) {
+        if (player?.IsValid() && player.GetTeamNumber() == 2) {
+            Instance.EntFireAtTarget({ target: player, input: "KeyValues", value: "speed 0.1" });
+            Instance.EntFireAtTarget({ target: player, input: "KeyValues", value: "speed 1", delay: 8 });
+            Instance.EntFireAtName({ name: "stinger_fade_in", input: "Fade", activator: player });
+            Instance.EntFireAtName({ name: "stinger_fade_out", input: "Fade", delay: 4, activator: player });
+        }
+    }
+}
+Instance.OnScriptInput("input_rebirth_check_bunker_button", () => {
+    if (LEVEL == 4) {
+        if (REBIRTH_COUNTER != 4) {
+            REBIRTH_STOP_INTERVAL = true;
+        }
+    }
 });
 const REBIRTH_TICK = 100;
 Instance.OnScriptInput("input_rebirth_check", (stuff) => {
@@ -2912,12 +3037,24 @@ Instance.OnScriptInput("input_rebirth_check", (stuff) => {
         else {
             Instance.EntFireAtName({ name: "ending_classic", input: "Disable" });
             Instance.EntFireAtName({ name: "ending_gris", input: "Enable" });
-            Instance.EntFireAtName({ name: "GrisDoor1_button", input: "Lock" });
+            Instance.EntFireAtName({ name: "GrisDoor1_button", input: "Unlock" });
         }
     }
     const wep = stuff.caller;
+    const player = wep.GetOwner();
+    if (player?.IsValid() && !REBIRTH_STOP_INTERVAL) {
+        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "FilterNoPlayerAllowed" });
+    }
     const interval = setInterval(() => {
+        if (REBIRTH_STOP_INTERVAL) {
+            Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
+            clearInterval(interval);
+            return;
+        }
         if (wep.GetOwner() == undefined) {
+            Instance.EntFireAtTarget({ target: wep, input: "ToggleCanBePickedUp" });
+            Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
+            Instance.EntFireAtTarget({ target: wep, input: "ToggleCanBePickedUp", delay: 1 });
             REBIRTH_COUNTER--;
             if (REBIRTH_COUNTER != 4) {
                 if (MODE == "Truth") {
@@ -2925,7 +3062,7 @@ Instance.OnScriptInput("input_rebirth_check", (stuff) => {
                     Instance.EntFireAtName({ name: "ending_gris_truth", input: "Disable" });
                     Instance.EntFireAtName({ name: "ending_gris", input: "Disable" });
                     Instance.EntFireAtName({ name: "ending_classic", input: "Disable" });
-                    Instance.EntFireAtName({ name: "GrisDoor1_button", input: "Unlock" });
+                    Instance.EntFireAtName({ name: "GrisDoor1_button", input: "Lock" });
                 }
                 else {
                     Instance.EntFireAtName({ name: "ending_classic", input: "Enable" });
@@ -2942,23 +3079,54 @@ function spawn_rebirth_triggers() {
     const lost_memories = Instance.FindEntitiesByName("spawn_lost_memories");
     const obsidian_goblet = Instance.FindEntitiesByName("spawn_obsidian_goblet");
     const white_chrism = Instance.FindEntitiesByName("spawn_white_chrism");
+    const temp_crimson_ceremony = Instance.FindEntityByName("temp_crimson_ceremony");
+    const temp_lost_memories = Instance.FindEntityByName("temp_lost_memories");
+    const temp_obsidian_goblet = Instance.FindEntityByName("temp_obsidian_goblet");
+    const temp_white_chrism = Instance.FindEntityByName("temp_white_chrism");
     const epsteins = Instance.FindEntitiesByName("maker_epstein");
     EPSTEIN_COUNTER = epsteins.length;
-    Instance.EntFireAtTarget({ target: crimson_ceremony[randomIntArray(0, crimson_ceremony.length)], input: "Trigger" });
-    Instance.EntFireAtTarget({ target: lost_memories[randomIntArray(0, lost_memories.length)], input: "Trigger" });
-    Instance.EntFireAtTarget({ target: obsidian_goblet[randomIntArray(0, obsidian_goblet.length)], input: "Trigger" });
-    Instance.EntFireAtTarget({ target: white_chrism[randomIntArray(0, white_chrism.length)], input: "Trigger" });
+    const cc_ents = temp_crimson_ceremony.ForceSpawn(crimson_ceremony[randomIntArray(0, crimson_ceremony.length)].GetAbsOrigin());
+    const lm_ents = temp_lost_memories.ForceSpawn(lost_memories[randomIntArray(0, lost_memories.length)].GetAbsOrigin());
+    const og_ents = temp_obsidian_goblet.ForceSpawn(obsidian_goblet[randomIntArray(0, obsidian_goblet.length)].GetAbsOrigin());
+    const wc_ents = temp_white_chrism.ForceSpawn(white_chrism[randomIntArray(0, white_chrism.length)].GetAbsOrigin());
+    rebirth_ents(cc_ents);
+    rebirth_ents(lm_ents);
+    rebirth_ents(og_ents);
+    rebirth_ents(wc_ents);
     setTimeout(() => {
         const weapons = Instance.FindEntitiesByClass("weapon_glock");
         for (const wep of weapons) {
-            if (wep.GetEntityName().includes("crimson_ceremony")
-                || wep.GetEntityName().includes("lost_memories")
-                || wep.GetEntityName().includes("obsidian_goblet")
-                || wep.GetEntityName().includes("white_chrism")) {
+            if (wep.GetEntityName().includes("crimson_ceremony")) {
+                wep.rebirth_wep = true;
+            }
+            else if (wep.GetEntityName().includes("lost_memories")) {
+                wep.rebirth_wep = true;
+            }
+            else if (wep.GetEntityName().includes("obsidian_goblet")) {
+                wep.rebirth_wep = true;
+            }
+            else if (wep.GetEntityName().includes("white_chrism")) {
                 wep.rebirth_wep = true;
             }
         }
     }, 1000);
+}
+function rebirth_ents(ents) {
+    let wep;
+    let prop;
+    let measure;
+    for (const ent of ents) {
+        if (ent.GetClassName() == "weapon_glock") {
+            wep = ent;
+        }
+        else if (ent.GetClassName().includes("prop")) {
+            prop = ent;
+        }
+    }
+    if (prop?.IsValid() && wep?.IsValid()) {
+        prop.rebirth_wep_ent = wep;
+        prop.rebirth_measure_ent = measure;
+    }
 }
 let EPSTEIN_COUNTER = 0;
 Instance.OnScriptInput("input_epstein_kill", () => {
@@ -2968,10 +3136,14 @@ Instance.OnScriptInput("input_epstein_kill", () => {
         const doors = Instance.FindEntitiesByName("ei_temple_door");
         Instance.EntFireAtTarget({ target: doors[randomIntArray(0, doors.length)], input: "Break" });
         Instance.EntFireAtName({ name: "ep_rug_move", input: "Open", delay: 20 });
+        Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
     }
 });
+let REBIRTH_STOP_INTERVAL = false;
 Instance.OnScriptInput("input_rebirth_go", (stuff) => {
     if (LEVEL == 4) {
+        REBIRTH_STOP_INTERVAL = true;
+        Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
         Instance.EntFireAtName({ name: "tp_epstein_dest", input: "FireUser1", delay: 60 });
         Instance.ServerCommand("say You have 120.67 seconds to complete the Rebirth!");
         const interval = setInterval(() => {
@@ -2980,32 +3152,74 @@ Instance.OnScriptInput("input_rebirth_go", (stuff) => {
                 return;
             }
             else {
+                let humans = 0;
+                const players = Instance.FindEntitiesByClass("player");
+                for (const player of players) {
+                    if (player?.IsValid() && player.IsAlive() && player?.GetTeamNumber() == 3) {
+                        humans++;
+                    }
+                }
+                if (humans < 4) {
+                    Instance.ServerCommand("say Epstein is angry - you need at least 4 humans to proceed!");
+                    Instance.EntFireAtName({ name: "sfx_vip_died", input: "StartSound" });
+                    for (const player of players) {
+                        if (player?.IsValid() && player.GetTeamNumber() == 3) {
+                            Instance.EntFireAtTarget({ target: player, input: "sethealth", value: 0 });
+                        }
+                    }
+                }
                 const props = Instance.FindEntitiesByName("*prop");
                 for (const prop of props) {
                     if (isWithinBox(prop.GetAbsOrigin(), REBIRTH_ORIGIN, REBIRTH_BOX)) {
                         if (prop.GetEntityName().includes("crimson_ceremony_prop")) {
                             REBIRTH_COUNTER_2++;
+                            const wep = prop.rebirth_wep_ent;
+                            if (wep?.IsValid()) {
+                                wep.rebirth_wep = false;
+                            }
+                            prop.rebirth_measure_ent?.Remove();
                             prop.Remove();
                             Instance.ServerCommand("say The Book of Crimson Ceremony has been offered.");
                         }
                         else if (prop.GetEntityName().includes("lost_memories_prop")) {
                             REBIRTH_COUNTER_2++;
+                            const wep = prop.rebirth_wep_ent;
+                            if (wep?.IsValid()) {
+                                wep.rebirth_wep = false;
+                            }
+                            prop.rebirth_measure_ent?.Remove();
                             prop.Remove();
                             Instance.ServerCommand("say The Book of Lost Memories has been offered.");
                         }
                         else if (prop.GetEntityName().includes("obsidian_goblet_prop")) {
                             REBIRTH_COUNTER_2++;
+                            const wep = prop.rebirth_wep_ent;
+                            if (wep?.IsValid()) {
+                                wep.rebirth_wep = false;
+                            }
+                            prop.rebirth_measure_ent?.Remove();
                             prop.Remove();
                             Instance.ServerCommand("say The Obsidian Goblet has been offered.");
                         }
                         else if (prop.GetEntityName().includes("white_chrism_prop")) {
                             REBIRTH_COUNTER_2++;
+                            const wep = prop.rebirth_wep_ent;
+                            if (wep?.IsValid()) {
+                                wep.rebirth_wep = false;
+                            }
+                            prop.rebirth_measure_ent?.Remove();
                             prop.Remove();
                             Instance.ServerCommand("say The White Chrism has been offered.");
                         }
                         if (REBIRTH_COUNTER_2 == 4) {
                             Instance.ServerCommand("say We have unlocked the Rebirth Ending!");
                             Instance.EntFireAtName({ name: "maker_epstein", input: "ForceSpawn" });
+                            Instance.EntFireAtName({ name: "sfx_stinger", input: "StartSound" });
+                            if (MODE == "Knife Party") {
+                                setTimeout(() => {
+                                    Instance.EntFireAtName({ name: "epstein_hp*", input: "Break" });
+                                }, 5 * 1000);
+                            }
                             clearInterval(interval);
                             return;
                         }
@@ -3030,8 +3244,8 @@ Instance.OnScriptInput("input_rebirth_go", (stuff) => {
         Instance.EntFireAtName({ name: "tp_epstein_dest", input: "FireUser1", delay: 20 });
     }
 });
-const REBIRTH_ORIGIN = { x: 724, y: 5304, z: 76 };
-const REBIRTH_BOX = { x: 64, y: 64, z: 32 };
+const REBIRTH_ORIGIN = { x: 724, y: 5304, z: 140 };
+const REBIRTH_BOX = { x: 96, y: 96, z: 96 };
 function isWithinBox(playerOrigin, boxOrigin, size) {
     // playerOrigin, boxOrigin: Vector3 { x, y, z }
     // size: Vector3 { x, y, z } — total size of the box (not half extents)
@@ -3528,4 +3742,14 @@ Instance.OnScriptInput("input_unscuff_elevator", () => {
             }
         }
     }, 13 * 1000);
+});
+Instance.OnScriptInput("input_fade_for_seph", () => {
+    if (!LENNY) {
+        Instance.EntFireAtName({ name: "music_fader", input: "SetFloatValue", value: .5 });
+        setTimeout(() => {
+            if (!LENNY) {
+                Instance.EntFireAtName({ name: "music_fader", input: "SetFloatValue", value: 1 });
+            }
+        }, 8 * 1000);
+    }
 });
