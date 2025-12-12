@@ -3,7 +3,7 @@ import { Instance, Entity } from "cs_script/point_script";
 /**
  * 窝瓜神器脚本
  * 此脚本由皮皮猫233编写
- * 2025/11/28
+ * 2025/12/9
  */
 
 let squash = /** @type {undefined|Entity} */ (undefined);
@@ -29,9 +29,15 @@ Instance.OnScriptInput("Trigger", (inputData) => {
     squashPosition = squash.GetAbsOrigin();    
     const currentPosition = player.GetAbsOrigin();
     const currentVelocity = player.GetAbsVelocity();
+    currentPosition.z = currentPosition.z - 15;
     // 预测玩家位置
-    playerPosition = vectorAdd(vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6), { x: currentPosition.x, y: currentPosition.y, z: currentPosition.z + 10 });
-    pathPositon = { x: playerPosition.x, y: playerPosition.y, z:playerPosition.z + 100 };
+    const forecastDistance = vectorScale({ x: currentVelocity.x, y: currentVelocity.y, z: 0 }, 0.6);
+    playerPosition = vectorAdd(vectorMax(vectorMin(forecastDistance, 300), -300), currentPosition);
+    pathPositon = { x: playerPosition.x, y: playerPosition.y, z: playerPosition.z + 150 };
+
+    // 动态计算窝瓜伤害（最低2w）
+    const damage = Math.max(GetAverageHealth(), 20000) * 2;
+    Instance.EntFireAtName({ name: "item_squash_hurt_" + suffix, input: "SetDamage", value: damage });
 
     startTime = Instance.GetGameTime();
     Instance.SetNextThink(startTime);
@@ -59,6 +65,30 @@ Instance.SetThink(() => {
 
     Instance.SetNextThink(Instance.GetGameTime() + 1 / 64);
 });
+
+/**
+ * 计算低于5w血僵尸的平均血量
+ * @returns {number}
+ */
+function GetAverageHealth() {
+    let playerHealth = 0;
+    let satisfyPlayer = 0;
+    const players = Instance.FindEntitiesByClass("player");
+    for (const player of players) {
+        if (!player || !player.IsValid()) continue;
+        // 剔除人类玩家
+        if (player.GetTeamNumber() != 2) continue;
+        const health = player.GetHealth();
+
+        // 过滤超过5w血的僵尸
+        if (health <= 50000) {
+            playerHealth =+ health;
+            satisfyPlayer ++;
+        }
+    }
+    const averageHealth = satisfyPlayer > 0 ? playerHealth / satisfyPlayer : 0;
+    return averageHealth;
+}
 
 /**
  * 获取name fixup自动生成的后缀
@@ -124,4 +154,24 @@ function vectorSubtract(vec1, vec2) {
  */
 function vectorScale(vec, scale) {
     return { x: vec.x * scale, y: vec.y * scale, z: vec.z * scale };
+}
+
+/**
+ * 向量最小
+ * @param {import("cs_script/point_script").Vector} vec
+ * @param {number} min
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorMin(vec, min) {
+    return { x: Math.min(vec.x, min), y: Math.min(vec.y, min), z: Math.min(vec.z, min) };
+}
+
+/**
+ * 向量最大
+ * @param {import("cs_script/point_script").Vector} vec
+ * @param {number} max
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorMax(vec, max) {
+    return { x: Math.max(vec.x, max), y: Math.max(vec.y, max), z: Math.max(vec.z, max) };
 }
