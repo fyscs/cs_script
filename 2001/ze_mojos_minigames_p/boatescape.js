@@ -13,7 +13,12 @@ Instance.OnScriptInput("Freeze", (data) => {
     const player = data.activator;
     const h = player.GetHealth() * 0.8;
     if (h >= 1) {
-        player.SetHealth(h);
+        const d = player.GetHealth() - h;
+        const damage = {
+            damage: d,
+            damageTypes: 256, // SHOCK
+        };
+        player.TakeDamage(damage);
     }
     else {
         const damage = {

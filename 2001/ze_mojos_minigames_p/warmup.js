@@ -8,6 +8,6 @@ Instance.OnRoundStart(() => {
     if (first_round) {
         Instance.EntFireAtName({ name: "wamrup_relay", input: "Trigger" });
         Instance.EntFireAtName({ name: "script_warmup", input: "RunScriptInput", value: "EndWarmUp", delay: 10 });
-        Instance.EntFireAtName({ name: "console", input: "Command", value: "mp_restartgame 1", delay: 30 });
+        Instance.EntFireAtName({ name: "map_parameters", input: "firewincondition", value: "16", delay: 30 });
     }
 });

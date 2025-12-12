@@ -62,8 +62,9 @@ Instance.OnScriptInput("Punish", () => {
             if (health < 1) {
                 health = 1;
             }
-            player.SetHealth(health);
+            player.SetHealth(health + 1);
             player.SetMaxHealth(health);
+            Instance.EntFireAtName({ name: "dummy_hurt", input: "Hurt", activator: player, delay: 0.1 });
         }
     }
 });
@@ -75,8 +76,9 @@ Instance.OnScriptInput("PunishActivator", (data) => {
         if (health < 1) {
             health = 1;
         }
-        player.SetHealth(health);
+        player.SetHealth(health + 1);
         player.SetMaxHealth(health);
+        Instance.EntFireAtName({ name: "dummy_hurt", input: "Hurt", activator: player, delay: 0.1 });
     }
 });
 Instance.OnScriptInput("BossHealth", (data) => {
