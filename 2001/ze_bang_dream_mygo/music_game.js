@@ -5,7 +5,7 @@ import { Instance } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/12/14
+ * 2025/12/16
  */
 
 /**
