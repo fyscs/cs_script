@@ -5,7 +5,7 @@ import { Instance } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/11/11
+ * 2025/12/20
  */
 
 const voteState = [0, 0, 0, 0, 0, 0];
@@ -38,7 +38,7 @@ Instance.OnScriptInput("Subtract", (inputData) => {
 
 Instance.OnScriptInput("Compare", (inputData) => {
     const winnerSuffix = voteState.indexOf(Math.max(...voteState)) + 1;
-    Instance.EntFireAtName({ name: "music_vote_" + winnerSuffix + "_relay", input: "Trigger" });
+    Instance.EntFireAtName({ name: "music_vote_*_" + winnerSuffix + "_relay", input: "Trigger" });
 });
 
 // 回合重启时重置票数

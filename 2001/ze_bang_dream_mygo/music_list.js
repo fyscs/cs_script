@@ -5,171 +5,68 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/12/19
+ * 2025/12/20
  */
-
-let currentMusic = "";
 
 const pickNumber = 5;
 
+let currentMusic = "";
 const musicList = ["NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const playedMusic = /** @type {Array<string>} */ ([]);
 
 Instance.OnScriptInput("Start", (inputData) => {
     const entity = Instance.FindEntityByName("music_game_init_relay");
     if (!entity || !entity.IsValid()) return;
+
     entity.SetEntityName(currentMusic);
     Instance.EntFireAtTarget({ target: entity, input: "Trigger" });
+    playedMusic.push(currentMusic);
+});
+
+// 设置当前曲目
+Instance.OnScriptInput("SetMusic", (inputData) => {
+    const entity = inputData.caller;
+    if (!entity || !entity.IsValid()) return;
+    const entityName = entity.GetEntityName();
+    const parts = entityName.split('_');
+    currentMusic = parts[2];
 });
 
 // 随机抽取曲库中的曲目
 Instance.OnScriptInput("PickRandom", (inputData) => {
-    const currentList = getRandomElements(musicList, pickNumber);
+
+    // 创建排除已播放曲目的可选列表
+    const playedMusicLowercaseSet = new Set(playedMusic.map(music => music.toLowerCase()));
+    const availableMusic = musicList.filter(music => 
+        !playedMusicLowercaseSet.has(music.toLowerCase())
+    );
+    
+    // 如果可选曲目数量少于pickNumber，重置抽取池
+    if (availableMusic.length < pickNumber + 1) playedMusic.length = 0;
+
+    const currentList = getRandomElements(availableMusic, pickNumber);
 
     for (let i = 0; i < pickNumber; i ++) {
         const temp = /** @type {PointTemplate|undefined} */ (Instance.FindEntityByName("music_vote_" + currentList[i].toLowerCase() + "_temp"));
-        if (!temp || !temp.IsValid()) return;
+        if (!temp || !temp.IsValid()) continue;
 
         const positionEntity = Instance.FindEntityByName("music_vote" + (i + 2) + "_ptp");
-        if (!positionEntity || !positionEntity.IsValid()) return;
+        if (!positionEntity || !positionEntity.IsValid()) continue;
 
         const entities = temp.ForceSpawn(positionEntity.GetAbsOrigin());
-        if (!entities) return;
+        if (!entities) continue;
 
         for (const entity of entities) {
             if (entity.GetClassName() === "logic_relay") {
-                entity.SetEntityName("music_vote_" + (i + 2) + "_relay");
+                entity.SetEntityName(`music_vote_${currentList[i].toLowerCase()}_${i + 2}_relay`);
                 break;
             }
         }
     }
 });
 
-Instance.OnScriptInput("LOUDER", (inputData) => {
-    currentMusic = "LOUDER";
-});
-
-Instance.OnScriptInput("NamelessPassion", (inputData) => {
-    currentMusic = "NamelessPassion";
-});
-
-Instance.OnScriptInput("BeethovenVirus", (inputData) => {
-    currentMusic = "BeethovenVirus";
-});
-
-Instance.OnScriptInput("YukiNoShizukuAmeNoOto", (inputData) => {
-    currentMusic = "YukiNoShizukuAmeNoOto";
-});
-
-Instance.OnScriptInput("TVsShark", (inputData) => {
-    currentMusic = "TVsShark";
-});
-
-Instance.OnScriptInput("Oborozuki", (inputData) => {
-    currentMusic = "Oborozuki";
-});
-
-Instance.OnScriptInput("Jericho", (inputData) => {
-    currentMusic = "Jericho";
-});
-
-Instance.OnScriptInput("KimitoatsumatteSeizaninaretara", (inputData) => {
-    currentMusic = "KimitoatsumatteSeizaninaretara";
-});
-
-Instance.OnScriptInput("MusicaCaelestis", (inputData) => {
-    currentMusic = "MusicaCaelestis";
-});
-
-Instance.OnScriptInput("SeeYouAgain", (inputData) => {
-    currentMusic = "SeeYouAgain";
-});
-
-Instance.OnScriptInput("HatedByLife", (inputData) => {
-    currentMusic = "HatedByLife";
-});
-
-Instance.OnScriptInput("FeastOfMouse", (inputData) => {
-    currentMusic = "FeastOfMouse";
-});
-
-Instance.OnScriptInput("InternetOverdose", (inputData) => {
-    currentMusic = "InternetOverdose";
-});
-
-Instance.OnScriptInput("CornerstoneCorolla", (inputData) => {
-    currentMusic = "CornerstoneCorolla";
-});
-
-Instance.OnScriptInput("Tanebi", (inputData) => {
-    currentMusic = "Tanebi";
-});
-
-Instance.OnScriptInput("ImprisonedXII", (inputData) => {
-    currentMusic = "ImprisonedXII";
-});
-
-Instance.OnScriptInput("Refrain", (inputData) => {
-    currentMusic = "Refrain";
-});
-
-Instance.OnScriptInput("SilhouetteDance", (inputData) => {
-    currentMusic = "SilhouetteDance";
-});
-
 Instance.OnScriptInput("SpringSunshine", (inputData) => {
     currentMusic = "SpringSunshine";
-});
-
-Instance.OnScriptInput("Encoder", (inputData) => {
-    currentMusic = "Encoder";
-});
-
-Instance.OnScriptInput("NamaeNoNaiKaibutsu", (inputData) => {
-    currentMusic = "NamaeNoNaiKaibutsu";
-});
-
-Instance.OnScriptInput("TheTempest", (inputData) => {
-    currentMusic = "TheTempest";
-});
-
-Instance.OnScriptInput("TengokuJigokuguni", (inputData) => {
-    currentMusic = "TengokuJigokuguni";
-});
-
-Instance.OnScriptInput("Mayoiuta", (inputData) => {
-    currentMusic = "Mayoiuta";
-});
-
-Instance.OnScriptInput("Hitoshizuku", (inputData) => {
-    currentMusic = "Hitoshizuku";
-});
-
-Instance.OnScriptInput("BeepBeepImASheep", (inputData) => {
-    currentMusic = "BeepBeepImASheep";
-});
-
-Instance.OnScriptInput("TheOtherSide", (inputData) => {
-    currentMusic = "TheOtherSide";
-});
-
-Instance.OnScriptInput("MyDemons", (inputData) => {
-    currentMusic = "MyDemons";
-});
-
-Instance.OnScriptInput("Mujinku", (inputData) => {
-    currentMusic = "Mujinku";
-});
-
-Instance.OnScriptInput("Rrharil", (inputData) => {
-    currentMusic = "Rrharil";
-});
-
-Instance.OnScriptInput("Terrasphere", (inputData) => {
-    currentMusic = "Terrasphere";
-});
-
-Instance.OnScriptInput("DossolesHoliday", (inputData) => {
-    currentMusic = "DossolesHoliday";
 });
 
 /**
