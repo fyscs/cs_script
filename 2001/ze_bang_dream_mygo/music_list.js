@@ -5,14 +5,14 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/12/16
+ * 2025/12/19
  */
 
 let currentMusic = "";
 
 const pickNumber = 5;
 
-const musicList = ["YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 
 Instance.OnScriptInput("Start", (inputData) => {
     const entity = Instance.FindEntityByName("music_game_init_relay");
@@ -42,6 +42,14 @@ Instance.OnScriptInput("PickRandom", (inputData) => {
             }
         }
     }
+});
+
+Instance.OnScriptInput("LOUDER", (inputData) => {
+    currentMusic = "LOUDER";
+});
+
+Instance.OnScriptInput("NamelessPassion", (inputData) => {
+    currentMusic = "NamelessPassion";
 });
 
 Instance.OnScriptInput("BeethovenVirus", (inputData) => {
