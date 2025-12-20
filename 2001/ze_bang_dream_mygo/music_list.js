@@ -20,7 +20,7 @@ Instance.OnScriptInput("Start", (inputData) => {
 
     entity.SetEntityName(currentMusic);
     Instance.EntFireAtTarget({ target: entity, input: "Trigger" });
-    playedMusic.push(currentMusic);
+    if (!playedMusic.includes(currentMusic)) playedMusic.push(currentMusic);
 });
 
 // 设置当前曲目
@@ -30,6 +30,11 @@ Instance.OnScriptInput("SetMusic", (inputData) => {
     const entityName = entity.GetEntityName();
     const parts = entityName.split('_');
     currentMusic = parts[2];
+});
+
+// 设置最新谱面
+Instance.OnScriptInput("New", (inputData) => {
+    currentMusic = "Louder";
 });
 
 // 随机抽取曲库中的曲目
