@@ -24,21 +24,21 @@ let b_MaxDistToPl = 32;
 let lastTime = null;
 
 Instance.OnRoundStart(() => {
-	p = null;
-	ttime = 0.00;
-	bmdl = null;
-	bmphy = null;
-	ticking = false;
-	lastTime = null;
+    p = null;
+    ttime = 0.00;
+    bmdl = null;
+    bmphy = null;
+    ticking = false;
+    lastTime = null;
 });
 
 function SetEntities()
 {
-	if(ticking)
-	{
-		return;
-	}
-	if(!bmdl?.IsValid() )
+    if(ticking)
+    {
+        return;
+    }
+    if(!bmdl?.IsValid() )
     {
         let boss_phys = Instance.FindEntityByName(boss_model);
         if(boss_phys?.IsValid())
@@ -50,7 +50,7 @@ function SetEntities()
             Instance.Msg("Can't Find: "+boss_model);
         }
     }
-	if(!bmphy?.IsValid() )
+    if(!bmphy?.IsValid() )
     {
         let boss_phys = Instance.FindEntityByName(boss_move_physbox);
         if(boss_phys?.IsValid())
@@ -65,74 +65,74 @@ function SetEntities()
 }
 
 Instance.OnScriptInput("Start", () => {
-	if(!ticking)
-	{
-		SetEntities();
-	    ticking = true;
-		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: 0.00 });
-	}
+    if(!ticking)
+    {
+        SetEntities();
+        ticking = true;
+        Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: 0.00 });
+    }
 });
 
 Instance.OnScriptInput("Stop", () => {
-	if(ticking)
+    if(ticking)
     {
         ticking = false;
-		bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
+        bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
     }
 });
 
 Instance.OnScriptInput("Tick", () => {
-	if (!bmdl?.IsValid() || !bmphy?.IsValid()) 
-	{
-		return;
-	}
-	let currentTime = Instance.GetGameTime();
+    if (!bmdl?.IsValid() || !bmphy?.IsValid()) 
+    {
+        return;
+    }
+    let currentTime = Instance.GetGameTime();
     if(lastTime === null) 
     {
         lastTime = currentTime;
     }
 
-	let deltaTime = currentTime - lastTime;
+    let deltaTime = currentTime - lastTime;
     lastTime = currentTime;
 
-	if(ticking)
-	{
-		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: TICKRATE });
-	}
-	else
-	{
-		bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
-		return;
-	}
-
-	if(p == null || !p?.IsValid() || p?.GetHealth() <= 0.00 || p?.GetTeamNumber() != 3 || ttime >= RETARGET_TIME) 
-	{
-		p = null;
-		return SearchTarget();
+    if(ticking)
+    {
+        Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: TICKRATE });
     }
-	ttime += deltaTime;
-	let gto = p.GetAbsOrigin();
+    else
+    {
+        bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
+        return;
+    }
+
+    if(p == null || !p?.IsValid() || p?.GetHealth() <= 0.00 || p?.GetTeamNumber() != 3 || ttime >= RETARGET_TIME) 
+    {
+        p = null;
+        return SearchTarget();
+    }
+    ttime += deltaTime;
+    let gto = p.GetAbsOrigin();
     let npc_m_gto = bmdl.GetAbsOrigin();
-	let tm_ang = GetYawFVect2D(gto, npc_m_gto);
+    let tm_ang = GetYawFVect2D(gto, npc_m_gto);
     let setg_rangd = SetGraduallyAng(tm_ang, bmdl);
-	if(setg_rangd > 0 && setg_rangd <= ang_rot_limit || setg_rangd < 0 && setg_rangd >= -ang_rot_limit)
+    if(setg_rangd > 0 && setg_rangd <= ang_rot_limit || setg_rangd < 0 && setg_rangd >= -ang_rot_limit)
     {
         let dist_pb = GetDistance(npc_m_gto, gto);
         if(dist_pb > b_MaxDistToPl)
         {
-			let direction = VectorSubtract(gto, npc_m_gto);
-			let normalizedDirection = NormalizeVector(direction);
-			let pushVelocity = MultiplyVectorByScalar(normalizedDirection, SPEED_FORWARD);
-			bmphy.Teleport({velocity: {x: pushVelocity.x, y: pushVelocity.y, z: bmphy.GetAbsVelocity().z}});
+            let direction = VectorSubtract(gto, npc_m_gto);
+            let normalizedDirection = NormalizeVector(direction);
+            let pushVelocity = MultiplyVectorByScalar(normalizedDirection, SPEED_FORWARD);
+            bmphy.Teleport({velocity: {x: pushVelocity.x, y: pushVelocity.y, z: bmphy.GetAbsVelocity().z}});
         }
         else
         {
-			bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
+            bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
         }  
     }   
     else
     {
-		bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
+        bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
     }
 
 });
@@ -140,32 +140,32 @@ Instance.OnScriptInput("Tick", () => {
 function SearchTarget()
 {
     ttime = 0.00;
-	if(bmdl?.IsValid())
-	{
-		let candidates = []; 
-		let players = Instance.FindEntitiesByClass("player");
-		for(let i = 0; i < players.length; i++)
-		{
-			if(players[i]?.IsValid() && players[i].GetTeamNumber() == 3 && players[i].GetHealth() > 0 && GetDistance(players[i].GetAbsOrigin(), bmdl.GetAbsOrigin()) <= TARGET_DISTANCE)
-			{
-				candidates.push(players[i]);
-			}
-		}
-		if(candidates.length > 0) 
-		{
-			let rnd_player = candidates[GetRandomInt(0, candidates.length - 1)]
-			p = rnd_player;
-			Instance.Msg(`TARGET: ${p?.GetPlayerController()?.GetPlayerName()}`);
+    if(bmdl?.IsValid())
+    {
+        let candidates = []; 
+        let players = Instance.FindEntitiesByClass("player");
+        for(let i = 0; i < players.length; i++)
+        {
+            if(players[i]?.IsValid() && players[i].GetTeamNumber() == 3 && players[i].GetHealth() > 0 && GetDistance(players[i].GetAbsOrigin(), bmdl.GetAbsOrigin()) <= TARGET_DISTANCE)
+            {
+                candidates.push(players[i]);
+            }
+        }
+        if(candidates.length > 0) 
+        {
+            let rnd_player = candidates[GetRandomInt(0, candidates.length - 1)]
+            p = rnd_player;
+            Instance.Msg(`TARGET: ${p?.GetPlayerController()?.GetPlayerName()}`);
             return;
         } 
-		else 
-		{
+        else 
+        {
             Instance.Msg("No alive players found");
-			return null;
+            return null;
         }
-	}
-	Instance.Msg("Physbox not valid");
-	return null;
+    }
+    Instance.Msg("Physbox not valid");
+    return null;
 }
 
 function SetGraduallyAng(ang_t, ent)
