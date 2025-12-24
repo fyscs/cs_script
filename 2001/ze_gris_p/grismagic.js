@@ -485,6 +485,7 @@ let CLEAR_ALL_INTERVAL = false;
 let HEAL = false;
 const HEAL_TICK = 3;
 const HEAL_RADIUS = 112;
+let MOTHER_ZM_FOUND = false;
 //MAP THINK
 Instance.SetThink(() => {
     // This has to run every tick
@@ -494,8 +495,29 @@ Instance.SetThink(() => {
 Instance.SetNextThink(Instance.GetGameTime());
 Instance.OnRoundStart(() => {
     CLEAR_ALL_INTERVAL = false;
+    MOTHER_ZM_FOUND = false;
     HEAL = false;
+    find_mother_zombies();
 });
+function find_mother_zombies() {
+    const interval = setInterval(() => {
+        if (CLEAR_ALL_INTERVAL || MOTHER_ZM_FOUND) {
+            clearInterval(interval);
+            return;
+        }
+        else {
+            const players = Instance.FindEntitiesByClass("player");
+            for (const player of players) {
+                if (player.GetTeamNumber() == 2) {
+                    if (!MOTHER_ZM_FOUND) {
+                        MOTHER_ZM_FOUND = true;
+                    }
+                    Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "f_mother_zm:1" });
+                }
+            }
+        }
+    }, .5 * 1000);
+}
 Instance.OnRoundEnd((winningTeam) => {
     CLEAR_ALL_INTERVAL = true;
     HEAL = false;
