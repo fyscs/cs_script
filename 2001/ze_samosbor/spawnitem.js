@@ -8,7 +8,7 @@ Instance.OnScriptInput("SpawnCanister", () => {
         let r_ent = ents[rnd_n];
         if(r_ent?.IsValid())
         {
-            Instance.EntFireAtTarget(r_ent, "FireUser1", "", 0.00);
+            Instance.EntFireAtTarget({ target: r_ent, input: "FireUser1", value: "", delay: 0.00 });
         }
     }
 });
@@ -21,7 +21,7 @@ Instance.OnScriptInput("SpawnItem", () => {
         let r_ent = ents[rnd_n];
         if(r_ent?.IsValid())
         {
-            Instance.EntFireAtTarget(r_ent, "FireUser2", "", 0.00);
+            Instance.EntFireAtTarget({ target: r_ent, input: "FireUser2", value: "", delay: 0.00 });
         }
     }
 });
@@ -34,7 +34,7 @@ Instance.OnScriptInput("SpawnMeat", () => {
         let r_ent = ents[rnd_n];
         if(r_ent?.IsValid())
         {
-            Instance.EntFireAtTarget(r_ent, "FireUser3", "", 0.00);
+            Instance.EntFireAtTarget({ target: r_ent, input: "FireUser3", value: "", delay: 0.00 });
         }
     }
 });
