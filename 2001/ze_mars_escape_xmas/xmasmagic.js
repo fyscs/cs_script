@@ -813,7 +813,7 @@ function map_modifier() {
         Instance.EntFireAtName({ name: "hmm_ultima", input: "PickRandomShuffle" });
         setTimeout(() => {
             vip();
-        }, 20000);
+        }, 25000);
     }
     else if (MODE == "Snowball Fight") {
         xmas_presents_default();
@@ -991,6 +991,7 @@ let mother_zm_found = false;
 Instance.OnRoundStart(() => {
     clearTasks();
     find_templates();
+    MODE = "";
     REBIRTH_STOP_INTERVAL = false;
     BAHAMUT_FIGHT = false;
     mother_zm_found = false;
@@ -1057,6 +1058,8 @@ Instance.OnRoundStart(() => {
     if (LEVEL == 1) {
         kill_gris_rtv_stuff();
         kill_gris_stuff();
+        Instance.EntFireAtName({ name: "mako_zm_helper", input: "Kill" });
+        Instance.EntFireAtName({ name: "epstein_temple_ragdolls", input: "Kill" });
         Instance.EntFireAtName({ name: "fade", input: "Fade" });
         Instance.EntFireAtName({ name: "CloudTracktrain", input: "Kill" });
         Instance.EntFireAtName({ name: "sky_xmas", input: "FireUser1" });
@@ -1072,6 +1075,7 @@ Instance.OnRoundStart(() => {
         kill_gris_rtv_stuff();
         kill_gris_stuff();
         MATERIA_LEVEL = 3;
+        Instance.EntFireAtName({ name: "epstein_temple_ragdolls", input: "Kill" });
         Instance.EntFireAtName({ name: "snd_modify_pitch", input: "SetFloatValue", value: "1.0" });
         Instance.EntFireAtName({ name: "sky_xmas", input: "FireUser1" });
         Instance.EntFireAtName({ name: "Item_SpawnOrigin_UltimaEX2", input: "Trigger", delay: 10 });
@@ -1088,6 +1092,7 @@ Instance.OnRoundStart(() => {
     else if (LEVEL == 3) {
         xmas_presents_default();
         kill_gris_rtv_stuff();
+        Instance.EntFireAtName({ name: "mako_zm_helper", input: "Kill" });
         Instance.EntFireAtName({ name: "ending_gris", input: "Enable" });
         Instance.EntFireAtName({ name: "CloudTracktrain", input: "Kill" });
         Instance.EntFireAtName({ name: "sky_xmas", input: "FireUser1" });
@@ -1096,6 +1101,7 @@ Instance.OnRoundStart(() => {
     }
     else if (LEVEL == 4) {
         spawn_rebirth_triggers();
+        Instance.EntFireAtName({ name: "mako_zm_helper", input: "Kill" });
         Instance.EntFireAtName({ name: "epstein_button", input: "Lock" });
         Instance.EntFireAtName({ name: "CloudTracktrain", input: "Kill" });
         Instance.EntFireAtName({ name: "sky_xmas", input: "FireUser1" });
@@ -1780,7 +1786,7 @@ Instance.OnPlayerChat((stuff) => {
                 Instance.ServerCommand("say FUCKING GOOBER STOP LENNYING YOU LITTLE BITCH");
             }
             if (LENNY_COUNT == LENNY_OVERLOAD) {
-                LENNY_OVERLOAD = LENNY_COUNT + getRandomInt(2000, 5000);
+                LENNY_OVERLOAD = LENNY_COUNT + getRandomInt(1000, 5000);
                 Instance.ServerCommand("say WARNING LENNY OVERLOAD");
                 Instance.ServerCommand("say WARNING LENNY OVERLOAD");
                 Instance.ServerCommand("say WARNING LENNY OVERLOAD");
@@ -3523,8 +3529,8 @@ function xmas_present_trolltima() {
     }
 }
 function set_vip(player) {
-    if (!player.IsValid()) {
-        Instance.ServerCommand("say VIP is... Erroneous???");
+    if (!player.IsValid() || player.GetTeamNumber() == 2) {
+        vip();
     }
     else {
         let temp_vip_trail = Instance.FindEntityByName("temp_vip_trail");
