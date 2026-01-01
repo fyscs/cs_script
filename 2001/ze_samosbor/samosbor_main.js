@@ -14,8 +14,6 @@ let BOTTLE_CHANCE = [
     { value: 5, weight: 5 }
 ]
 
-const VOTE_COMMAND = "!m_ex"
-
 let votes = 0;
 let votes_min = 10;
 
@@ -51,6 +49,7 @@ class Player {
         this.voted_extreme = false;
         this.Mapper = false;
         this.Vip = false;
+        this.Skin = "";
     }
     SetVotedExtreme()
     {
@@ -101,10 +100,15 @@ Instance.OnScriptInput("SetVip", ({caller, activator}) => {
 // \__/   \_/ \___|_| |_|\__|___/
 
 Instance.OnPlayerDisconnect((event) => {
+    let player_slot = event.playerSlot
+    const inst = PlayerInstancesMap.get(player_slot);
     PlayerInstancesMap.delete(event.playerSlot);
     if(isVoteExtreme)
     {
-        votes--
+        if(inst.voted_extreme)
+        {
+            votes--
+        }
         let players_amount = Instance.FindEntitiesByClass("player");
         let players_needed = (players_amount.length/100) * 55;
         players_needed = Math.ceil(players_needed);
@@ -146,6 +150,13 @@ Instance.OnPlayerReset((event) => {
             inst.player = player;
             inst.controller = player_controller;
             inst.name = player_name;
+            if(inst.Mapper || inst.Vip)
+            {
+                if(inst.Skin != "" && player.GetTeamNumber() === 3)
+                {
+                    Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: inst.Skin, delay: 1.00 });
+                }
+            }
         } 
         else 
         {
@@ -161,9 +172,13 @@ Instance.OnRoundStart(() => {
         isExtremeMode = true;
     }
     Instance.EntFireAtName({ name: "Map_Floor_Postprocessing", input: "Disable", value: "", delay: 0.00 });
+    if(!isExtremeMode)
+    {
+        traps_percentage = 25;
+    }
     if(isExtremeMode)
     {
-        traps_percentage = 80;
+        traps_percentage = 60;
     }
 });
 
@@ -193,12 +208,13 @@ Instance.OnPlayerChat((event) => {
     const player_slot = player_controller?.GetPlayerSlot();
     const inst = PlayerInstancesMap.get(player_slot);
     const player_text = event.text.toLowerCase();
-    if(player_text.includes(VOTE_COMMAND))
+    if(player_text.includes("!m_ex") || player_text.includes("m_ex"))
     {
         if(isVoteExtreme && !isVoteExtremeSucceeded && !inst.voted_extreme)
         {
             inst.SetVotedExtreme();
             votes++
+            let player_name = player_controller.GetPlayerName()
             let players_amount = Instance.FindEntitiesByClass("player");
             let players_needed = (players_amount.length/100) * 55;
             players_needed = Math.ceil(players_needed);
@@ -210,7 +226,7 @@ Instance.OnPlayerChat((event) => {
             {
                 players_needed = 35;
             }
-            Instance.ServerCommand(`say Player ${inst.GetPlayerName} wants to vote for Extreme Mode (${votes}/${players_needed})`);
+            Instance.ServerCommand(`say Player ${player_name} wants to vote for Extreme Mode (${votes}/${players_needed})`);
             if(votes >= players_needed)
             {
                 isVoteExtreme = false;
@@ -235,7 +251,6 @@ Instance.OnPlayerChat((event) => {
         {
             isVoteExtreme = false;
             isVoteExtremeSucceeded = true;
-            votes = 0;
             Instance.EntFireAtName({ name: "cmd", input: "Command", value: "say Voting for Extreme Mode has been Disabled.", delay: 0.50 });
             isExtremeMode = true;
         }
@@ -261,6 +276,7 @@ Instance.OnPlayerChat((event) => {
             if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) <= SKINS_LIST.length)
             {
                 let skin_path = SKINS_LIST.find(item => item.number == Number(text[1]))
+                inst.Skin = skin_path?.path
                 Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: `${skin_path?.path}` });
             }
         }
@@ -282,11 +298,6 @@ Instance.OnPlayerChat((event) => {
         {
             Instance.EntFireAtTarget({ target: inst.player, input: "SetScale", value: `${text[1]}` });
         }
-    }
-    if(player_text.includes("!m_ef") && inst.Mapper)
-    {
-        const text = player_text.split(' ');
-        Instance.EntFireAtName({ name: text[1], input: text[2], value: text[3] });
     }
 });
 
