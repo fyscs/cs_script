@@ -22,7 +22,7 @@ class Boss {
 }
 // Alien 1
 Instance.OnScriptInput("InitBossAlien1", () => {
-    let boss = new Boss("Alien", 1, 20000, 300, "boss_killed_relay");
+    let boss = new Boss("Alien", 1, 10000, 250, "boss_killed_relay");
     boss.he_damage = 30;
     boss.sprite_particle = "Boss_HP_Bar_lvl1";
     boss.segments = 16;
