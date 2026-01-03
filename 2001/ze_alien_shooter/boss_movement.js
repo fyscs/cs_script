@@ -519,8 +519,8 @@ var TraceInteracts;
 const tickrate = 64; // how often the script makes calculations a second (Not accurate because of custom scheduler. It's best to leave this value alone)
 const front_angle = 5; // angle to the left and right in which the boss won't turn if the target is within that angle
 const turn_angle_speed = 4; // angle in degrees the boss will turn every tick
-const forward_thruster_force = 450; // force of thruster that is used when boss is outside of precision_tracking_distance
-const precision_velocity = 450; // velocity used for precision tracking
+const forward_thruster_force = 400; // force of thruster that is used when boss is outside of precision_tracking_distance
+const precision_velocity = 350; // velocity used for precision tracking
 const precision_tracking_distance = 250; // distance at which script changes how boss moves (at this distance, it's almost impossible to dodge the boss)
 const timeout_distance = 50; // distance at which precision tracking is turned off and thruster is being used again until target enters precision_tracking_distance again
 const origin_height_offset = 687;
@@ -574,7 +574,7 @@ function startBoss(target) {
                     angle.yaw += turn_angle_speed;
                     boss_physbox.Teleport({ angles: angle });
                 }
-                else {
+                else if (local_angle_deg < -front_angle) {
                     let angle = boss_physbox.GetAbsAngles();
                     angle.yaw -= turn_angle_speed;
                     boss_physbox.Teleport({ angles: angle });
