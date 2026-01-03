@@ -5,13 +5,13 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/12/31
+ * 2026/1/3
  */
 
 const pickNumber = 5;
 
 let currentMusic = "";
-const musicList = ["TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
 
 Instance.OnScriptInput("Start", (inputData) => {
@@ -37,7 +37,7 @@ Instance.OnScriptInput("SetMusic", (inputData) => {
 
 // 设置最新谱面
 Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "NeoAspect";
+    currentMusic = "UniversalCollapse";
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
