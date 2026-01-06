@@ -5,14 +5,20 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2026/1/3
+ * 2026/1/6
  */
 
 const pickNumber = 5;
 
 let currentMusic = "";
-const musicList = ["NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
+
+// 设置最新谱面
+Instance.OnScriptInput("New", (inputData) => {
+    currentMusic = "Miiro";
+    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
+});
 
 Instance.OnScriptInput("Start", (inputData) => {
     const entity = Instance.FindEntityByName("music_game_init_relay");
@@ -32,12 +38,6 @@ Instance.OnScriptInput("SetMusic", (inputData) => {
     currentMusic = parts[2];
 
     // 设置音乐播放实体
-    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
-});
-
-// 设置最新谱面
-Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "UniversalCollapse";
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
