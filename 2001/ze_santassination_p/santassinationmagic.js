@@ -498,6 +498,7 @@ Instance.SetThink(() => {
 });
 Instance.SetNextThink(Instance.GetGameTime());
 let CLEAR_ALL_INTERVAL = false;
+let VOTE_SWAPPED = false;
 let EXTREME = false;
 let VOTING_BOOTH = true;
 let VOTING_BOOTH_COUNT = 0;
@@ -519,6 +520,7 @@ function reset_player_variables() {
 }
 //ROUND START CONNECTIONS
 Instance.OnRoundStart(() => {
+    VOTE_SWAPPED = false;
     VOTING_BOOTH_COUNT = 0;
     VOTING_BOOTH_REQUIRED = 0;
     VOINTG_BOOTH_PLAYERS = 0;
@@ -670,12 +672,12 @@ Instance.OnScriptInput("input_trump_vote", (stuff) => {
         player.trump = true;
         VOTING_BOOTH_COUNT++;
         const percent = Math.floor(VOTING_BOOTH_COUNT / VOINTG_BOOTH_PLAYERS * 100);
-        {
-            Instance.Msg(VOTING_BOOTH_COUNT + " / " + VOINTG_BOOTH_PLAYERS);
-        }
         Instance.EntFireAtName({ name: "vote_percentage_number", input: "SetMessage", value: percent.toString() });
         if (VOTING_BOOTH_COUNT >= VOTING_BOOTH_REQUIRED) {
-            swap_mode();
+            if (!VOTE_SWAPPED) {
+                VOTE_SWAPPED = true;
+                swap_mode();
+            }
         }
     }
 });
@@ -815,20 +817,20 @@ const NPC_AGGRO_RANGE = 1792;
 const NPC_TARGET_RANGE = 2560;
 const NPC_TRACE_APPROX = 32;
 const NPC_TARGET_TIME = 7;
-const NPC_BENDER_SIDE_BASE = 400; // csgo 400
-const NPC_BEAVER_SIDE_BASE = 1000; // csgo 1000
-const NPC_ELV_SIDE_BASE = 800; // csgo 800
-const NPC_PRESENT_SIDE_BASE = 800; // csgo 800
+const NPC_BENDER_SIDE_BASE = 2000; // csgo 400
+const NPC_BEAVER_SIDE_BASE = 5000; // csgo 1000
+const NPC_ELV_SIDE_BASE = 4000; // csgo 800
+const NPC_PRESENT_SIDE_BASE = 4000; // csgo 800
 const NPC_BENDER_FORWARD_BASE = 5000; // csgo 5000
 const NPC_BEAVER_FORWARD_BASE = 5000; // csgo 5000
 const NPC_ELV_FORWARD_BASE = 4000; // csgo 4000
 const NPC_PRESENT_FORWARD_BASE = 4000; // csgo 4000
-const BOSS_SKINNY_SIDE_BASE = 400; //csgo 400 
-const BOSS_SKINNY_EX_SIDE_BASE = 400; //csgo 400
-const BOSS_FAT_SIDE_BASE = 400; //csgo 400
-const BOSS_FAT_EX_SIDE_BASE = 400; //csgo 400
-const BOSS_SOCRATES_SIDE_BASE = 400; //csgo 400
-const BOSS_SOCRATES_EX_SIDE_BASE = 400; //csgo 400
+const BOSS_SKINNY_SIDE_BASE = 4000; //csgo 400 
+const BOSS_SKINNY_EX_SIDE_BASE = 4000; //csgo 400
+const BOSS_FAT_SIDE_BASE = 4000; //csgo 400
+const BOSS_FAT_EX_SIDE_BASE = 4000; //csgo 400
+const BOSS_SOCRATES_SIDE_BASE = 2000; //csgo 400
+const BOSS_SOCRATES_EX_SIDE_BASE = 2000; //csgo 400
 const BOSS_SKINNY_FORWARD_BASE = 7000; //csgo 7000
 const BOSS_SKINNY_EX_FORWARD_BASE = 9000; //csgo 9000
 const BOSS_FAT_FORWARD_BASE = 5000; //csgo 5000
@@ -840,6 +842,7 @@ const NPC_MOON_MOSNTER_SIDE_FIX_BASE = 200;
 const NPC_MOON_MONSTER_FORWARD_BASE = 25000;
 const NPC_FORWARD_ANGLE_THRESHOLD = 15;
 const NPC_OFFSET = 128;
+const NPC_Z_CHECK = 240;
 const BOSS_ANGLES = [
     { name: "skinny", left: "270", right: "90", forward_threshold: 30, side_threshold: 10, offset: 128 },
     { name: "fat", left: "270", right: "90", forward_threshold: 30, side_threshold: 10, offset: 128 },
@@ -920,7 +923,7 @@ function npc_aggro(hitbox, forward_thrust, side_thrust) {
                 if (player?.IsValid() && player?.IsAlive() && player.GetTeamNumber() == 3) {
                     let player_head_origin = player_head(player);
                     let trace_hit = Instance.TraceLine({ start: hitbox.GetAbsOrigin(), end: player_head_origin, ignoreEntity: hitbox });
-                    if (trace_hit.didHit && Vector3Utils.distance(trace_hit.end, player_head_origin) < NPC_TRACE_APPROX && Vector3Utils.distance(hitbox.GetAbsOrigin(), player_head_origin) < NPC_AGGRO_RANGE) {
+                    if (trace_hit.didHit && Vector3Utils.distance(trace_hit.end, player_head_origin) < NPC_TRACE_APPROX && Vector3Utils.distance(hitbox.GetAbsOrigin(), player_head_origin) < NPC_AGGRO_RANGE && inRange(player.GetAbsOrigin().z, hitbox.GetAbsOrigin().z - NPC_Z_CHECK, hitbox.GetAbsOrigin().z + NPC_Z_CHECK)) {
                         hitbox.started = true;
                         hitbox.target = player;
                         Instance.EntFireAtName({ name: hitbox.model_ents, input: "FireUser2" });
@@ -1011,35 +1014,22 @@ function boss_aggro(hitbox, forward_thrust, side_thrust, angles) {
             let hitbox_forward = getForwardVector(hitbox.helper.GetAbsAngles());
             let hitbox_fixup = Vector3Utils.subtract(hitbox.GetAbsOrigin(), Vector3Utils.scale(hitbox_forward, angles.offset));
             let angle = GetDirectionToTarget(hitbox_fixup, player_head(hitbox.target), hitbox_forward);
-            {
-                Instance.Msg(angle);
-                Instance.Msg(hitbox.target.GetPlayerController()?.GetPlayerName());
-            }
             // Instance.EntFireAtTarget({target:hitbox.side,input:"Deactivate"});
             // Instance.EntFireAtTarget({target:hitbox.forward,input:"Deactivate"});    
             if (inRange(angle, -angles.forward_threshold, angles.forward_threshold)) {
                 Instance.EntFireAtTarget({ target: hitbox.forward, input: "KeyValues", value: "force " + forward_thrust });
                 //Instance.EntFireAtTarget({target:hitbox.side,input:"Deactivate"});
                 Instance.EntFireAtTarget({ target: hitbox.forward, input: "Activate" });
-                {
-                    Instance.Msg("FORWARD");
-                }
             }
             if (inRange(angle, angles.side_threshold, 180)) {
                 Instance.EntFireAtTarget({ target: hitbox.side, input: "KeyValues", value: "force " + side_thrust });
                 Instance.EntFireAtTarget({ target: hitbox.side, input: "KeyValues", value: "angles 0 " + angles.left + " 0" });
                 Instance.EntFireAtTarget({ target: hitbox.side, input: "Activate", delay: .01 });
-                {
-                    Instance.Msg("LEFT");
-                }
             }
             else if (inRange(-angle, angles.side_threshold, 180)) {
                 Instance.EntFireAtTarget({ target: hitbox.side, input: "KeyValues", value: "force " + side_thrust });
                 Instance.EntFireAtTarget({ target: hitbox.side, input: "KeyValues", value: "angles 0 " + angles.right + " 0" });
                 Instance.EntFireAtTarget({ target: hitbox.side, input: "Activate", delay: .01 });
-                {
-                    Instance.Msg("RIGHT");
-                }
             }
         }
     }, BOSS_TICK * 1000);

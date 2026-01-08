@@ -5,13 +5,13 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/12/22
+ * 2025/12/31
  */
 
 const pickNumber = 5;
 
 let currentMusic = "";
-const musicList = ["Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
 
 Instance.OnScriptInput("Start", (inputData) => {
@@ -30,11 +30,15 @@ Instance.OnScriptInput("SetMusic", (inputData) => {
     const entityName = entity.GetEntityName();
     const parts = entityName.split('_');
     currentMusic = parts[2];
+
+    // 设置音乐播放实体
+    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
 // 设置最新谱面
 Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "DaDongBei";
+    currentMusic = "NeoAspect";
+    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
 // 随机抽取曲库中的曲目
@@ -72,6 +76,7 @@ Instance.OnScriptInput("PickRandom", (inputData) => {
 
 Instance.OnScriptInput("SpringSunshine", (inputData) => {
     currentMusic = "SpringSunshine";
+    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
 /**

@@ -1,11 +1,11 @@
 import { Instance } from "cs_script/point_script";
 const InPuts = [
     ["Map_Boss_TheHeart_Start", "OnTrigger", "Map_Boss_TheHeart_GetDamage,Map_Boss_Health_Script,Map_Boss_Health_Hud,[The$Heart]$[2/2],100,1", StartBoss, 3.00],
-    ["Boss_Phase_Case", "OnCase01", "Map_Boss_TheHeart_GetDamage,Map_Boss_Health_Script,Map_Boss_Health_Hud,[The$Heart]$[1/2],50,1", StartBoss, 0.10],
+	["Boss_Phase_Case", "OnCase01", "Map_Boss_TheHeart_GetDamage,Map_Boss_Health_Script,Map_Boss_Health_Hud,[The$Heart]$[1/2],50,1", StartBoss, 0.10],
     ["Map_Boss_TheHeart_Start", "OnTrigger", "0,450", AddHealth, 2.90],
-    ["Filter_Team_Human_BossAdd_P2", "OnPass", "1,580", AddHealth, 0.00],
-    ["Map_Boss_TheHeart_Health_Branch", "OnTrue", "-5", ChangeHealthIt, 0.00],
-    ["Map_Boss_Arena_Bottom_SubtractHealth", "OnStartTouch", "70", ChangeHealthIt, 0.00],
+	["Filter_Team_Human_BossAdd_P2", "OnPass", "1,580", AddHealth, 0.00],
+	["Map_Boss_TheHeart_Health_Branch", "OnTrue", "-5", ChangeHealthIt, 0.00],
+	["Map_Boss_Arena_Bottom_SubtractHealth", "OnStartTouch", "70", ChangeHealthIt, 0.00],
 ];
 
 let BOSS_HEALTH = 0.00;
@@ -60,8 +60,8 @@ Instance.SetThink(function () {
 Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 
 Instance.OnRoundStart(() => {
-    ResetBossS();
-    DelayedCalls.length = 0;
+	ResetBossS();
+	DelayedCalls.length = 0;
     if(InPuts.length > 0)
     {
         for (let i = 0; i < InPuts.length; i++) 
@@ -88,7 +88,7 @@ Instance.OnRoundStart(() => {
 
 Instance.OnRoundEnd(() => {
     DelayedCalls.length = 0;
-    ResetBossS();
+	ResetBossS();
 })
 
 function StartBoss(arg) 
