@@ -1,10 +1,10 @@
-import { Instance, Entity } from "cs_script/point_script";
+import { Instance, Entity, PointTemplate } from "cs_script/point_script";
 
 /**
  * 炮台植物目标挑选脚本
  * 用于使炮台植物可以锁定最近的目标
  * 此脚本由皮皮猫233编写
- * 2025/12/27
+ * 2025/1/10
  */
 
 const plantState = new Map();
@@ -49,12 +49,8 @@ Instance.OnScriptInput("PickTarget", (inputData) => {
     if (!closestPlayer || !closestPlayer.IsValid()) return;
 
     if (plantType === "cobcannon") {
-        Instance.EntFireAtName({ 
-            name: "item_cobcannon_boom_maker", 
-            input: "ForceSpawnAtEntityOrigin",
-            value: "!activator",
-            activator: closestPlayer,
-        });
+        const temp = /** @type {PointTemplate} */ (Instance.FindEntityByName("item_cobcannon_boom_temp"));
+        temp.ForceSpawn(closestPlayer.GetAbsOrigin(), { pitch: 0, yaw: 0, roll: 0 });
     } else {
         Instance.EntFireAtName({ 
             name: "item_" + plantType + "_orient_" + suffix, 
