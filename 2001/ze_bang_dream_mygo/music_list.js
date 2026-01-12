@@ -5,18 +5,18 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2026/1/10
+ * 2026/1/13
  */
 
 const pickNumber = 5;
 
 let currentMusic = "";
-const musicList = ["Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["ShukuseiLoliKamiRequiem", "Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
 
 // 设置最新谱面
 Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "ShukuseiLoliKamiRequiem";
+    currentMusic = "Odysseus";
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
