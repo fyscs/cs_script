@@ -1,6 +1,7 @@
 import { Instance } from 'cs_script/point_script';
 
 let tp_dest;
+let spawn_dest = [];
 const zero_v = { x: 0, y: 0, z: 0 };
 Instance.OnScriptInput("Valley", () => {
     tp_dest = "valley_start_destination";
@@ -42,9 +43,12 @@ Instance.OnScriptInput("TeleportToSpawnPunish", (data) => {
     data.activator.Teleport({ position: destination.GetAbsOrigin(), angles: destination.GetAbsAngles(), velocity: zero_v });
 });
 Instance.OnScriptInput("InitSpawn", (data) => {
-    const destinations = Instance.FindEntitiesByName("spawn_dest");
-    const destination = destinations[getRandomInt(0, destinations.length - 1)];
+    const destination = spawn_dest[getRandomInt(0, spawn_dest.length - 1)];
     data.activator.Teleport({ position: destination.GetAbsOrigin(), angles: destination.GetAbsAngles(), velocity: zero_v });
+});
+Instance.OnRoundStart(() => {
+    spawn_dest = Instance.FindEntitiesByName("spawn_dest");
+    Instance.EntFireAtName({ name: "InitSpawn_trigger", input: "Enable", delay: 0.1 });
 });
 function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
