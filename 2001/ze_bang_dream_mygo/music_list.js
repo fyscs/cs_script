@@ -5,14 +5,20 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2025/12/31
+ * 2026/1/20
  */
 
 const pickNumber = 5;
 
 let currentMusic = "";
-const musicList = ["TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["Odysseus", "ShukuseiLoliKamiRequiem", "Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
+
+// 设置最新谱面
+Instance.OnScriptInput("New", (inputData) => {
+    currentMusic = "FireBird";
+    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
+});
 
 Instance.OnScriptInput("Start", (inputData) => {
     const entity = Instance.FindEntityByName("music_game_init_relay");
@@ -32,12 +38,6 @@ Instance.OnScriptInput("SetMusic", (inputData) => {
     currentMusic = parts[2];
 
     // 设置音乐播放实体
-    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
-});
-
-// 设置最新谱面
-Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "NeoAspect";
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
@@ -68,7 +68,8 @@ Instance.OnScriptInput("PickRandom", (inputData) => {
         for (const entity of entities) {
             if (entity.GetClassName() === "logic_relay") {
                 entity.SetEntityName(`music_vote_${currentList[i].toLowerCase()}_${i + 2}_relay`);
-                break;
+            } else if (entity.GetClassName() === "func_breakable") {
+                Instance.EntFireAtTarget({ target: entity, input: "SetParent", value: `music_vote${i + 2}_rota` });
             }
         }
     }
