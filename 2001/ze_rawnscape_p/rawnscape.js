@@ -1,0 +1,11 @@
+import { Instance, CSGearSlot } from 'cs_script/point_script';
+
+Instance.OnScriptInput("StripKnife", (data) => {
+    const activator = data.activator;
+    activator.DestroyWeapon(activator.FindWeaponBySlot(CSGearSlot.KNIFE));
+});
+Instance.OnBeforePlayerDamage((event) => {
+    if (event.damageTypes === 32) { // FALL
+        return { abort: true };
+    }
+});
