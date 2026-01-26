@@ -1,8 +1,9 @@
 import { Instance } from 'cs_script/point_script';
 
-let soundevents;
-Instance.OnScriptInput("GetHandles", () => {
+let soundevents = [];
+Instance.OnRoundStart(() => {
     soundevents = Instance.FindEntitiesByName("client_soundevent");
+    Instance.EntFireAtName({ name: "player", input: "KeyValue", value: "targetname " });
 });
 Instance.OnScriptInput("PlaySound", (context) => {
     const activator = context.activator;
