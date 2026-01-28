@@ -1,10 +1,8 @@
 import { Instance } from "cs_script/point_script";
 
 const SKINS_LIST = [
-    { number: 1, path: "characters/models/exg/kukuka/doroz/doroz.vmdl" },                       // I'm sorry for temporarily stealing this skin
-    { number: 2, path: "characters/models/exg/kx/kikyonui/kikyonui.vmdl" },                     // I'm sorry for temporarily stealing this skin
-    { number: 3, path: "characters/exg/10011/10011.vmdl" },                                     // I'm sorry for temporarily stealing this skin
-    { number: 4, path: "characters/models/kolka/stalker_models/bandit_mask/bandit_mask.vmdl" }  // I'm sorry for temporarily stealing this skin
+    { number: 1, path: "characters/models/waffel/rurune_bunny/rurune.vmdl" },
+    { number: 2, path: "characters/models/kolka/stalker_models/bandit_mask/bandit_mask.vmdl" }
 ]
 
 let BOTTLE_CHANCE = [
@@ -14,6 +12,12 @@ let BOTTLE_CHANCE = [
     { value: 5, weight: 5 }
 ]
 
+let total_traps_spawned = 0;
+let total_traps_activated = 0;
+let total_traps_broken = 0;
+let total_heals_used = 0;
+let total_bottles_found = 0;
+
 let votes = 0;
 let votes_min = 10;
 
@@ -22,6 +26,7 @@ let traps_percentage = 25;
 let isVoteExtreme = true;
 let isVoteExtremeSucceeded = false;
 let isExtremeMode = false;
+let isInfiniteFloorsMode = false;
 
 let players_in_elevator = 0;
 let meat = 0;
@@ -110,15 +115,15 @@ Instance.OnPlayerDisconnect((event) => {
             votes--
         }
         let players_amount = Instance.FindEntitiesByClass("player");
-        let players_needed = (players_amount.length/100) * 55;
+        let players_needed = (players_amount.length/100) * 65;
         players_needed = Math.ceil(players_needed);
         if(players_needed <= votes_min)
         {
             players_needed = votes_min;
         }
-        if(players_needed >= 35)
+        if(players_needed >= 41)
         {
-            players_needed = 35;
+            players_needed = 41;
         }
         if(votes >= players_needed)
         {
@@ -129,6 +134,17 @@ Instance.OnPlayerDisconnect((event) => {
         }
     }
 });
+
+//Instance.OnPlayerKill((event) => {
+//    const player_team = event.player.GetTeamNumber()
+//    if(isExtremeMode)
+//    {
+//        if(player_team === 3)
+//        {
+//            traps_percentage + 2;
+//        }
+//    }
+//})
 
 Instance.OnPlayerReset((event) => {
     const player = event.player;
@@ -172,13 +188,15 @@ Instance.OnRoundStart(() => {
         isExtremeMode = true;
     }
     Instance.EntFireAtName({ name: "Map_Floor_Postprocessing", input: "Disable", value: "", delay: 0.00 });
-    if(!isExtremeMode)
-    {
-        traps_percentage = 25;
-    }
     if(isExtremeMode)
     {
-        traps_percentage = 60;
+        traps_percentage = 70;
+        meat_needed = 9;
+        //floors_max = 7;
+    }
+    if(isInfiniteFloorsMode)
+    {
+        floors_max = 100;
     }
 });
 
@@ -216,15 +234,15 @@ Instance.OnPlayerChat((event) => {
             votes++
             let player_name = player_controller.GetPlayerName()
             let players_amount = Instance.FindEntitiesByClass("player");
-            let players_needed = (players_amount.length/100) * 55;
+            let players_needed = (players_amount.length/100) * 65;
             players_needed = Math.ceil(players_needed);
             if(players_needed <= votes_min)
             {
                 players_needed = votes_min;
             }
-            if(players_needed >= 35)
+            if(players_needed >= 41)
             {
-                players_needed = 35;
+                players_needed = 41;
             }
             Instance.ServerCommand(`say Player ${player_name} wants to vote for Extreme Mode (${votes}/${players_needed})`);
             if(votes >= players_needed)
@@ -283,20 +301,33 @@ Instance.OnPlayerChat((event) => {
         if(inst.Vip && !inst.Mapper)
         {
             const text = player_text.split(' ');
-            if(Number(text[1]) && Number(text[1]) > 0 && Number(text[1]) < 3 && Number.isInteger(Number(text[1])) && Number(text[1]) <= SKINS_LIST.length)
+            if(Number(text[1]) && Number(text[1]) > 0 && Number(text[1]) < 2 && Number.isInteger(Number(text[1])) && Number(text[1]) <= SKINS_LIST.length)
             {
                 let skin_path = SKINS_LIST.find(item => item.number == Number(text[1]))
                 Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: `${skin_path?.path}` });
             }
         }
     }
-    if(player_text.includes("!m_scale") && inst.Mapper)
+    if(player_text.includes("!m_bgset"))
     {
-        const text = player_text.split(' ');
-        const scale = Number(text[1]);
-        if(!Number.isNaN(scale) && scale > 0)
+        if(inst.Mapper && inst.player.GetTeamNumber() === 3)
         {
-            Instance.EntFireAtTarget({ target: inst.player, input: "SetScale", value: `${text[1]}` });
+            const text = player_text.split(' ');
+            if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) == 1)
+            {
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,0" });
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,0" });
+            }
+            if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) == 2)
+            {
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,1" });
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,1" });
+            }
+            if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) == 3)
+            {
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,1" });
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,0" });
+            }
         }
     }
 });
@@ -359,6 +390,37 @@ Instance.OnScriptInput("AddMeat", () => {
     }
 });
 
+Instance.OnScriptInput("AddBottleCount", ({ caller, activator}) => {
+    if(caller?.IsValid && caller.GetClassName() == "func_button")
+    {
+        let caller_name = caller.GetEntityName()
+        if(caller_name.includes("Golden"))
+        {
+            total_bottles_found + 5
+        }
+        else
+        {
+            total_bottles_found++
+        }
+    }
+});
+
+Instance.OnScriptInput("AddHealCount", () => {
+    total_heals_used++
+});
+
+Instance.OnScriptInput("AddTrapCount", () => {
+    total_traps_spawned++
+});
+
+Instance.OnScriptInput("AddTrapBrokenCount", () => {
+    total_traps_broken++
+});
+
+Instance.OnScriptInput("AddTrapActivatedCount", () => {
+    total_traps_activated++
+});
+
 Instance.OnScriptInput("SpawnBottle", ({ caller, activator }) => {
     if(caller?.IsValid && caller.GetClassName() == "trigger_multiple")
     {
@@ -419,23 +481,6 @@ Instance.OnScriptInput("TeleportPlayersNextFloor", ({ caller, activator }) => {
     }
 });
 
-function GetRandomNumber(min, max ) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function getRandomBottle(items) {
-    const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-
-    let random = Math.random() * totalWeight;
-
-    for (let i = 0; i < items.length; i++) {
-        if (random < items[i].weight) {
-            return items[i].value;
-        }
-        random -= items[i].weight;
-    }
-}
-
 //               _           __             _      
 //   /\/\   __ _(_)_ __     / /  ___   __ _(_) ___ 
 //  /    \ / _` | | '_ \   / /  / _ \ / _` | |/ __|
@@ -450,10 +495,6 @@ Instance.OnScriptInput("SpawnFloor", () => {
     {
         if(floor >= floors_min && floor<=floors_max)
         {
-            if(isExtremeMode)
-            {
-                traps_percentage = 80;
-            }
             if(floor > 3)
             {
                 safezone_timer = 28;
@@ -466,6 +507,9 @@ Instance.OnScriptInput("SpawnFloor", () => {
             Instance.EntFireAtName({ name: "Map_Chunk_Add_Case", input: "InValue", value: floor, delay: 0.00 });
             Instance.EntFireAtName({ name: "Map_Human_Item_Case", input: "InValue", value: floor, delay: 16.00 });
             Instance.EntFireAtName({ name: "Map_Floor_SafeZone_Doors", input: "Open", value: "", delay: 13.00 + safezone_timer });
+            Instance.EntFireAtName({ name: "Map_Floor_SafeZone_BreakableDoor_Case", input: "PickRandomShuffle", value: "", delay: 12.00 + safezone_timer });
+            Instance.EntFireAtName({ name: "Map_Floor_SafeZone_BreakableDoor_Case", input: "PickRandomShuffle", value: "", delay: 14.00 + safezone_timer });
+            Instance.EntFireAtName({ name: "Map_Floor_SafeZone_BreakableDoor_Case", input: "PickRandomShuffle", value: "", delay: 16.00 + safezone_timer });
             Instance.EntFireAtName({ name: "Map_Items_Toggle", input: "FireUser2", value: "", delay: 13.00 + safezone_timer });
             Instance.EntFireAtName({ name: "Map_Items_Ammunition", input: "Trigger", value: "", delay: 13.00 + safezone_timer });
             if(floor <= 3)
@@ -525,6 +569,10 @@ Instance.OnScriptInput("SpawnFloor", () => {
         }
 
         // ZOMBIE ITEMS SPAWN
+        if(floor > 0 && floor < floors_max)
+        {
+            Instance.EntFireAtName({ name: "Map_ZM_Item_Maker5", input: "ForceSpawn", value: "", delay: 3.50 });    // ADDITIONAL ITEM
+        }
         if(floor > 1)
         {
             Instance.EntFireAtName({ name: "Map_ZM_Item_Case", input: "ResetShuffle", value: "", delay: 0.00 });
@@ -565,6 +613,29 @@ Instance.OnScriptInput("SpawnFloor", () => {
     }
 })
 
+//    ___                 _   _                 
+//   / __\   _ _ __   ___| |_(_) ___  _ __  ___ 
+//  / _\| | | | '_ \ / __| __| |/ _ \| '_ \/ __|
+// / /  | |_| | | | | (__| |_| | (_) | | | \__ \
+// \/    \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
+
+function GetRandomNumber(min, max ) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getRandomBottle(items) {
+    const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+
+    let random = Math.random() * totalWeight;
+
+    for (let i = 0; i < items.length; i++) {
+        if (random < items[i].weight) {
+            return items[i].value;
+        }
+        random -= items[i].weight;
+    }
+}
+
 //    __                _       
 //   /__\ ___  ___  ___| |_ ___ 
 //  / \/// _ \/ __|/ _ \ __/ __|
@@ -578,8 +649,17 @@ function ResetFloor()
 
 function ResetScript()
 {
+    total_traps_spawned = 0;
+    total_traps_activated = 0;
+    total_traps_broken = 0;
+    total_heals_used = 0;
+    total_bottles_found = 0;
+
+    traps_percentage = 30;
+
     players_in_elevator = 0;
     meat = 0;
+    meat_needed = 8;
     floor = 0;
     floors_min = 1;
     floors_max = 6;
