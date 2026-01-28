@@ -39,11 +39,11 @@ Instance.OnScriptInput("Heal", () => {
                 {
                     if(VectorDistance(player.GetAbsOrigin(), button_h.GetAbsOrigin()) <= h_Radius)
                     {
-                        Instance.EntFireAtTarget(player, "SetDamageFilter", "block_zm_filter_all", 0.00);
-                        Instance.EntFireAtTarget(player, "IgniteLifetime", "0", 0.00);
+                        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "block_zm_filter_all" });
+                        Instance.EntFireAtTarget({ target: player, input: "IgniteLifetime", value: "0" });
                         player.SetHealth(h_Heal);
                         let player_weapon = player.GetActiveWeapon();
-                        Instance.EntFireAtTarget(player_weapon, "SetAmmoAmount", ""+h_mAmmo, 0.00);
+                        Instance.EntFireAtTarget({ target: player_weapon, input: "SetAmmoAmount", value: ""+h_mAmmo });
                         Player_M.set(player, player);
                     }
                     let player_h = Player_M.get(player);
@@ -51,14 +51,14 @@ Instance.OnScriptInput("Heal", () => {
                     {
                         if(VectorDistance(player_h.GetAbsOrigin(), button_h.GetAbsOrigin()) > h_Radius)
                         {
-                            Instance.EntFireAtTarget(player_h, "SetDamageFilter", "stk_nofall", 0.00);
+                            Instance.EntFireAtTarget({ target: player_h, input: "SetDamageFilter", value: "stk_nofall" });
                             Player_M.delete(player_h);
                         }
                     }
                 }
             }
             h_Duration -= deltaTime;
-            Instance.EntFireAtName(h_Script, "RunScriptInput", "Heal", h_Tick);
+            Instance.EntFireAtName( { name: h_Script, input: "RunScriptInput", value: "Heal", delay: h_Tick });
         }
         else
         {
@@ -73,7 +73,7 @@ function ClearDamageFilter()
     {
         if(value?.IsValid())
         {
-            Instance.EntFireAtTarget(value, "SetDamageFilter", "stk_nofall", 0.00);
+            Instance.EntFireAtTarget({ target: value, input: "SetDamageFilter", value: "stk_nofall" });
         }
         
     }
@@ -84,7 +84,7 @@ function ClearDamageFilter()
 
 function IsValidEntityTeam(ent, t)
 {
-    if(ent?.IsValid() && ent?.GetHealth() > 0 && ent?.GetTeamNumber() == t)
+    if(ent?.IsValid() && ent?.IsAlive() && ent?.GetTeamNumber() == t)
     {
         return true;
     }
