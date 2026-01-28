@@ -1,14 +1,17 @@
 import { Instance } from "cs_script/point_script";
 
-let failNum = 0
+let failNum = 1
 let stageNum = 1
+let self = null
 
 Instance.OnRoundStart((event) => {
+		Instance.Msg("stage_manage loaded");
+//		self = Instance.FindEntityByName("stage_manage")
 		getItemTemp();
 		switch(stageNum){
 			case 1:triggerStage1();break
 			case 2:triggerStage2();break
-			
+			 
 		}
 		
 });
