@@ -1,7 +1,6 @@
 import { Instance } from "cs_script/point_script";
 
 let remaining = 0; // 总时间
-let delay = 0; // 每次触发的延迟
 let isCounting = false; // 添加一个标志来控制倒计时，防止重复启动
 
 function tickCountdown() {
@@ -28,7 +27,7 @@ function tickCountdown() {
     });
 
     remaining--;
-
+    Instance.EntFireAtName
     Instance.Msg("Countdown " + remaining);
     
     Instance.SetNextThink(Instance.GetGameTime() + 1.0);
@@ -46,4 +45,10 @@ Instance.OnScriptInput("globalHUD", () => {
     Instance.SetThink(tickCountdown);
     tickCountdown(); // 立即显示首帧
     Instance.SetNextThink(Instance.GetGameTime() + 1.0);
+});
+
+Instance.OnRoundStart(() => {
+    isCounting = false;
+    remaining = 0;
+    Instance.Msg("[HUD] 回合开始");
 });

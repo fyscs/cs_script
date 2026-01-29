@@ -24,36 +24,33 @@ function calculateLaunchDirection(AbsAngles, pitchOffset) {
     return { x, y, z };
 }
 
+const newOrigin = { x: 9344, y: 4848, z: 12016 };
 Instance.OnScriptInput("LaunchTNT", (inputData) => {
-    Instance.Msg("LaunchTNT is running.");
     
     // 获取玩家 (Entity)
     let player = inputData.activator;
-    
     if (!player || !player.IsValid()) {
         return;
     }
 
-    // 注意：在CS2中，玩家Pawn的classname通常是 "cs_player_pawn" 而不是 "player"
-    // 为了兼容性，这里主要检查 IsValid 和 IsAlive
     if (player.IsAlive && !player.IsAlive()) {
-        Instance.Msg("LaunchTNT: Player not alive.");
+        Instance.Msg("[TNT] 玩家不存在");
         return;
     }
 
     let tnt = Get_TNT_Phys();
     if (!tnt || !tnt.IsValid()) {
-        Instance.Msg("LaunchTNT: TNT entity not found or invalid.");
+        Instance.Msg("[TNT] 实体不存在");
         return;
     }
 
     let AbsAngles = player.GetAbsAngles(); 
     // 获取角度
-    let launchDirection = calculateLaunchDirection(AbsAngles, 60);
+    let launchDirection = calculateLaunchDirection(AbsAngles, 58);
     // 设置速度
     let launchSpeed = 720;
     // 设置跳投的额外速度
-    let launchBoost = 530; 
+    let launchBoost = 540; 
 
     // 获取玩家当前的绝对速度向量 {x, y, z}
     let playerVel = player.GetAbsVelocity(); // 
@@ -61,7 +58,7 @@ Instance.OnScriptInput("LaunchTNT", (inputData) => {
     // 检查 Z 轴速度。使用 Math.abs 处理向上(正)或向下(负)的速度
     if (playerVel && Math.abs(playerVel.z) > 10) {
         launchSpeed += launchBoost;
-        Instance.Msg("Boost applied! Z-Speed: " + playerVel.z);
+        Instance.Msg("[TNT] Z-Speed: " + playerVel.z);
     }
     // --- 修改结束 ---
 
@@ -73,4 +70,10 @@ Instance.OnScriptInput("LaunchTNT", (inputData) => {
 
     // 设置TNT速度
     tnt.Teleport({ velocity: launchVelocity });
+});
+
+Instance.OnRoundStart(() => {
+    const target = Instance.FindEntityByName("stage_1_teleport_x");
+    target?.Teleport({ position: newOrigin });
+    Instance.Msg("[TNT] 回合开始");
 });
