@@ -5,7 +5,7 @@ import { Instance, Entity } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2026/1/10
+ * 2026/1/29
  */
 
 const voteState = [0, 0, 0, 0, 0, 0];
@@ -48,7 +48,7 @@ Instance.OnRoundStart(() => {
 function VoteShow(voteSuffix) {
     // 更改投票颜色
     const color = voteState[voteSuffix - 1] * 255 / 64;
-    Instance.EntFireAtName({ name: "music_vote" + voteSuffix + "_break", input: "Color", value: { r: color, g: color, b: color }});
+    Instance.EntFireAtName({ name: "music_vote" + voteSuffix + "_break", input: "Color", value: { r: color, g: color, b: color, a: 255 }});
 
     // 使票数最高的歌曲封面进行旋转
     if (voteEnd) return;
