@@ -180,4 +180,5 @@ Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 });
 Instance.OnScriptInput("setmodelks", ({activator}) => {
     activator.SetModel("characters/models/kurumi/kurumi.vmdl")
+
 })
