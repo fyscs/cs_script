@@ -495,8 +495,6 @@ Instance.OnScriptInput("Crumble", () => {
         plats_left = 0;
         Instance.EntFireAtName({ name: "main_teleport_*", input: "Disable" });
         Instance.EntFireAtName({ name: "cr_teleport", input: "Enable", delay: 0.5 });
-        Instance.EntFireAtName({ name: "wl_spawn", input: "ShowWorldLayerAndSpawnEntities", delay: 0.5 });
-        Instance.EntFireAtName({ name: "wl_crumble", input: "HideWorldLayerAndDestroyEntities", delay: 0.5 });
         Instance.EntFireAtName({ name: "cr_music", input: "StopSound", delay: 10 });
         Instance.EntFireAtName({ name: "vote_relay", input: "Trigger" });
         Instance.EntFireAtName({ name: "cr_platform*", input: "Kill", delay: 10 });
