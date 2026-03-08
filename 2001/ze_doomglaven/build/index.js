@@ -645,3 +645,28 @@ Instance.OnScriptInput("triggerThunderItem", ({ activator }) => {
     const currentVelocity = activator.GetAbsVelocity();
     activator.Teleport({ velocity: backwardsVelocity.add(currentVelocity) });
 });
+const musicOptions = ["the_elven_ruins", "skavenhorde1", "ussingen_destroyed", "last_stand_edit", "the_grey_seers", "escape_and_panic"];
+let currentMusic;
+const playMusic = (musicToPlay) => {
+    currentMusic = musicToPlay;
+    if (musicToPlay) {
+        Instance.EntFireAtName({ name: `music_${musicToPlay}`, input: "StartSound" });
+    }
+    const otherMusic = musicOptions.filter(option => option !== musicToPlay);
+    otherMusic.forEach(option => {
+        Instance.EntFireAtName({ name: `music_${option}`, input: "StopSound", delay: 0.5 });
+    });
+};
+Instance.OnScriptInput("playMusicTheElvenRuins", () => playMusic("the_elven_ruins"));
+Instance.OnScriptInput("playMusicSkavenHorde1", () => playMusic("skavenhorde1"));
+Instance.OnScriptInput("playMusicUssingenDestroyed", () => playMusic("ussingen_destroyed"));
+Instance.OnScriptInput("playMusicLastStandEdit", () => playMusic("last_stand_edit"));
+Instance.OnScriptInput("playMusicTheGreySeers", () => playMusic("the_grey_seers"));
+Instance.OnScriptInput("playMusicEscapeAndPanic", () => playMusic("escape_and_panic"));
+Instance.OnScriptInput("onMusicFinished", ({ caller }) => {
+    if (!caller || caller.GetEntityName() !== `music_${currentMusic}`) {
+        return;
+    }
+    playMusic(currentMusic);
+});
+Instance.OnScriptInput("stopMusic", () => playMusic(undefined));
