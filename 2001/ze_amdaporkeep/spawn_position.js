@@ -143,18 +143,6 @@ Instance.OnScriptInput("Omega_M_Shield", (pl) => {
     }
 });
 
-Instance.OnScriptInput("Omega_Sagittarius_Arrow", () => {
-
-    const DK = Instance.FindEntityByName("Player_Dark_Knight");
-    if (DK && DK.IsValid() && DK.GetTeamNumber() == 3) 
-        {
-            Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Trigger",input: "Enable"});
-            return;
-        }
-        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Trigger2",input: "Enable"});
-    }
-);
-
 function TargetCalculate(vec1, vec2) {
     return {
         x: vec1.x - vec2.x * r,

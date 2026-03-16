@@ -54,87 +54,38 @@
 
 import { Instance } from "cs_script/point_script";
 
-const Ball = {
-    StartPos: null,
-    EndPos: null,
-    FVec: null,
-    RVec: null,
-    StartTime: 0
-};
 
-const speed = 800;
+const MBoss = Instance.FindEntityByName("Boss_Physbox");
+let DK = null;
+let TG = null;
+let StartTime = 0;
 
-Instance.SetThink(Bounce);
+Instance.SetThink(UpdatePosition);
 
-Instance.OnScriptInput("hyw", (pl) => {
-    const player = pl.activator;
-    if (!player || !player.IsValid()) return;
-    Ball.StartTime = Instance.GetGameTime();
-    const ignoreButton = Instance.FindEntitiesByClass("func_button");
-    Ball.StartPos = player.GetEyePosition();
-    const Angle = player.GetEyeAngles();
-    Angle.pitch = 0;
-    const Maker = Instance.FindEntityByName("ZM_C_O_D_Magic_Maker");
-    Maker.Teleport({ position: Ball.StartPos, angles: Angle});
-    Instance.EntFireAtName({name: "ZM_C_O_D_Magic_Maker", input: "ForceSpawn"});
-    Ball.FVec = GetForward(Angle);
-    const EndP = VectorAdd(Ball.StartPos, VectorScale(Ball.FVec, 2400));
-    const TraceResult = Instance.TraceLine({
-        start: Ball.StartPos,
-        end: EndP,
-        ignoreEntity: ignoreButton,
-        ignorePlayers: true
-    });
-
-    if (!TraceResult.didHit) return;
-    let NVec = TraceResult.normal;
-    NVec = Whatisthis(NVec);
-    Ball.EndPos = TraceResult.end;
-    const TraceLenth = VectorDistance(Ball.StartPos, Ball.EndPos);
-    const TravelTime = TraceLenth / speed;
-    Ball.RVec = Reflect(Ball.FVec, NVec);
-    Instance.SetNextThink(Ball.StartTime + TravelTime);
+Instance.OnScriptInput("Omega_M_Arrow", (pl) => {
+    TG = pl.activator;
+    if (!TG || !TG.IsValid()) return;
+    if (DK && DK.IsValid() && DK.GetTeamNumber() == 3) {
+        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Trigger2",input: "Enable"});
+    }
+    else {
+        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Text",input: "ShowHudHint"});
+    }
+    StartTime = Instance.GetGameTime();
+    Instance.SetNextThink(StartTime);
 });
 
-function Bounce(){
-    const Movelinear = Instance.FindEntityByName("ZM_C_O_D_Magic_Movelinear");
-    if (!Movelinear) return;
-    Instance.EntFireAtName({ name: "ZM_C_O_D_Magic_Movelinear", input: "KillHierarchy"});
-    Instance.EntFireAtName({ name: "ZM_C_O_D_Magic_Ext", input: "Trigger"});
-    Ball.FVec = Ball.RVec;
-    Ball.StartPos = Ball.EndPos;
-    Ball.StartTime = Instance.GetGameTime();
-    const Angle = ReturnAngles(Ball.RVec);
-    const Maker = Instance.FindEntityByName("ZM_C_O_D_Magic_Maker");
-    Maker.Teleport({ position: Ball.StartPos, angles: Angle});
-    Instance.EntFireAtName({name: "ZM_C_O_D_Magic_Maker", input: "ForceSpawn"});
-    const EndP = VectorAdd(Ball.StartPos, VectorScale(Ball.FVec, 2400));
-    const ignoreButton = Instance.FindEntitiesByClass("func_button");
-    const TraceResult = Instance.TraceLine({
-        start: Ball.StartPos,
-        end: EndP,
-        ignoreEntity: ignoreButton,
-        ignorePlayers: true
-    });
-    if (!TraceResult.didHit) return;
-    let NVec = TraceResult.normal;
-    NVec = Whatisthis(NVec);
-    Ball.EndPos = TraceResult.end;
-    const TraceLenth = VectorDistance(Ball.StartPos, Ball.EndPos);
-    const TravelTime = TraceLenth / speed;
-    Ball.RVec = Reflect(Ball.FVec, NVec);
-    Instance.SetNextThink(Ball.StartTime + TravelTime);
-}
-
-function GetForward(angles) {
-    const pitchRadians = (angles.pitch * Math.PI) / 180;
-    const yawRadians = (angles.yaw * Math.PI) / 180;
-    const hScale = Math.cos(pitchRadians);
-    return {
-        x: Math.cos(yawRadians) * hScale,
-        y: Math.sin(yawRadians) * hScale,
-        z: -Math.sin(pitchRadians),
-    };
+function UpdatePosition() {
+    const Time = Instance.GetGameTime();
+    if (Time - StartTime > 8.5) return;
+    DK = Instance.FindEntityByName("Player_Dark_Knight");
+    if (DK && DK.IsValid() && DK.GetTeamNumber() == 3) TG = DK;
+    const TGpos = TG.GetAbsOrigin();
+    const Mpos = MBoss.GetAbsOrigin();
+    const Evec = Normalization2d(TGpos, Mpos);
+    const theangles = ReturnAngles(Evec);
+    MBoss.Teleport({ angles: theangles });
+    Instance.SetNextThink(Time);
 }
 
 function ReturnAngles(vec) {
@@ -147,43 +98,13 @@ function ReturnAngles(vec) {
     };
 }
 
-function VectorAdd(vec1, vec2) {
-    return {
-        x: vec1.x + vec2.x,
-        y: vec1.y + vec2.y,
-        z: vec1.z + vec2.z
-    };
-}
-
-function VectorScale(vec, scale) {
-    return {
-        x: vec.x * scale,
-        y: vec.y * scale,
-        z: vec.z * scale
-    };
-}
-
-function VectorDistance(vec1, vec2) {
+function Normalization2d(vec1, vec2) {
     const dx = vec1.x - vec2.x;
     const dy = vec1.y - vec2.y;
-    const dz = vec1.z - vec2.z;
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-function Reflect(vec1, vec2) {
-    const k = vec1.x * vec2.x + vec1.y * vec2.y + vec1.z * vec2.z;
+    const dis = Math.sqrt(dx * dx + dy * dy );
     return {
-        x: vec1.x - 2 * k * vec2.x,
-        y: vec1.y - 2 * k * vec2.y,
-        z: vec1.z - 2 * k * vec2.z
-    }
-}
-
-function Whatisthis(vec) {
-    const QAQ = Math.sqrt(vec.x * vec.x + vec.y * vec.y);
-    return {
-        x: vec.x / QAQ,
-        y: vec.y / QAQ,
+        x: dx / dis,
+        y: dy / dis,
         z: 0
     };
 }
