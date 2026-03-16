@@ -2257,7 +2257,7 @@ class KimJongUn {
     KICK_DAMAGE = 40;
     TICKRATE = 0.1;
     HP_BASE = 500;
-    HP_ADD = 2500;
+    HP_ADD = 3500;
     lastposframe = 0;
     lastpos = null;
     forward_timeout = this.FORWARD_TIMEOUT;
@@ -2279,6 +2279,10 @@ class KimJongUn {
         const self_origin = this.SELF.GetAbsOrigin();
         const self_angle = new Euler(this.SELF.GetAbsAngles());
         const target_origin = this.target.GetAbsOrigin();
+        if (target_origin.x > -8192 || target_origin.x < -11264 || target_origin.y > 14336 || target_origin.y < 11264) {
+            this.TargetPlayer();
+            return;
+        }
         const abs_angle_rad = Math.atan2(target_origin.y - self_origin.y, target_origin.x - self_origin.x);
         const abs_angle_deg = atan2Deg(abs_angle_rad);
         const local_angle_deg = wrapDeg(abs_angle_deg, self_angle.yaw);
