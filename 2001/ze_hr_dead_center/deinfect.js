@@ -1,60 +1,88 @@
-import { Instance, Entity } from "cs_script/point_script";
+import { Instance, Entity, CSWeaponAttackType } from "cs_script/point_script";
 
 /**
  * 防化脚本
  * 此脚本用于实现类似求生之路中的感染者攻击而非ze模式中的直接感染
  * 此脚本为针对风云社参数适配后的版本，对比原版，将僵尸低血量时的1000血降为600血
+ * 使用其他方式来代替返回abort实现免抓的效果
  * 此脚本由皮皮猫233编写
  * 2026/3/17
  */
 
 let deinfectSwitch = false;
-let currentHandler = createDamageHandler(false);
-
-// @ts-ignore
-Instance.OnModifyPlayerDamage((event) => currentHandler(event));
 
 Instance.OnScriptInput("Enable", () => {
     deinfectSwitch = true;
-    currentHandler = createDamageHandler(true);
     ZombieLowHP();
+    SetHumanGod(true);
 });
 
 Instance.OnScriptInput("Disable", () => {
     deinfectSwitch = false;
-    currentHandler = createDamageHandler(false);
+    SetHumanGod(false);
 });
 
 Instance.OnRoundStart(() => {
     deinfectSwitch = false;
-    currentHandler = createDamageHandler(false);
+    SetHumanGod(false);
     thinkQueue.length = 0;
 });
 
-/**
- * 创建一个可以切换的处理器
- * @param {boolean} enabled 
- * @returns 
- */
-function createDamageHandler(enabled) {
-    if (!enabled) {
-        return () => {};
+Instance.OnPlayerKill((event) => {
+    if (event.player.GetTeamNumber() === 3) {
+        Instance.EntFireAtTarget({ target: event.player, input: "SetDamageFilter", value: "" });
     }
-    return (/** @type {import("cs_script/point_script").ModifyPlayerDamageEvent} */ event) => {
-        const attacker = event.attacker;
-        if (!attacker || !attacker.IsValid() || attacker.GetClassName() !== "player" || attacker.GetTeamNumber() !== 2) return;
+});
 
-        const player = event.player;
-        if (!player || !player.IsValid() || player.GetTeamNumber() === 2) return;
-        
-        const health = player.GetHealth();
-        if (health <= 40) {
-            player.Kill();
-        } else {
-            player.SetHealth(health - 40);
+Instance.OnKnifeAttack((event) => {
+    if (!deinfectSwitch) return;
+
+    const player = event.weapon.GetOwner();
+    if (!player || !player.IsValid() || player.GetTeamNumber() !== 2) return;
+
+    const start = player.GetEyePosition();
+    const forward = getForward(player.GetEyeAngles());
+    let end = { x: 0, y: 0, z: 0 };
+    if (event.attackType === CSWeaponAttackType.PRIMARY) end = vectorAdd(start, vectorScale(forward, 71.9));
+    else if (event.attackType === CSWeaponAttackType.SECONDARY) end = vectorAdd(start, vectorScale(forward, 50.2));
+    else return;
+
+    const players = Instance.FindEntitiesByClass("player");
+    let zombies = /** @type {Entity[]} */ ([]);
+    for (const player of players) {
+        if (player && player.IsValid() && player.GetTeamNumber() === 2)
+            zombies.push(player);
+    }
+    const result = Instance.TraceLine({
+        start,
+        end,
+        ignoreEntity: zombies
+    });
+
+    if (result.didHit) {
+        if (result.hitEntity && result.hitEntity.IsValid() && result.hitEntity.GetClassName() === "player" && result.hitEntity.GetTeamNumber() === 3) {
+            const health = result.hitEntity.GetHealth();
+            if (health <= 40) {
+                result.hitEntity.Kill();
+            } else {
+                result.hitEntity.SetHealth(health - 40);
+            }
         }
-        return { abort: true };
-    };
+    }
+});
+
+/**
+ * 设置人类无敌
+ * @param {boolean} active 
+ */
+function SetHumanGod(active) {
+    const players = Instance.FindEntitiesByClass("player");
+    let value = "";
+    if (active) value = "god";
+    for (const player of players) {
+        if (!player || !player.IsValid() || !player.IsAlive() || player.GetTeamNumber() !== 3) continue;
+        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: value });
+    }
 }
 
 /**
@@ -82,6 +110,39 @@ function SetLowHP(player) {
             player.SetHealth(600);
         });
     }
+}
+
+/**
+ * @param {import("cs_script/point_script").Vector} vec1
+ * @param {import("cs_script/point_script").Vector} vec2
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorAdd(vec1, vec2) {
+    return { x: vec1.x + vec2.x, y: vec1.y + vec2.y, z: vec1.z + vec2.z };
+}
+
+/**
+ * @param {import("cs_script/point_script").Vector} vec
+ * @param {number} scale
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function vectorScale(vec, scale) {
+    return { x: vec.x * scale, y: vec.y * scale, z: vec.z * scale };
+}
+
+/**
+ * @param {import("cs_script/point_script").QAngle} angles
+ * @returns {import("cs_script/point_script").Vector}
+ */
+function getForward(angles) {
+    const pitchRadians = (angles.pitch * Math.PI) / 180;
+    const yawRadians = (angles.yaw * Math.PI) / 180;
+    const hScale = Math.cos(pitchRadians);
+    return {
+        x: Math.cos(yawRadians) * hScale,
+        y: Math.sin(yawRadians) * hScale,
+        z: -Math.sin(pitchRadians),
+    };
 }
 
 /** @type {{ time: number, callback: () => void }[]} */
