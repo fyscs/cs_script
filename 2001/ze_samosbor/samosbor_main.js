@@ -304,6 +304,7 @@ Instance.OnPlayerChat((event) => {
             if(Number(text[1]) && Number(text[1]) > 0 && Number(text[1]) < 2 && Number.isInteger(Number(text[1])) && Number(text[1]) <= SKINS_LIST.length)
             {
                 let skin_path = SKINS_LIST.find(item => item.number == Number(text[1]))
+                inst.Skin = skin_path?.path
                 Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: `${skin_path?.path}` });
             }
         }
@@ -569,7 +570,7 @@ Instance.OnScriptInput("SpawnFloor", () => {
         }
 
         // ZOMBIE ITEMS SPAWN
-        if(floor > 0 && floor < floors_max)
+        if(floor == 1 || floor == 3 || floor == 5)
         {
             Instance.EntFireAtName({ name: "Map_ZM_Item_Maker5", input: "ForceSpawn", value: "", delay: 3.50 });    // ADDITIONAL ITEM
         }
