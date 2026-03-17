@@ -5,18 +5,18 @@ import { Instance, PointTemplate } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2026/1/29
+ * 2026/3/10
  */
 
 const pickNumber = 5;
 
 let currentMusic = "";
-const musicList = ["FireBird", "Odysseus", "ShukuseiLoliKamiRequiem", "Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["GongXiFaCai", "TheTaleOfACruelWorld", "NewYorkBackRaise", "TheFarSideStarSFarewell", "InternetYamero", "DearYou", "BraveShine", "SongIAm", "FireBird", "Odysseus", "ShukuseiLoliKamiRequiem", "Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
 
 // 设置最新谱面
 Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "SongIAm";
+    currentMusic = "UmapyoiDensetsu";
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
@@ -77,6 +77,11 @@ Instance.OnScriptInput("PickRandom", (inputData) => {
 
 Instance.OnScriptInput("SpringSunshine", (inputData) => {
     currentMusic = "SpringSunshine";
+    Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
+});
+
+Instance.OnScriptInput("GongXiFaCai", (inputData) => {
+    currentMusic = "GongXiFaCai";
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
