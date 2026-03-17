@@ -4,10 +4,10 @@ import { CSPlayerPawn, Instance, CSGearSlot } from "cs_script/point_script";
  * 数据存读取脚本
  * 此脚本用于实现回合结算后仍能恢复连关数据
  * 此脚本由皮皮猫233编写
- * 2026/3/6
+ * 2026/3/16
  */
 
-let continuousSwitch = false;
+let continuousSwitch = true;
 const playerData = new Map();
 
 Instance.OnScriptInput("SaveData", () => {
