@@ -5,7 +5,7 @@ import { Instance, Entity } from "cs_script/point_script";
  * 此脚本用于实现类似求生之路中的感染者攻击而非ze模式中的直接感染
  * 此脚本为针对风云社参数适配后的版本，对比原版，将僵尸低血量时的1000血降为600血
  * 此脚本由皮皮猫233编写
- * 2026/3/6
+ * 2026/3/17
  */
 
 let deinfectSwitch = false;
@@ -47,7 +47,12 @@ function createDamageHandler(enabled) {
         const player = event.player;
         if (!player || !player.IsValid() || player.GetTeamNumber() === 2) return;
         
-        player.TakeDamage({ damage: 40, damageTypes: 512 });
+        const health = player.GetHealth();
+        if (health <= 40) {
+            player.Kill();
+        } else {
+            player.SetHealth(health - 40);
+        }
         return { abort: true };
     };
 }
