@@ -65,11 +65,11 @@ Instance.SetThink(UpdatePosition);
 Instance.OnScriptInput("Omega_M_Arrow", (pl) => {
     TG = pl.activator;
     if (!TG || !TG.IsValid()) return;
-    if (DK && DK.IsValid() && DK.GetTeamNumber() == 3) {
+    if (DK && DK.GetTeamNumber() == 3) {
         Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Trigger2",input: "Enable"});
     }
     else {
-        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Text",input: "ShowHudHint"});
+        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Text",input: "ShowHudHint", activator: TG});
     }
     StartTime = Instance.GetGameTime();
     Instance.SetNextThink(StartTime);
