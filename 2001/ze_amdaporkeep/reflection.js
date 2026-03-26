@@ -62,7 +62,7 @@ const Ball = {
     StartTime: 0
 };
 
-const speed = 800;
+const speed = 600;
 
 Instance.SetThink(Bounce);
 
