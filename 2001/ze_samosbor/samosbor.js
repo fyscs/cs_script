@@ -1,454 +1,454 @@
 import { Entity, Instance } from "cs_script/point_script";
 
 class MathUtils {
-	static clamp(value, min, max) {
-		return Math.min(Math.max(value, min), max);
-	}
+    static clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
 }
 
 const RAD_TO_DEG = 180 / Math.PI;
 
 class Vector3Utils {
-	static equals(a, b) {
-		return a.x === b.x && a.y === b.y && a.z === b.z;
-	}
-	static add(a, b) {
-		return new Vec3(a.x + b.x, a.y + b.y, a.z + b.z);
-	}
-	static subtract(a, b) {
-		return new Vec3(a.x - b.x, a.y - b.y, a.z - b.z);
-	}
-	static scale(vector, scale) {
-		return new Vec3(vector.x * scale, vector.y * scale, vector.z * scale);
-	}
-	static multiply(a, b) {
-		return new Vec3(a.x * b.x, a.y * b.y, a.z * b.z);
-	}
-	static divide(vector, divider) {
-		if (typeof divider === 'number') {
-			if (divider === 0)
-				throw Error('Division by zero');
-			return new Vec3(vector.x / divider, vector.y / divider, vector.z / divider);
-		}
-		else {
-			if (divider.x === 0 || divider.y === 0 || divider.z === 0)
-				throw Error('Division by zero');
-			return new Vec3(vector.x / divider.x, vector.y / divider.y, vector.z / divider.z);
-		}
-	}
-	static length(vector) {
-		return Math.sqrt(Vector3Utils.lengthSquared(vector));
-	}
-	static lengthSquared(vector) {
-		return vector.x ** 2 + vector.y ** 2 + vector.z ** 2;
-	}
-	static length2D(vector) {
-		return Math.sqrt(Vector3Utils.length2DSquared(vector));
-	}
-	static length2DSquared(vector) {
-		return vector.x ** 2 + vector.y ** 2;
-	}
-	static normalize(vector) {
-		const length = Vector3Utils.length(vector);
-		return length ? Vector3Utils.divide(vector, length) : Vec3.Zero;
-	}
-	static dot(a, b) {
-		return a.x * b.x + a.y * b.y + a.z * b.z;
-	}
-	static cross(a, b) {
-		return new Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
-	}
-	static inverse(vector) {
-		return new Vec3(-vector.x, -vector.y, -vector.z);
-	}
-	static distance(a, b) {
-		return Vector3Utils.subtract(a, b).length;
-	}
-	static distanceSquared(a, b) {
-		return Vector3Utils.subtract(a, b).lengthSquared;
-	}
-	static floor(vector) {
-		return new Vec3(Math.floor(vector.x), Math.floor(vector.y), Math.floor(vector.z));
-	}
-	static vectorAngles(vector) {
-		let yaw = 0;
-		let pitch = 0;
-		if (!vector.y && !vector.x) {
-			if (vector.z > 0)
-				pitch = -90;
-			else
-				pitch = 90;
-		}
-		else {
-			yaw = Math.atan2(vector.y, vector.x) * RAD_TO_DEG;
-			pitch = Math.atan2(-vector.z, Vector3Utils.length2D(vector)) * RAD_TO_DEG;
-		}
-		return new Euler({
-			pitch,
-			yaw,
-			roll: 0,
-		});
-	}
-	static lerp(a, b, fraction, clamp = true) {
-		let t = fraction;
-		if (clamp) {
-			t = MathUtils.clamp(t, 0, 1);
-		}
-		// a + (b - a) * t
-		return new Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
-	}
-	static directionTowards(a, b) {
-		return Vector3Utils.subtract(b, a).normal;
-	}
-	static lookAt(a, b) {
-		return Vector3Utils.directionTowards(a, b).eulerAngles;
-	}
-	static withX(vector, x) {
-		return new Vec3(x, vector.y, vector.z);
-	}
-	static withY(vector, y) {
-		return new Vec3(vector.x, y, vector.z);
-	}
-	static withZ(vector, z) {
-		return new Vec3(vector.x, vector.y, z);
-	}
+    static equals(a, b) {
+        return a.x === b.x && a.y === b.y && a.z === b.z;
+    }
+    static add(a, b) {
+        return new Vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+    }
+    static subtract(a, b) {
+        return new Vec3(a.x - b.x, a.y - b.y, a.z - b.z);
+    }
+    static scale(vector, scale) {
+        return new Vec3(vector.x * scale, vector.y * scale, vector.z * scale);
+    }
+    static multiply(a, b) {
+        return new Vec3(a.x * b.x, a.y * b.y, a.z * b.z);
+    }
+    static divide(vector, divider) {
+        if (typeof divider === 'number') {
+            if (divider === 0)
+                throw Error('Division by zero');
+            return new Vec3(vector.x / divider, vector.y / divider, vector.z / divider);
+        }
+        else {
+            if (divider.x === 0 || divider.y === 0 || divider.z === 0)
+                throw Error('Division by zero');
+            return new Vec3(vector.x / divider.x, vector.y / divider.y, vector.z / divider.z);
+        }
+    }
+    static length(vector) {
+        return Math.sqrt(Vector3Utils.lengthSquared(vector));
+    }
+    static lengthSquared(vector) {
+        return vector.x ** 2 + vector.y ** 2 + vector.z ** 2;
+    }
+    static length2D(vector) {
+        return Math.sqrt(Vector3Utils.length2DSquared(vector));
+    }
+    static length2DSquared(vector) {
+        return vector.x ** 2 + vector.y ** 2;
+    }
+    static normalize(vector) {
+        const length = Vector3Utils.length(vector);
+        return length ? Vector3Utils.divide(vector, length) : Vec3.Zero;
+    }
+    static dot(a, b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+    static cross(a, b) {
+        return new Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+    }
+    static inverse(vector) {
+        return new Vec3(-vector.x, -vector.y, -vector.z);
+    }
+    static distance(a, b) {
+        return Vector3Utils.subtract(a, b).length;
+    }
+    static distanceSquared(a, b) {
+        return Vector3Utils.subtract(a, b).lengthSquared;
+    }
+    static floor(vector) {
+        return new Vec3(Math.floor(vector.x), Math.floor(vector.y), Math.floor(vector.z));
+    }
+    static vectorAngles(vector) {
+        let yaw = 0;
+        let pitch = 0;
+        if (!vector.y && !vector.x) {
+            if (vector.z > 0)
+                pitch = -90;
+            else
+                pitch = 90;
+        }
+        else {
+            yaw = Math.atan2(vector.y, vector.x) * RAD_TO_DEG;
+            pitch = Math.atan2(-vector.z, Vector3Utils.length2D(vector)) * RAD_TO_DEG;
+        }
+        return new Euler({
+            pitch,
+            yaw,
+            roll: 0,
+        });
+    }
+    static lerp(a, b, fraction, clamp = true) {
+        let t = fraction;
+        if (clamp) {
+            t = MathUtils.clamp(t, 0, 1);
+        }
+        // a + (b - a) * t
+        return new Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+    }
+    static directionTowards(a, b) {
+        return Vector3Utils.subtract(b, a).normal;
+    }
+    static lookAt(a, b) {
+        return Vector3Utils.directionTowards(a, b).eulerAngles;
+    }
+    static withX(vector, x) {
+        return new Vec3(x, vector.y, vector.z);
+    }
+    static withY(vector, y) {
+        return new Vec3(vector.x, y, vector.z);
+    }
+    static withZ(vector, z) {
+        return new Vec3(vector.x, vector.y, z);
+    }
 }
 class Vec3 {
-	x;
-	y;
-	z;
-	static Zero = new Vec3(0, 0, 0);
-	constructor(xOrVector, y, z) {
-		if (typeof xOrVector === 'object') {
-			this.x = xOrVector.x === 0 ? 0 : xOrVector.x;
-			this.y = xOrVector.y === 0 ? 0 : xOrVector.y;
-			this.z = xOrVector.z === 0 ? 0 : xOrVector.z;
-		}
-		else {
-			this.x = xOrVector === 0 ? 0 : xOrVector;
-			this.y = y === 0 ? 0 : y;
-			this.z = z === 0 ? 0 : z;
-		}
-	}
-	get length() {
-		return Vector3Utils.length(this);
-	}
-	get lengthSquared() {
-		return Vector3Utils.lengthSquared(this);
-	}
-	get length2D() {
-		return Vector3Utils.length2D(this);
-	}
-	get length2DSquared() {
-		return Vector3Utils.length2DSquared(this);
-	}
-	/**
-	 * Normalizes the vector (Dividing the vector by its length to have the length be equal to 1 e.g. [0.0, 0.666, 0.333])
-	 */
-	get normal() {
-		return Vector3Utils.normalize(this);
-	}
-	get inverse() {
-		return Vector3Utils.inverse(this);
-	}
-	/**
-	 * Floor (Round down) each vector component
-	 */
-	get floored() {
-		return Vector3Utils.floor(this);
-	}
-	/**
-	 * Calculates the angles from a forward vector
-	 */
-	get eulerAngles() {
-		return Vector3Utils.vectorAngles(this);
-	}
-	toString() {
-		return `Vec3: [${this.x}, ${this.y}, ${this.z}]`;
-	}
-	equals(vector) {
-		return Vector3Utils.equals(this, vector);
-	}
-	add(vector) {
-		return Vector3Utils.add(this, vector);
-	}
-	subtract(vector) {
-		return Vector3Utils.subtract(this, vector);
-	}
-	divide(vector) {
-		return Vector3Utils.divide(this, vector);
-	}
-	scale(scaleOrVector) {
-		return typeof scaleOrVector === 'number'
-			? Vector3Utils.scale(this, scaleOrVector)
-			: Vector3Utils.multiply(this, scaleOrVector);
-	}
-	multiply(scaleOrVector) {
-		return typeof scaleOrVector === 'number'
-			? Vector3Utils.scale(this, scaleOrVector)
-			: Vector3Utils.multiply(this, scaleOrVector);
-	}
-	dot(vector) {
-		return Vector3Utils.dot(this, vector);
-	}
-	cross(vector) {
-		return Vector3Utils.cross(this, vector);
-	}
-	distance(vector) {
-		return Vector3Utils.distance(this, vector);
-	}
-	distanceSquared(vector) {
-		return Vector3Utils.distanceSquared(this, vector);
-	}
-	/**
-	 * Linearly interpolates the vector to a point based on a 0.0-1.0 fraction
-	 * Clamp limits the fraction to [0,1]
-	 */
-	lerpTo(vector, fraction, clamp = true) {
-		return Vector3Utils.lerp(this, vector, fraction, clamp);
-	}
-	/**
-	 * Gets the normalized direction vector pointing towards specified point (subtracting two vectors)
-	 */
-	directionTowards(vector) {
-		return Vector3Utils.directionTowards(this, vector);
-	}
-	/**
-	 * Returns an angle pointing towards a point from the current vector
-	 */
-	lookAt(vector) {
-		return Vector3Utils.lookAt(this, vector);
-	}
-	/**
-	 * Returns the same vector but with a supplied X component
-	 */
-	withX(x) {
-		return Vector3Utils.withX(this, x);
-	}
-	/**
-	 * Returns the same vector but with a supplied Y component
-	 */
-	withY(y) {
-		return Vector3Utils.withY(this, y);
-	}
-	/**
-	 * Returns the same vector but with a supplied Z component
-	 */
-	withZ(z) {
-		return Vector3Utils.withZ(this, z);
-	}
+    x;
+    y;
+    z;
+    static Zero = new Vec3(0, 0, 0);
+    constructor(xOrVector, y, z) {
+        if (typeof xOrVector === 'object') {
+            this.x = xOrVector.x === 0 ? 0 : xOrVector.x;
+            this.y = xOrVector.y === 0 ? 0 : xOrVector.y;
+            this.z = xOrVector.z === 0 ? 0 : xOrVector.z;
+        }
+        else {
+            this.x = xOrVector === 0 ? 0 : xOrVector;
+            this.y = y === 0 ? 0 : y;
+            this.z = z === 0 ? 0 : z;
+        }
+    }
+    get length() {
+        return Vector3Utils.length(this);
+    }
+    get lengthSquared() {
+        return Vector3Utils.lengthSquared(this);
+    }
+    get length2D() {
+        return Vector3Utils.length2D(this);
+    }
+    get length2DSquared() {
+        return Vector3Utils.length2DSquared(this);
+    }
+    /**
+     * Normalizes the vector (Dividing the vector by its length to have the length be equal to 1 e.g. [0.0, 0.666, 0.333])
+     */
+    get normal() {
+        return Vector3Utils.normalize(this);
+    }
+    get inverse() {
+        return Vector3Utils.inverse(this);
+    }
+    /**
+     * Floor (Round down) each vector component
+     */
+    get floored() {
+        return Vector3Utils.floor(this);
+    }
+    /**
+     * Calculates the angles from a forward vector
+     */
+    get eulerAngles() {
+        return Vector3Utils.vectorAngles(this);
+    }
+    toString() {
+        return `Vec3: [${this.x}, ${this.y}, ${this.z}]`;
+    }
+    equals(vector) {
+        return Vector3Utils.equals(this, vector);
+    }
+    add(vector) {
+        return Vector3Utils.add(this, vector);
+    }
+    subtract(vector) {
+        return Vector3Utils.subtract(this, vector);
+    }
+    divide(vector) {
+        return Vector3Utils.divide(this, vector);
+    }
+    scale(scaleOrVector) {
+        return typeof scaleOrVector === 'number'
+            ? Vector3Utils.scale(this, scaleOrVector)
+            : Vector3Utils.multiply(this, scaleOrVector);
+    }
+    multiply(scaleOrVector) {
+        return typeof scaleOrVector === 'number'
+            ? Vector3Utils.scale(this, scaleOrVector)
+            : Vector3Utils.multiply(this, scaleOrVector);
+    }
+    dot(vector) {
+        return Vector3Utils.dot(this, vector);
+    }
+    cross(vector) {
+        return Vector3Utils.cross(this, vector);
+    }
+    distance(vector) {
+        return Vector3Utils.distance(this, vector);
+    }
+    distanceSquared(vector) {
+        return Vector3Utils.distanceSquared(this, vector);
+    }
+    /**
+     * Linearly interpolates the vector to a point based on a 0.0-1.0 fraction
+     * Clamp limits the fraction to [0,1]
+     */
+    lerpTo(vector, fraction, clamp = true) {
+        return Vector3Utils.lerp(this, vector, fraction, clamp);
+    }
+    /**
+     * Gets the normalized direction vector pointing towards specified point (subtracting two vectors)
+     */
+    directionTowards(vector) {
+        return Vector3Utils.directionTowards(this, vector);
+    }
+    /**
+     * Returns an angle pointing towards a point from the current vector
+     */
+    lookAt(vector) {
+        return Vector3Utils.lookAt(this, vector);
+    }
+    /**
+     * Returns the same vector but with a supplied X component
+     */
+    withX(x) {
+        return Vector3Utils.withX(this, x);
+    }
+    /**
+     * Returns the same vector but with a supplied Y component
+     */
+    withY(y) {
+        return Vector3Utils.withY(this, y);
+    }
+    /**
+     * Returns the same vector but with a supplied Z component
+     */
+    withZ(z) {
+        return Vector3Utils.withZ(this, z);
+    }
 }
 
 class EulerUtils {
-	static equals(a, b) {
-		return a.pitch === b.pitch && a.yaw === b.yaw && a.roll === b.roll;
-	}
-	static normalize(angle) {
-		const normalizeAngle = (angle) => {
-			angle = angle % 360;
-			if (angle > 180)
-				return angle - 360;
-			if (angle < -180)
-				return angle + 360;
-			return angle;
-		};
-		return new Euler(normalizeAngle(angle.pitch), normalizeAngle(angle.yaw), normalizeAngle(angle.roll));
-	}
-	static forward(angle) {
-		const pitchInRad = (angle.pitch / 180) * Math.PI;
-		const yawInRad = (angle.yaw / 180) * Math.PI;
-		const cosPitch = Math.cos(pitchInRad);
-		return new Vec3(cosPitch * Math.cos(yawInRad), cosPitch * Math.sin(yawInRad), -Math.sin(pitchInRad));
-	}
-	static right(angle) {
-		const pitchInRad = (angle.pitch / 180) * Math.PI;
-		const yawInRad = (angle.yaw / 180) * Math.PI;
-		const rollInRad = (angle.roll / 180) * Math.PI;
-		const sinPitch = Math.sin(pitchInRad);
-		const sinYaw = Math.sin(yawInRad);
-		const sinRoll = Math.sin(rollInRad);
-		const cosPitch = Math.cos(pitchInRad);
-		const cosYaw = Math.cos(yawInRad);
-		const cosRoll = Math.cos(rollInRad);
-		return new Vec3(-1 * sinRoll * sinPitch * cosYaw + -1 * cosRoll * -sinYaw, -1 * sinRoll * sinPitch * sinYaw + -1 * cosRoll * cosYaw, -1 * sinRoll * cosPitch);
-	}
-	static up(angle) {
-		const pitchInRad = (angle.pitch / 180) * Math.PI;
-		const yawInRad = (angle.yaw / 180) * Math.PI;
-		const rollInRad = (angle.roll / 180) * Math.PI;
-		const sinPitch = Math.sin(pitchInRad);
-		const sinYaw = Math.sin(yawInRad);
-		const sinRoll = Math.sin(rollInRad);
-		const cosPitch = Math.cos(pitchInRad);
-		const cosYaw = Math.cos(yawInRad);
-		const cosRoll = Math.cos(rollInRad);
-		return new Vec3(cosRoll * sinPitch * cosYaw + -sinRoll * -sinYaw, cosRoll * sinPitch * sinYaw + -sinRoll * cosYaw, cosRoll * cosPitch);
-	}
-	static lerp(a, b, fraction, clamp = true) {
-		let t = fraction;
-		if (clamp) {
-			t = MathUtils.clamp(t, 0, 1);
-		}
-		const lerpComponent = (start, end, t) => {
-			// Calculate the shortest angular distance
-			let delta = end - start;
-			// Normalize delta to [-180, 180] range to find shortest path
-			if (delta > 180) {
-				delta -= 360;
-			}
-			else if (delta < -180) {
-				delta += 360;
-			}
-			// Interpolate using the shortest path
-			return start + delta * t;
-		};
-		// a + (b - a) * t
-		return new Euler(lerpComponent(a.pitch, b.pitch, t), lerpComponent(a.yaw, b.yaw, t), lerpComponent(a.roll, b.roll, t));
-	}
-	static withPitch(angle, pitch) {
-		return new Euler(pitch, angle.yaw, angle.roll);
-	}
-	static withYaw(angle, yaw) {
-		return new Euler(angle.pitch, yaw, angle.roll);
-	}
-	static withRoll(angle, roll) {
-		return new Euler(angle.pitch, angle.yaw, roll);
-	}
-	static rotateTowards(current, target, maxStep) {
-		const rotateComponent = (current, target, step) => {
-			let delta = target - current;
-			if (delta > 180) {
-				delta -= 360;
-			}
-			else if (delta < -180) {
-				delta += 360;
-			}
-			if (Math.abs(delta) <= step) {
-				return target;
-			}
-			else {
-				return current + Math.sign(delta) * step;
-			}
-		};
-		return new Euler(rotateComponent(current.pitch, target.pitch, maxStep), rotateComponent(current.yaw, target.yaw, maxStep), rotateComponent(current.roll, target.roll, maxStep));
-	}
-	static clamp(angle, min, max) {
-		return new Euler(MathUtils.clamp(angle.pitch, min.pitch, max.pitch), MathUtils.clamp(angle.yaw, min.yaw, max.yaw), MathUtils.clamp(angle.roll, min.roll, max.roll));
-	}
+    static equals(a, b) {
+        return a.pitch === b.pitch && a.yaw === b.yaw && a.roll === b.roll;
+    }
+    static normalize(angle) {
+        const normalizeAngle = (angle) => {
+            angle = angle % 360;
+            if (angle > 180)
+                return angle - 360;
+            if (angle < -180)
+                return angle + 360;
+            return angle;
+        };
+        return new Euler(normalizeAngle(angle.pitch), normalizeAngle(angle.yaw), normalizeAngle(angle.roll));
+    }
+    static forward(angle) {
+        const pitchInRad = (angle.pitch / 180) * Math.PI;
+        const yawInRad = (angle.yaw / 180) * Math.PI;
+        const cosPitch = Math.cos(pitchInRad);
+        return new Vec3(cosPitch * Math.cos(yawInRad), cosPitch * Math.sin(yawInRad), -Math.sin(pitchInRad));
+    }
+    static right(angle) {
+        const pitchInRad = (angle.pitch / 180) * Math.PI;
+        const yawInRad = (angle.yaw / 180) * Math.PI;
+        const rollInRad = (angle.roll / 180) * Math.PI;
+        const sinPitch = Math.sin(pitchInRad);
+        const sinYaw = Math.sin(yawInRad);
+        const sinRoll = Math.sin(rollInRad);
+        const cosPitch = Math.cos(pitchInRad);
+        const cosYaw = Math.cos(yawInRad);
+        const cosRoll = Math.cos(rollInRad);
+        return new Vec3(-1 * sinRoll * sinPitch * cosYaw + -1 * cosRoll * -sinYaw, -1 * sinRoll * sinPitch * sinYaw + -1 * cosRoll * cosYaw, -1 * sinRoll * cosPitch);
+    }
+    static up(angle) {
+        const pitchInRad = (angle.pitch / 180) * Math.PI;
+        const yawInRad = (angle.yaw / 180) * Math.PI;
+        const rollInRad = (angle.roll / 180) * Math.PI;
+        const sinPitch = Math.sin(pitchInRad);
+        const sinYaw = Math.sin(yawInRad);
+        const sinRoll = Math.sin(rollInRad);
+        const cosPitch = Math.cos(pitchInRad);
+        const cosYaw = Math.cos(yawInRad);
+        const cosRoll = Math.cos(rollInRad);
+        return new Vec3(cosRoll * sinPitch * cosYaw + -sinRoll * -sinYaw, cosRoll * sinPitch * sinYaw + -sinRoll * cosYaw, cosRoll * cosPitch);
+    }
+    static lerp(a, b, fraction, clamp = true) {
+        let t = fraction;
+        if (clamp) {
+            t = MathUtils.clamp(t, 0, 1);
+        }
+        const lerpComponent = (start, end, t) => {
+            // Calculate the shortest angular distance
+            let delta = end - start;
+            // Normalize delta to [-180, 180] range to find shortest path
+            if (delta > 180) {
+                delta -= 360;
+            }
+            else if (delta < -180) {
+                delta += 360;
+            }
+            // Interpolate using the shortest path
+            return start + delta * t;
+        };
+        // a + (b - a) * t
+        return new Euler(lerpComponent(a.pitch, b.pitch, t), lerpComponent(a.yaw, b.yaw, t), lerpComponent(a.roll, b.roll, t));
+    }
+    static withPitch(angle, pitch) {
+        return new Euler(pitch, angle.yaw, angle.roll);
+    }
+    static withYaw(angle, yaw) {
+        return new Euler(angle.pitch, yaw, angle.roll);
+    }
+    static withRoll(angle, roll) {
+        return new Euler(angle.pitch, angle.yaw, roll);
+    }
+    static rotateTowards(current, target, maxStep) {
+        const rotateComponent = (current, target, step) => {
+            let delta = target - current;
+            if (delta > 180) {
+                delta -= 360;
+            }
+            else if (delta < -180) {
+                delta += 360;
+            }
+            if (Math.abs(delta) <= step) {
+                return target;
+            }
+            else {
+                return current + Math.sign(delta) * step;
+            }
+        };
+        return new Euler(rotateComponent(current.pitch, target.pitch, maxStep), rotateComponent(current.yaw, target.yaw, maxStep), rotateComponent(current.roll, target.roll, maxStep));
+    }
+    static clamp(angle, min, max) {
+        return new Euler(MathUtils.clamp(angle.pitch, min.pitch, max.pitch), MathUtils.clamp(angle.yaw, min.yaw, max.yaw), MathUtils.clamp(angle.roll, min.roll, max.roll));
+    }
 }
 class Euler {
-	pitch;
-	yaw;
-	roll;
-	static Zero = new Euler(0, 0, 0);
-	constructor(pitchOrAngle, yaw, roll) {
-		if (typeof pitchOrAngle === 'object') {
-			this.pitch = pitchOrAngle.pitch === 0 ? 0 : pitchOrAngle.pitch;
-			this.yaw = pitchOrAngle.yaw === 0 ? 0 : pitchOrAngle.yaw;
-			this.roll = pitchOrAngle.roll === 0 ? 0 : pitchOrAngle.roll;
-		}
-		else {
-			this.pitch = pitchOrAngle === 0 ? pitchOrAngle : pitchOrAngle;
-			this.yaw = yaw === 0 ? 0 : yaw;
-			this.roll = roll === 0 ? 0 : roll;
-		}
-	}
-	/**
-	 * Returns angle with every componented clamped from -180 to 180
-	 */
-	get normal() {
-		return EulerUtils.normalize(this);
-	}
-	/**
-	 * Returns a normalized forward direction vector
-	 */
-	get forward() {
-		return EulerUtils.forward(this);
-	}
-	/**
-	 * Returns a normalized backward direction vector
-	 */
-	get backward() {
-		return this.forward.inverse;
-	}
-	/**
-	 * Returns a normalized right direction vector
-	 */
-	get right() {
-		return EulerUtils.right(this);
-	}
-	/**
-	 * Returns a normalized left direction vector
-	 */
-	get left() {
-		return this.right.inverse;
-	}
-	/**
-	 * Returns a normalized up direction vector
-	 */
-	get up() {
-		return EulerUtils.up(this);
-	}
-	/**
-	 * Returns a normalized down direction vector
-	 */
-	get down() {
-		return this.up.inverse;
-	}
-	toString() {
-		return `Euler: [${this.pitch}, ${this.yaw}, ${this.roll}]`;
-	}
-	equals(angle) {
-		return EulerUtils.equals(this, angle);
-	}
-	/**
-	 * Linearly interpolates the angle to an angle based on a 0.0-1.0 fraction
-	 * Clamp limits the fraction to [0,1]
-	 * ! Euler angles are not suited for interpolation, prefer to use quarternions instead
-	 */
-	lerp(angle, fraction, clamp = true) {
-		return EulerUtils.lerp(this, angle, fraction, clamp);
-	}
-	/**
-	 * Returns the same angle but with a supplied pitch component
-	 */
-	withPitch(pitch) {
-		return EulerUtils.withPitch(this, pitch);
-	}
-	/**
-	 * Returns the same angle but with a supplied yaw component
-	 */
-	withYaw(yaw) {
-		return EulerUtils.withYaw(this, yaw);
-	}
-	/**
-	 * Returns the same angle but with a supplied roll component
-	 */
-	withRoll(roll) {
-		return EulerUtils.withRoll(this, roll);
-	}
-	/**
-	 * Rotates an angle towards another angle by a specific step
-	 * ! Euler angles are not suited for interpolation, prefer to use quarternions instead
-	 */
-	rotateTowards(angle, maxStep) {
-		return EulerUtils.rotateTowards(this, angle, maxStep);
-	}
-	/**
-	 * Clamps each component (pitch, yaw, roll) between the corresponding min and max values
-	 */
-	clamp(min, max) {
-		return EulerUtils.clamp(this, min, max);
-	}
+    pitch;
+    yaw;
+    roll;
+    static Zero = new Euler(0, 0, 0);
+    constructor(pitchOrAngle, yaw, roll) {
+        if (typeof pitchOrAngle === 'object') {
+            this.pitch = pitchOrAngle.pitch === 0 ? 0 : pitchOrAngle.pitch;
+            this.yaw = pitchOrAngle.yaw === 0 ? 0 : pitchOrAngle.yaw;
+            this.roll = pitchOrAngle.roll === 0 ? 0 : pitchOrAngle.roll;
+        }
+        else {
+            this.pitch = pitchOrAngle === 0 ? pitchOrAngle : pitchOrAngle;
+            this.yaw = yaw === 0 ? 0 : yaw;
+            this.roll = roll === 0 ? 0 : roll;
+        }
+    }
+    /**
+     * Returns angle with every componented clamped from -180 to 180
+     */
+    get normal() {
+        return EulerUtils.normalize(this);
+    }
+    /**
+     * Returns a normalized forward direction vector
+     */
+    get forward() {
+        return EulerUtils.forward(this);
+    }
+    /**
+     * Returns a normalized backward direction vector
+     */
+    get backward() {
+        return this.forward.inverse;
+    }
+    /**
+     * Returns a normalized right direction vector
+     */
+    get right() {
+        return EulerUtils.right(this);
+    }
+    /**
+     * Returns a normalized left direction vector
+     */
+    get left() {
+        return this.right.inverse;
+    }
+    /**
+     * Returns a normalized up direction vector
+     */
+    get up() {
+        return EulerUtils.up(this);
+    }
+    /**
+     * Returns a normalized down direction vector
+     */
+    get down() {
+        return this.up.inverse;
+    }
+    toString() {
+        return `Euler: [${this.pitch}, ${this.yaw}, ${this.roll}]`;
+    }
+    equals(angle) {
+        return EulerUtils.equals(this, angle);
+    }
+    /**
+     * Linearly interpolates the angle to an angle based on a 0.0-1.0 fraction
+     * Clamp limits the fraction to [0,1]
+     * ! Euler angles are not suited for interpolation, prefer to use quarternions instead
+     */
+    lerp(angle, fraction, clamp = true) {
+        return EulerUtils.lerp(this, angle, fraction, clamp);
+    }
+    /**
+     * Returns the same angle but with a supplied pitch component
+     */
+    withPitch(pitch) {
+        return EulerUtils.withPitch(this, pitch);
+    }
+    /**
+     * Returns the same angle but with a supplied yaw component
+     */
+    withYaw(yaw) {
+        return EulerUtils.withYaw(this, yaw);
+    }
+    /**
+     * Returns the same angle but with a supplied roll component
+     */
+    withRoll(roll) {
+        return EulerUtils.withRoll(this, roll);
+    }
+    /**
+     * Rotates an angle towards another angle by a specific step
+     * ! Euler angles are not suited for interpolation, prefer to use quarternions instead
+     */
+    rotateTowards(angle, maxStep) {
+        return EulerUtils.rotateTowards(this, angle, maxStep);
+    }
+    /**
+     * Clamps each component (pitch, yaw, roll) between the corresponding min and max values
+     */
+    clamp(min, max) {
+        return EulerUtils.clamp(this, min, max);
+    }
 }
 
 const Inputs = [
     ["Map_Boss_TheHeart_Start", "OnTrigger", "Map_Boss_TheHeart_GetDamage,Map_Script,Map_Boss_Health_Hud,[The$Heart]$[2/2],100,1", StartBoss, 3.00],
-	["Boss_Phase_Case", "OnCase01", "Map_Boss_TheHeart_GetDamage,Map_Script,Map_Boss_Health_Hud,[The$Heart]$[1/2],50,1", StartBoss, 0.10],
+    ["Boss_Phase_Case", "OnCase01", "Map_Boss_TheHeart_GetDamage,Map_Script,Map_Boss_Health_Hud,[The$Heart]$[1/2],50,1", StartBoss, 0.10],
     ["Map_Boss_TheHeart_Start", "OnTrigger", "0,450", AddHealth, 2.90],
-	["Filter_Team_Human_BossAdd_P2", "OnPass", "1,580", AddHealth, 0.00],
-	["Map_Boss_TheHeart_Health_Branch", "OnTrue", "-5", ChangeHealthIt, 0.00],
-	["Map_Boss_Arena_Bottom_SubtractHealth", "OnStartTouch", "70", ChangeHealthIt, 0.00],
+    ["Filter_Team_Human_BossAdd_P2", "OnPass", "1,580", AddHealth, 0.00],
+    ["Map_Boss_TheHeart_Health_Branch", "OnTrue", "-5", ChangeHealthIt, 0.00],
+    ["Map_Boss_Arena_Bottom_SubtractHealth", "OnStartTouch", "70", ChangeHealthIt, 0.00],
     ["Admin_ResetToDefault", "OnPressed", "", ResetVariables, 0.00],
     ["Admin_HP_Sub1", "OnPressed", "1", ChangeHealth, 0.00],
     ["Admin_HP_Sub5", "OnPressed", "5", ChangeHealth, 0.00],
@@ -1702,92 +1702,140 @@ Instance.OnScriptInput("Tick_GlowstickXYZ", ({ caller, activator }) => {
     activator?.Teleport({ position: new_pos })
 });
 
+// Instance.OnScriptInput("SpawnFakeElevator", () => {
+//     let doors = Instance.FindEntitiesByClass("func_physbox")
+//     let door_replace = doors.filter(doors => (doors.GetEntityName()).search("Door_Close_") != -1)
+//     for(let i = 0; i < 1; i++)
+//     {
+//         let rnd_n = GetRandomNumber(0, door_replace.length - 1);
+//         let r_ent = door_replace[rnd_n];
+//         let r_ent_origin = r_ent.GetAbsOrigin()
+//         let r_ent_angles = r_ent.GetAbsAngles()
+//         if(r_ent?.IsValid())
+//         {
+//             if(r_ent_origin.x >= 15340 || r_ent_origin.x <= -15340 || r_ent_origin.y >= 15340 || r_ent_origin.y <= -15340)
+//             {
+//                 return;
+//             }
+//             if(r_ent_origin.x == 1024 || r_ent_origin.x == -1024 || r_ent_origin.y == 1024 || r_ent_origin.y == -1024)
+//             {
+//                 return;
+//             }
+//             Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `origin ${r_ent_origin.x} ${r_ent_origin.y} ${r_ent_origin.z}` });
+//             if(Math.round(r_ent_angles.yaw) == -180)
+//             {
+//                 Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `angles 0 270 0` });
+//             }
+//             else
+//             {
+//                 Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `angles 0 ${Math.round(r_ent_angles.yaw) - 270} 0` });
+//             }
+//             //Instance.Msg(`${Math.round(r_ent_angles.yaw) - 270}`)
+//             Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "ForceSpawn", value: "", delay: 0.02 });
+//             Instance.EntFireAtTarget({ target: r_ent, input: "Kill", value: "", delay: 0.04 });
+//         }
+//         door_replace.splice(rnd_n, 1)
+//     }
+// });
+
 Instance.OnScriptInput("SpawnFakeElevator", () => {
-    let doors = Instance.FindEntitiesByClass("func_physbox")
-    let door_replace = doors.filter(doors => (doors.GetEntityName()).search("Door_Close_") != -1)
-    for(let i = 0; i < 1; i++)
-    {
-        let rnd_n = GetRandomNumber(0, door_replace.length - 1);
-        let r_ent = door_replace[rnd_n];
-        let r_ent_origin = r_ent.GetAbsOrigin()
-        let r_ent_angles = r_ent.GetAbsAngles()
-        if(r_ent?.IsValid())
+    let doors = Instance.FindEntitiesByClass("func_physbox");
+    let door_replace = doors.filter(door => {
+        if(!door.GetEntityName().includes("Door_Close_"))
         {
-            if(r_ent_origin.x >= 15340 || r_ent_origin.x <= -15340 || r_ent_origin.y >= 15340 || r_ent_origin.y <= -15340)
-            {
-                return;
-            }
-            if(r_ent_origin.x == 1024 || r_ent_origin.x == -1024 || r_ent_origin.y == 1024 || r_ent_origin.y == -1024)
-            {
-                return;
-            }
-            Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `origin ${r_ent_origin.x} ${r_ent_origin.y} ${r_ent_origin.z}` });
-            if(Math.round(r_ent_angles.yaw) == -180)
-            {
-                Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `angles 0 270 0` });
-            }
-            else
-            {
-                Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `angles 0 ${Math.round(r_ent_angles.yaw) - 270} 0` });
-            }
-            //Instance.Msg(`${Math.round(r_ent_angles.yaw) - 270}`)
-            Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "ForceSpawn", value: "", delay: 0.02 });
-            Instance.EntFireAtTarget({ target: r_ent, input: "Kill", value: "", delay: 0.04 });
+            return false;
         }
-        door_replace.splice(rnd_n, 1)
+
+        let r_ent_origin = door.GetAbsOrigin();
+
+        if(r_ent_origin.x >= 15340 || r_ent_origin.x <= -15340 || r_ent_origin.y >= 15340 || r_ent_origin.y <= -15340) 
+        {
+            return false;
+        }
+
+        if(r_ent_origin.x == 1024 || r_ent_origin.x == -1024 || r_ent_origin.y == 1024 || r_ent_origin.y == -1024) 
+        {
+            return false;
+        }
+
+        return true;
+    });
+    Instance.Msg(`Doors: ${door_replace.length}`);
+
+    let rnd_n = door_replace[GetRandomNumber(0, door_replace.length - 1)];
+    Instance.Msg(`RND DOOR: ${rnd_n?.GetEntityName()}`);
+
+    if(!rnd_n?.IsValid()) return;
+
+    let r_ent_origin = rnd_n.GetAbsOrigin()
+    let r_ent_angles = rnd_n.GetAbsAngles()
+
+    Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `origin ${r_ent_origin.x} ${r_ent_origin.y} ${r_ent_origin.z}` });
+    if(Math.round(r_ent_angles.yaw) == -180)
+    {
+        Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `angles 0 270 0` });
     }
+    else
+    {
+        Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "KeyValue", value: `angles 0 ${Math.round(r_ent_angles.yaw) - 270} 0` });
+    }
+
+    rnd_n?.Remove();
+
+    Instance.EntFireAtName({ name: "Map_FakeElevator_Maker", input: "ForceSpawn", value: "", delay: 0.02 });
 });
 
 Instance.OnScriptInput("SpawnDeadEnd", () => {
-    let doors = Instance.FindEntitiesByClass("func_physbox")
-    let door_replace = doors.filter(doors => (doors.GetEntityName()).search("Door_Close_") != -1)
-    for(let i = 0; i < 1; i++)
-    {
-        let rnd_n = GetRandomNumber(0, door_replace.length - 1);
-        let r_ent = door_replace[rnd_n];
-        let r_ent_origin = r_ent.GetAbsOrigin()
-        let r_ent_angles = r_ent.GetAbsAngles()
-        if(r_ent?.IsValid())
+    let doors = Instance.FindEntitiesByClass("func_physbox");
+    let door_replace = doors.filter(door => {
+        if(!door.GetEntityName().includes("Door_Close_"))
         {
-            if(r_ent_origin.x >= 15340 || r_ent_origin.x <= -15340 || r_ent_origin.y >= 15340 || r_ent_origin.y <= -15340)
-            {
-                return;
-            }
-            if(r_ent_origin.x == 1024 || r_ent_origin.x == -1024 || r_ent_origin.y == 1024 || r_ent_origin.y == -1024)
-            {
-                return;
-            }
-            Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: `origin ${r_ent_origin.x} ${r_ent_origin.y} ${r_ent_origin.z}` });
-            //Instance.Msg(`ORIGINAL ORIGIN: ${r_ent_origin.x} ${r_ent_origin.y} ${r_ent_origin.z}`)
-            //Instance.Msg(`ORIGINAL ANGLE: ${Math.round(r_ent_angles.yaw) - 270}`)
-            if(Math.round(r_ent_angles.yaw) == -180)
-            {
-                Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: `angles 0 270 0` });
-            }
-            else
-            {
-                Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: `angles 0 ${Math.round(r_ent_angles.yaw) - 270} 0` });
-            }
-            Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: "EntityTemplate Door_Temp" });
-            Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "ForceSpawn", value: "", delay: 0.02 });
-            Instance.EntFireAtTarget({ target: r_ent, input: "Kill", value: "", delay: 0.04 });
-            Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: "EntityTemplate Temp_DeadEnd", delay: 0.04 });
-            Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "ForceSpawn", value: "", delay: 0.06 });
+            return false;
         }
-        door_replace.splice(rnd_n, 1)
+
+        let r_ent_origin = door.GetAbsOrigin();
+
+        if(r_ent_origin.x >= 15340 || r_ent_origin.x <= -15340 || r_ent_origin.y >= 15340 || r_ent_origin.y <= -15340) 
+        {
+            return false;
+        }
+
+        if(r_ent_origin.x == 1024 || r_ent_origin.x == -1024 || r_ent_origin.y == 1024 || r_ent_origin.y == -1024) 
+        {
+            return false;
+        }
+
+        return true;
+    });
+    Instance.Msg(`Doors: ${door_replace.length}`);
+
+    let rnd_n = door_replace[GetRandomNumber(0, door_replace.length - 1)];
+    Instance.Msg(`RND DOOR: ${rnd_n?.GetEntityName()}`);
+
+    if(!rnd_n?.IsValid()) return;
+
+    let r_ent_origin = rnd_n.GetAbsOrigin()
+    let r_ent_angles = rnd_n.GetAbsAngles()
+
+    Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: `origin ${r_ent_origin.x} ${r_ent_origin.y} ${r_ent_origin.z}` });
+    if(Math.round(r_ent_angles.yaw) == -180)
+    {
+        Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: `angles 0 270 0` });
     }
+    else
+    {
+        Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: `angles 0 ${Math.round(r_ent_angles.yaw) - 270} 0` });
+    }
+
+    rnd_n?.Remove();
+
+    Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: "EntityTemplate Door_Temp" });
+    Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "ForceSpawn", value: "", delay: 0.02 });
+    Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "KeyValue", value: "EntityTemplate Temp_DeadEnd", delay: 0.04 });
+    Instance.EntFireAtName({ name: "Preset_DeadEnd_Maker", input: "ForceSpawn", value: "", delay: 0.06 });
 });
 
 Instance.OnScriptInput("SpawnFakeChunks", () => {
-    if(isFakeExits)
-    {
-        let fakeexit = getRandomItem(FAKE_EXIT_CHANCE)
-        let fakeexit_item = FAKE_EXIT_CHANCE.find(item => item.value == fakeexit)
-        if(fakeexit_item?.value == 1)
-        {
-            Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "SpawnFakeElevator", delay: 0.50 });
-        }
-    }
     if(isDeadEndChunks)
     {
         let deadend = getRandomItem(DEAD_END_CHANCE)
@@ -1804,6 +1852,15 @@ Instance.OnScriptInput("SpawnFakeChunks", () => {
                 Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "SpawnDeadEnd", delay: 1.00 });
                 Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "SpawnDeadEnd", delay: 2.00 });
             }
+        }
+    }
+    if(isFakeExits)
+    {
+        let fakeexit = getRandomItem(FAKE_EXIT_CHANCE)
+        let fakeexit_item = FAKE_EXIT_CHANCE.find(item => item.value == fakeexit)
+        if(fakeexit_item?.value == 1)
+        {
+            Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "SpawnFakeElevator", delay: 3.00 });
         }
     }
 });
@@ -1888,17 +1945,20 @@ Instance.OnScriptInput("ResetSpeedAll", () => {
 });
 
 Instance.OnScriptInput("CheckVipPlayer", ({ caller, activator }) => {
+    let player_text = Instance.FindEntityByName("Vip_WorldText")
     if(VIP_PLAYER == null || !VIP_PLAYER?.IsValid() || !VIP_PLAYER?.IsAlive() || VIP_PLAYER?.GetTeamNumber() == 2)
     {
         isVipDead = true;
         VIP_PLAYER = null;
         Instance.ServerCommand(`say >> The Prisoner is dead.. <<`);
         Instance.Msg(`say >> The Prisoner is dead.. <<`)
+        player_text?.Remove()
         let players_human = GetValidPlayersCT();
         for(let i = 0; i < players_human.length; i++)
         {
             let player = players_human[i]
-            player.TakeDamage({ damage: 300, damageTypes: 512 });
+            player.SetHealth(player.GetHealth() - Math.floor(player.GetHealth() * 0.7))
+            // player.TakeDamage({ damage: 300, damageTypes: 512 });
         }
     }
     if(!isVipDead)
@@ -2435,6 +2495,10 @@ Instance.OnScriptInput("SpawnFloor", () => {
         }
 
         // FLOOR RADAR
+        if(item_formula < 0.81)
+        {
+            Instance.EntFireAtName({ name: "cmd", input: "Command", value: "sv_disable_radar 0", delay: 0.00 });
+        }
         if(item_formula >= 0.81)
         {
             Instance.EntFireAtName({ name: "cmd", input: "Command", value: "sv_disable_radar 1", delay: 0.00 });
@@ -2776,6 +2840,7 @@ Instance.OnScriptInput("WormDie", () => {
     Instance.EntFireAtName({ name: "Map_UI_MotherOfConcrete", input: "DestroyImmediately" })
     Instance.EntFireAtName({ name: "Map_BossWorm_HP_Particle", input: "DestroyImmediately" })
     Instance.EntFireAtName({ name: "Map_BossWorm_ZombiesSpeed_Trigger", input: "Kill" })
+    Instance.EntFireAtName({ name: "Map_BossWorm_LightningStrike_Detect", input: "Kill" })
     Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "ResetSpeedAll", delay: 1.00 })
 
     Instance.EntFireAtName({ name: "ElevatorTeleport_In_Button*", input: "Unlock", value: "", delay: 0.00 })
@@ -3169,25 +3234,25 @@ function GetValidPlayersCT()
 
 function NAVMESH_GetNearestNavPoint(vecOrigin)
 {
-	let ID = -1;
-	let iMin = 99999;
-	for (let i = 0; i < NAV_POINT_LIST.length; i++)
-	{
-		if (Vector3Utils.distance(vecOrigin, NAV_POINT_LIST[i].origin) > 128)
-		{
-			continue;
-		}
+    let ID = -1;
+    let iMin = 99999;
+    for (let i = 0; i < NAV_POINT_LIST.length; i++)
+    {
+        if (Vector3Utils.distance(vecOrigin, NAV_POINT_LIST[i].origin) > 128)
+        {
+            continue;
+        }
 
-		const iDistance = Vector3Utils.distance(vecOrigin, NAV_POINT_LIST[i].origin);
+        const iDistance = Vector3Utils.distance(vecOrigin, NAV_POINT_LIST[i].origin);
 
-		if (iDistance < iMin)
-		{
-			iMin = iDistance;
-			ID = i;
-		}
-	}
+        if (iDistance < iMin)
+        {
+            iMin = iDistance;
+            ID = i;
+        }
+    }
 
-	return ID;
+    return ID;
 }
 
 function Delay(callback, delaySeconds) {
@@ -3262,8 +3327,8 @@ function ResetVariables()
     if(isExtremeMode)
     {
         // VALUES
-        pre_human_hp = 100;
-        pre_human_max_hp = 130;
+        pre_human_hp = 120;
+        pre_human_max_hp = 145;
         pre_traps_percentage = 80;
         pre_npcs_percentage = 50;
         pre_miniboss_max = 1;
