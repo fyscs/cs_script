@@ -1,5 +1,4 @@
 // 沉默中的羔羊
-// 简单的计时器，可以随意引用，如果要引用请告知我并标明出处。
 import { Instance } from "cs_script/point_script";
 
 
@@ -30,7 +29,7 @@ Instance.OnScriptInput("reset", () => {
     kzt = 0;
     kzts = 0;
     kztm = 0;
-    Instance.ServerCommand("say 计时器已重置为 0:0:0");
+    
 });
 
    // Instance.ServerCommand("say 完成时间为 " + kztm + ":" + kzts + ":" + kzt );
