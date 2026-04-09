@@ -605,12 +605,12 @@ Instance.OnScriptInput("StartMap", () => {
     EntFire("teleport_relay", "Enable", "", 7.00);
     EntFire("teleport_sprite", "Start", "", 7.00);
     EntFire(script_korea, "RunScriptInput", "RoundstartFalse", 7);
+    const tp_dest = Instance.FindEntityByName("teleport_destination");
     if (stage === 1) {
         spawnGroup(SpawnDataGroup1);
         EntFire("patreon_button_tp_s1", "FireUser1");
         EntFire("skybox_s2_fake", "SetParent", "skybox_parenter");
-        EntFire("teleport_destination", "KeyValue", "origin -512 -14592 -600");
-        EntFire("teleport_destination", "KeyValue", "angles 0 90 0");
+        tp_dest.Teleport({ position: new Vec3(-512, -14592, -600), angles: new Euler(0, 90, 0) });
         EntFire("skybox_s2", "Alpha", 0);
         EntFire("music_solemn", "StartSound");
         EntFire("server", "command", "sv_airaccelerate 12");
@@ -625,8 +625,7 @@ Instance.OnScriptInput("StartMap", () => {
         EntFire("skybox_s1", "Alpha", 0);
         EntFire("skybox_s3_tp_s2", "Teleport");
         EntFire("skybox_s2_fake", "Alpha", 0);
-        EntFire("teleport_destination", "KeyValue", "origin -11776 -11776 40");
-        EntFire("teleport_destination", "KeyValue", "angles 0 90 0");
+        tp_dest.Teleport({ position: new Vec3(-11776, -11776, 40), angles: new Euler(0, 90, 0) });
         EntFire("skybox_groundmodel_tp_s2", "Teleport");
         EntFire("music_stage2", "StartSound", "", 5.00);
         EntFire("town_start_entrancedoors", "Open", "", 3.00);
@@ -648,8 +647,7 @@ Instance.OnScriptInput("StartMap", () => {
         EntFire("s1_airship", "Kill");
         EntFire("skybox_s1", "ClearParent", "", 1.00);
         EntFire("skybox_s1_tp_s3", "Teleport", "", 2.05);
-        EntFire("teleport_destination", "KeyValue", "origin 11776 -15936 5130");
-        EntFire("teleport_destination", "KeyValue", "angles 0 90 0");
+        tp_dest.Teleport({ position: new Vec3(11776, -15936, 5130), angles: new Euler(0, 90, 0) });
         EntFire("skybox_groundmodel", "SetScale", "1.6", 0.02);
         EntFire("skybox_groundmodel_tp_s3", "Teleport", "", 0.05);
         EntFire("s3_startdoor", "Open", "", 3.00);
@@ -1093,10 +1091,10 @@ Instance.OnScriptInput("RegisterWallaButtons", () => {
     walla_buttons = Instance.FindEntitiesByName("walla_button*");
 });
 Instance.OnScriptInput("WallaStart", () => {
-    Instance.EntFireAtName({ name: "walla_s_intro", input: "StartSound" });
-    Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "WallaTick" });
-    Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "SetWallaActive", delay: 6.5 });
-    Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "255 255 255", delay: 6.5 });
+    EntFire("walla_s_intro", "StartSound");
+    EntFire(script_korea, "RunScriptInput", "WallaTick");
+    EntFire(script_korea, "RunScriptInput", "SetWallaActive", 6.5);
+    EntFire("walla_button*", "Color", "255 255 255", 6.5);
 });
 Instance.OnScriptInput("SetWallaActive", () => {
     walla_active = true;
@@ -1121,7 +1119,7 @@ Instance.OnScriptInput("WallaTick", () => {
                 button.Teleport({ position: origin });
             }
         }
-        Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "WallaTick", delay: walla_tickrate });
+        EntFire(script_korea, "RunScriptInput", "WallaTick", walla_tickrate);
     }
     else {
         for (const button of walla_buttons) {
@@ -1137,60 +1135,60 @@ Instance.OnScriptInput("ShotButton", (data) => {
 function hit(index, activator, caller) {
     if (walla_active && !walla_cd && activator?.GetHealth() > 0) {
         walla_cd = true;
-        Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "SetWallaCooldown", delay: 0.02 });
+        EntFire(script_korea, "RunScriptInput", "SetWallaCooldown", 0.02);
         if (index === (1 + walla_order) || (index === 6 && walla_order === 6)) {
             if (index === 9) {
                 walla_active = false;
                 walla_active2 = false;
-                Instance.EntFireAtName({ name: "walla_s_win", input: "StartSound", delay: 0.5 });
+                EntFire("walla_s_win", "StartSound", "", 0.5);
                 walla_speed = 30;
                 walla_radius = 10000;
-                Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "WallaStop", delay: 5 });
-                Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "255 255 0", delay: 0 });
-                Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "255 255 0", delay: 0.21 });
-                Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "255 255 0", delay: 0.5 });
-                Instance.EntFireAtName({ name: "walla_manager", input: "FireUser4" });
+                EntFire(script_korea, "RunScriptInput", "WallaStop", 5);
+                EntFire("walla_button*", "Color", "255 255 0", 0);
+                EntFire("walla_button*", "Color", "255 255 0", 0.21);
+                EntFire("walla_button*", "Color", "255 255 0", 0.5);
+                EntFire("walla_manager", "FireUser4");
             }
             walla_order++;
             switch (index) {
                 case 1:
-                    Instance.EntFireAtName({ name: "walla_s_ooh", input: "StartSound" });
+                    EntFire("walla_s_ooh", "StartSound");
                     break;
                 case 2:
-                    Instance.EntFireAtName({ name: "walla_s_eeh", input: "StartSound" });
+                    EntFire("walla_s_eeh", "StartSound");
                     break;
                 case 3:
-                    Instance.EntFireAtName({ name: "walla_s_ohahah", input: "StartSound" });
+                    EntFire("walla_s_ohahah", "StartSound");
                     break;
                 case 4:
-                    Instance.EntFireAtName({ name: "walla_s_ting", input: "StartSound" });
+                    EntFire("walla_s_ting", "StartSound");
                     break;
                 case 5:
-                    Instance.EntFireAtName({ name: "walla_s_tang", input: "StartSound" });
+                    EntFire("walla_s_tang", "StartSound");
                     break;
                 case 6:
-                    Instance.EntFireAtName({ name: "walla_s_walla", input: "StartSound" });
+                    EntFire("walla_s_walla", "StartSound");
                     break;
                 case 8:
-                    Instance.EntFireAtName({ name: "walla_s_bing", input: "StartSound" });
+                    EntFire("walla_s_bing", "StartSound");
                     break;
                 case 9:
-                    Instance.EntFireAtName({ name: "walla_s_bang", input: "StartSound" });
+                    EntFire("walla_s_bang", "StartSound");
                     break;
             }
-            Instance.EntFireAtTarget({ target: caller, input: "Color", value: "255 255 0" });
-            Instance.EntFireAtTarget({ target: caller, input: "Color", value: "255 255 255", delay: 0.2 });
+            EntFireTarget(caller, "Color", "255 255 0");
+            EntFireTarget(caller, "Color", "255 255 255", 0.2);
         }
         else {
             walla_active = false;
             walla_order = 0;
             EntFire(script_korea, "RunScriptInput", "SetWallaActive", 1.5);
-            Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "0 0 0", delay: 0 });
-            Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "0 0 0", delay: 0.21 });
-            Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "0 0 0", delay: 0.5 });
-            Instance.EntFireAtName({ name: "walla_button*", input: "Color", value: "255 255 255", delay: 1.5 });
-            Instance.EntFireAtName({ name: "walla_s_death", input: "StartSound" });
-            Instance.EntFireAtName({ name: "hurt_1000", input: "Hurt", activator: activator });
+            EntFire("walla_button*", "Color", "0 0 0", 0);
+            EntFire("walla_button*", "Color", "0 0 0", 0.21);
+            EntFire("walla_button*", "Color", "0 0 0", 0.5);
+            EntFire("walla_button*", "Color", "255 255 255", 1.5);
+            EntFire("walla_s_death", "StartSound");
+            EntFireTarget(activator, "SetHealth", "-1");
         }
     }
 }
@@ -1222,8 +1220,8 @@ let babyswarmvictim;
 Instance.OnScriptInput("GapeStart", () => {
     gape_ticking = true;
     gapeAddHP();
-    Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "GapeTick" });
-    Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "CastleTick" });
+    EntFire(script_korea, "RunScriptInput", "GapeTick");
+    EntFire(script_korea, "RunScriptInput", "CastleTick");
 });
 Instance.OnScriptInput("GapeStop", () => {
     gape_stopped = true;
@@ -1247,7 +1245,7 @@ Instance.OnScriptInput("GapeTick", () => {
     else
         gape_open = false;
     if (lastopen != gape_open)
-        Instance.EntFireAtName({ name: "s3_gachi_gape_wall", input: "Toggle" });
+        EntFire("s3_gachi_gape_wall", "Toggle");
     lastopen = gape_open;
     if (gape_frame < 0)
         gape_frame = 0;
@@ -1255,22 +1253,22 @@ Instance.OnScriptInput("GapeTick", () => {
         gape_frame = 20;
         if (gape_stopped) {
             gape_ticking = false;
-            Instance.EntFireAtName({ name: "s3_gachi_gape_wall", input: "Disable", delay: 0.02 });
-            Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "SpawnData5", delay: 10 });
+            EntFire("s3_gachi_gape_wall", "Disable", "", 0.02);
+            EntFire(script_korea, "RunScriptInput", "SpawnData5", 10);
         }
     }
-    Instance.EntFireAtName({ name: "s3_gachi_gape", input: "SetRenderAttribute", value: "frame=" + gape_frame });
+    EntFire("s3_gachi_gape", "SetRenderAttribute", "frame=" + gape_frame);
     if (gape_ticking)
-        Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "GapeTick", delay: gape_tickrate });
+        EntFire(script_korea, "RunScriptInput", "GapeTick", gape_tickrate);
 });
 Instance.OnScriptInput("CastleTick", () => {
     const ent = findByNameNearest("i_ikea_castlebox_sprite*", new Vec3(9472, 10176, 7392), castle_range_check);
     if (ent !== undefined) {
-        Instance.EntFireAtTarget({ target: ent, input: "FireUser1" });
+        EntFireTarget(ent, "FireUser1");
         addCastlePiece();
     }
     if (gape_ticking) {
-        Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "CastleTick", delay: tickrate_castle });
+        EntFire(script_korea, "RunScriptInput", "CastleTick", tickrate_castle);
     }
 });
 function gapeAddHP() {
@@ -1281,22 +1279,25 @@ function gapeAddHP() {
             sethp += grave_hpadd;
         }
     }
-    Instance.EntFireAtName({ name: "s3_gachi_gape_breaks", input: "SetHealth", value: sethp });
+    EntFire("s3_gachi_gape_breaks", "SetHealth", sethp);
 }
 Instance.OnScriptInput("GapeRemoveHp", () => {
-    Instance.EntFireAtName({ name: "s3_gachi_gape_breaks", input: "RemoveHealth", value: grave_damage });
+    EntFire("s3_gachi_gape_breaks", "RemoveHealth", grave_damage);
 });
 function addCastlePiece() {
     castle_pieces++;
-    Instance.EntFireAtName({ name: "s3_gachi_gape_castle_" + castle_pieces, input: "Alpha", value: 255 });
-    Instance.ServerCommand("say ***CASTLE PIECE ADDED (" + castle_pieces + "/6)***");
+    if (castle_pieces <= 6) {
+        EntFire("s3_gachi_gape_castle_" + castle_pieces, "Alpha", 255);
+        Instance.ServerCommand("say ***CASTLE PIECE ADDED (" + castle_pieces + "/6)***");
+    }
     if (castle_pieces === 6) {
-        Instance.EntFireAtName({ name: "s3_children_yay", input: "StartSound" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***THE CASTLE HAS BEEN COMPLETED!***", delay: 1 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***JUMP THE SORROWS AWAY, MY CHILDREN***", delay: 2 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***BONUS: each jump damages all gravestones***", delay: 3 });
-        Instance.EntFireAtName({ name: "s3_gachi_gape_jcast_trigger", input: "Enable" });
+        EntFire("s3_children_yay", "StartSound");
+        EntFire("server", "Command", "say ***THE CASTLE HAS BEEN COMPLETED!***", 1);
+        EntFire("server", "Command", "say ***JUMP THE SORROWS AWAY, MY CHILDREN***", 2);
+        EntFire("server", "Command", "say ***BONUS: each jump damages all gravestones***", 3);
+        EntFire("s3_gachi_gape_jcast_trigger", "Enable");
         EntFire("ikea_delay_trigger", "Kill");
+        EntFire("ikea_spawn_case", "Kill");
     }
 }
 Instance.OnScriptInput("SetBabySwarmVictim", (data) => {
@@ -1342,7 +1343,7 @@ let color_ticking = false;
 Instance.OnScriptInput("PringlesStart", () => {
     pringles_train = Instance.FindEntityByName("s3_pringles_phys");
     pringles_ticking = true;
-    Instance.EntFireAtName({ name: "s3_pringles_rot", input: "Start" });
+    EntFire("s3_pringles_rot", "Start");
     EntFire("s3_pringles_phys", "StartForward");
     EntFire("s3_pringles_phys", "SetSpeedReal", 100);
     EntFire("s3_pringles_phys", "SetSpeedReal", 150, 0.5);
@@ -1353,12 +1354,12 @@ Instance.OnScriptInput("PringlesStart", () => {
     EntFire("s3_pringles_phys", "SetSpeedReal", 500, 4);
     EntFire("s3_pringles_phys", "SetSpeedReal", 600, 5);
     EntFire("s3_pringles_phys", "SetSpeedReal", 700, 6);
-    Instance.EntFireAtName({ name: "s3_pringles_sound1", input: "StartSound" });
-    Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DO YOU WANT SOME PRINGLES?***" });
-    Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***LET ME ROLL TO YOU***", delay: 1 });
-    Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***EAT ME DADDY***", delay: 2 });
-    Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***EAT ME DADDY***", delay: 2 });
-    Instance.EntFireAtName({ name: script_korea, input: "RunScriptInput", value: "CheckChewie", delay: 25 });
+    EntFire("s3_pringles_sound1", "StartSound");
+    EntFire("server", "Command", "say ***DO YOU WANT SOME PRINGLES?***");
+    EntFire("server", "Command", "say ***LET ME ROLL TO YOU***", 1);
+    EntFire("server", "Command", "say ***EAT ME DADDY***", 2);
+    EntFire("server", "Command", "say ***EAT ME DADDY***", 2);
+    EntFire(script_korea, "RunScriptInput", "CheckChewie", 25);
     EntFire(script_korea, "RunScriptInput", "PringlesTick");
 });
 Instance.OnScriptInput("PringlesTick", () => {
@@ -1702,7 +1703,7 @@ class Soldier {
             }
             else {
                 this.airblock = false;
-                EntFire("i_nksoldier_t_f" + this.PF, "Scale", 250);
+                EntFire("i_nksoldier_t_f" + this.PF, "Scale", 300);
             }
             if (traceLine(self_origin, Vector3Utils.add(self_origin, new Vec3(0, 0, -36))).didHit) {
                 this.jumping = false;
@@ -1972,7 +1973,7 @@ class Baby {
                 this.airblock = true;
             }
             else {
-                EntFire("i_nkbabysoldier_t_f" + this.PF, "Scale", 200);
+                EntFire("i_nkbabysoldier_t_f" + this.PF, "Scale", 300);
                 this.airblock = false;
             }
             if (traceLine(self_origin, Vector3Utils.add(self_origin, new Vec3(0, 0, -24))).didHit) {
@@ -2428,7 +2429,7 @@ class MovePlayer {
     }
     SetSpeed(speed) {
         this.speed += speed;
-        Instance.EntFireAtTarget({ target: this.player, input: "KeyValue", value: "speed " + String((this.speed < 0) ? 0 : this.speed) });
+        EntFireTarget(this.player, "KeyValue", "speed " + String((this.speed < 0) ? 0 : this.speed));
     }
 }
 let players_speed = [];
@@ -2599,8 +2600,8 @@ Instance.OnScriptInput("PlaySound", (data) => {
     const slot = activator.GetPlayerController().GetPlayerSlot();
     const clientname = "client" + slot;
     activator.SetEntityName(clientname);
-    Instance.EntFireAtTarget({ target: client_sndevents[slot], input: "SetSourceEntity", value: clientname });
-    Instance.EntFireAtTarget({ target: client_sndevents[slot], input: "StartSound", delay: 0.02 });
+    EntFireTarget(client_sndevents[slot], "SetSourceEntity", clientname);
+    EntFireTarget(client_sndevents[slot], "StartSound", "", 0.02);
 });
 // SOUND PER PLAYER \\
 Instance.OnRoundStart(() => {
@@ -2666,7 +2667,9 @@ function traceLine(start, target) {
     ents = ents.filter(e => e.GetClassName() !== "worldent" && e.GetClassName() &&
         e.GetClassName() !== "prop_dynamic" &&
         e.GetClassName() !== "func_door" &&
-        e.GetClassName() !== "func_breakable");
+        e.GetClassName() !== "func_breakable" &&
+        e.GetClassName() !== "func_tracktrain" &&
+        e.GetClassName() !== "func_movelinear");
     const trace_result = Instance.TraceLine({ start: start, end: target, ignorePlayers: true, ignoreEntity: ents });
     return trace_result;
 }
