@@ -15,7 +15,6 @@ Instance.OnScriptInput("HideCountdown", () => {
     isActive = false;
     remainingTime = 0;
     Instance.SetThink(null);
-
 });
 
 function StartCountdown(time) {
