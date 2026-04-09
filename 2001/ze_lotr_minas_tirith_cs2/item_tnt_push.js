@@ -50,7 +50,7 @@ Instance.OnScriptInput("LaunchTNT", (inputData) => {
     // 设置速度
     let launchSpeed = 720;
     // 设置跳投的额外速度
-    let launchBoost = 540; 
+    let launchBoost = 500; 
 
     // 获取玩家当前的绝对速度向量 {x, y, z}
     let playerVel = player.GetAbsVelocity(); // 

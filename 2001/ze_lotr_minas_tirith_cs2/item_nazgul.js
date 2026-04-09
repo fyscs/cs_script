@@ -178,7 +178,7 @@ class Vec3 {
 // --- 游戏逻辑 ---
 
 let nazgul_items = new Set();
-const nazgul_push_scale = 180;
+const nazgul_push_scale = 80;
 
 Instance.OnScriptInput("LaunchNAZGUL", (inputData) => {
     const nazgul_item = inputData.caller;

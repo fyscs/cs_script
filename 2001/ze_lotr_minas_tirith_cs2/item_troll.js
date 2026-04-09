@@ -21,6 +21,12 @@ Instance.OnBeforePlayerDamage((event) => {
     // 检查受害者 (event.player) 是否在我们的受保护列表中
     if (protectedPlayers.has(event.player)) {
 
+    const attackerName = event.attacker.GetEntityName();
+
+    // 如果攻击者是 "item_goliath_24"，则直接返回原始伤害
+    if (attackerName === "item_goliath_24") {
+        return { damage: event.damage };
+    }
         // 计算减伤后的数值 (40% 伤害)
         const newDamage = event.damage * 0.4;
 
