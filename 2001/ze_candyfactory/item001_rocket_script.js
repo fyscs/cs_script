@@ -90,7 +90,7 @@ class Rocket {
 
     maxAmmo = 4;
     currentAmmo = 4;
-    cooldownDuration = 10.0;
+    cooldownDuration = 20.0;
     explosionRadius = 512;
     explosionDamagePlayer = 1500.0;
     explosionDamageNPC = 600.0;

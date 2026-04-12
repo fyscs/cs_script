@@ -64,7 +64,7 @@ class Handcannon {
     targetPos = null;
     lastPos = null;
 
-    explosionRadius = 256;
+    explosionRadius = 512;
     explosionDamagePlayer = 10000000.0;
     explosionDamageNPC = 30000.0;
 
