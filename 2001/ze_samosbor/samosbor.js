@@ -883,6 +883,7 @@ Instance.OnPlayerReset((event) => {
         Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti3", input: "TestActivator", activator: player, delay: 0.10 });
         Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti4", input: "TestActivator", activator: player, delay: 0.10 });
         Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti5", input: "TestActivator", activator: player, delay: 0.10 });
+        Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti6", input: "TestActivator", activator: player, delay: 0.10 });
         if(PlayerInstancesMap.has(player_slot))
         {
             const inst = PlayerInstancesMap.get(player_slot);
