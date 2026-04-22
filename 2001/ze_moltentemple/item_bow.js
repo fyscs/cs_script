@@ -126,12 +126,12 @@ class Item_Bow
                     return;
                 }
 
-                Instance.DebugLine({
-                    start: start,
-                    end: traceResult.end,
-                    duration: 5,
-                    color: { r: 0, g: 255, b: 0 }
-                });
+                // Instance.DebugLine({
+                //     start: start,
+                //     end: traceResult.end,
+                //     duration: 5,
+                //     color: { r: 0, g: 255, b: 0 }
+                // });
 
                 this.bow_path_02?.Teleport({position: traceResult.end});
                 Instance.EntFireAtTarget({target: this.bow_tracktrain, input: "StartForward"});
@@ -140,20 +140,20 @@ class Item_Bow
                 {
                     Instance.Msg(`Hit at: x=${traceResult.end.x.toFixed(1)}, y=${traceResult.end.y.toFixed(1)}, z=${traceResult.end.z.toFixed(1)}`);
                     const boxSize = 4;
-                    Instance.DebugBox({
-                        mins: {
-                            x: traceResult.end.x - boxSize,
-                            y: traceResult.end.y - boxSize,
-                            z: traceResult.end.z - boxSize
-                        },
-                        maxs: {
-                            x: traceResult.end.x + boxSize,
-                            y: traceResult.end.y + boxSize,
-                            z: traceResult.end.z + boxSize
-                        },
-                        duration: 5,
-                        color: { r: 255, g: 0, b: 0 }
-                    });
+                    // Instance.DebugBox({
+                    //     mins: {
+                    //         x: traceResult.end.x - boxSize,
+                    //         y: traceResult.end.y - boxSize,
+                    //         z: traceResult.end.z - boxSize
+                    //     },
+                    //     maxs: {
+                    //         x: traceResult.end.x + boxSize,
+                    //         y: traceResult.end.y + boxSize,
+                    //         z: traceResult.end.z + boxSize
+                    //     },
+                    //     duration: 5,
+                    //     color: { r: 255, g: 0, b: 0 }
+                    // });
                     if(traceResult.hitEntity && traceResult.hitEntity?.IsValid()) 
                     {
                         const hitName = traceResult.hitEntity?.GetEntityName();
