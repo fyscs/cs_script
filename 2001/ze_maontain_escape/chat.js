@@ -1,7 +1,7 @@
 import { Instance } from "cs_script/point_script";
 
 // ==================== 配置 ====================
-const COOLDOWN_SECONDS = 1;
+const COOLDOWN_SECONDS = 3;
 const CLEAN_INTERVAL = 30.0;
 
 // 聊天关键词 → 实体名 映射
