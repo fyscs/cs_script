@@ -3,7 +3,8 @@ import { Instance } from "cs_script/point_script";
 let h_Heal = 200;
 let h_Armor = 100;
 let h_Button = "heal_button";
-let h_Script = "heal_script"
+let h_Script = "heal_script";
+let h_fImmunity = "Block_ZM_Dmg";
 let h_mAmmo = 150;
 let h_Radius = 256;
 let h_Duration = 8.00;
@@ -40,7 +41,7 @@ Instance.OnScriptInput("Heal", () => {
                 {
                     if(VectorDistance(player.GetAbsOrigin(), button_h.GetAbsOrigin()) <= h_Radius)
                     {
-                        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "Block_ZM_Dmg", delay: 0.00 });
+                        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: ""+h_fImmunity, delay: 0.00 });
                         Instance.EntFireAtTarget({ target: player, input: "IgniteLifetime", value: "0", delay: 0.00 });
                         player.SetHealth(h_Heal);
                         player.SetArmor(h_Armor);
@@ -86,7 +87,7 @@ function ClearDamageFilter()
 
 function IsValidEntityTeam(ent, t)
 {
-    if(ent?.IsValid() && ent?.GetHealth() > 0 && ent?.GetTeamNumber() == t)
+    if(ent?.IsValid() && ent?.IsAlive() && ent?.GetTeamNumber() == t)
     {
         return true;
     }
