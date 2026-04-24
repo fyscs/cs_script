@@ -2276,8 +2276,8 @@ Instance.OnScriptInput("SpawnFloor", () => {
     ResetFloor();
     if(floor == 0)
     {
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "Lock" })
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "Lock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "Unlock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "Unlock" })
         UpdateVariables();
     }
     // MINI BOSS FIGHT
