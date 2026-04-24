@@ -216,6 +216,7 @@ function BuildHud()
     }
     Instance.EntFireAtName({ name: BOSS_HUD_ENT, input: "SetMessage", value: BOSS_HUD_TEXT, delay: 0.00 });
     // Instance.Msg(BOSS_HUD_TEXT);
+    // Instance.DebugScreenText({ text: BOSS_HUD_TEXT, x: 625, y: 250, duration: 0.01, color: {r: 0, g: 255, b:255} });
 }
 
 Instance.OnScriptInput("SubtractHealth", () => {
@@ -315,4 +316,3 @@ function ResetBossS()
     ITEM_DAMAGE = "";
     GRENADE_DAMAGE = 0;
 }
-

@@ -1,12 +1,6 @@
 import { Instance } from "cs_script/point_script";
 
-Instance.OnScriptInput("PickUpFire", ({caller, activator}) => {
-    activator.SetEntityName("fire_player");
-});
-
-Instance.OnScriptInput("PickUpFreeze", ({caller, activator}) => {
-    activator.SetEntityName("freeze_player");
-});
+const items_script = "items_script";
 
 Instance.OnScriptInput("PickUpHeal", ({caller, activator}) => {
     activator.SetEntityName("heal_player");
@@ -36,14 +30,132 @@ Instance.OnScriptInput("PickUpZFreez", ({caller, activator}) => {
     activator.SetEntityName("zmfreeze_player");
 });
 
-Instance.OnScriptInput("PickUpZSkin1", ({caller, activator}) => {
-    activator.SetEntityName("zmskin1_player");
-});
-
-Instance.OnScriptInput("PickUpZSkin2", ({caller, activator}) => {
-    activator.SetEntityName("zmskin2_player");
-});
-
 Instance.OnScriptInput("SetZmItemHP", ({caller, activator}) => {
     activator.SetHealth(50000);
+});
+
+/////////////////////////////////////////////////////
+
+let Fire_Item_Player = null;
+let Fire_Item_Weapon = null;
+let Fire_Item_Model = null;
+let Fire_Item_Toggle = false;
+const Fire_Item_Tick = 0.05;
+
+Instance.OnScriptInput("PickUpFire", ({caller, activator}) => {
+    if(!activator?.IsValid()) return;
+    if(!Fire_Item_Model?.IsValid())
+    {
+        Fire_Item_Model = Instance.FindEntityByName("fire_staff");
+    }
+    Fire_Item_Player = activator;
+    Fire_Item_Weapon = caller;
+    if(Fire_Item_Model?.IsValid())
+    {
+        if(!Fire_Item_Toggle)
+        {
+            Fire_Item_Model.Teleport({ angles: { pitch: Fire_Item_Weapon.GetAbsAngles().pitch, yaw: Fire_Item_Weapon.GetAbsAngles().yaw + 270, roll: 0 } });
+        }
+    }
+});
+
+Instance.OnScriptInput("UseFireItem", ({caller, activator}) => {
+    Fire_Item_Toggle = true;
+    Instance.EntFireAtName({ name: items_script, input: "RunScriptInput", value: "TickFireItem" });
+});
+
+Instance.OnScriptInput("DisableFireItem", ({caller, activator}) => {
+    Fire_Item_Toggle = false;
+});
+
+Instance.OnScriptInput("TickFireItem", ({caller, activator}) => {
+    if(!Fire_Item_Model?.IsValid()) return;
+    if(!Fire_Item_Toggle)
+    {
+        const staff_ang = Fire_Item_Model.GetAbsAngles();
+        Fire_Item_Model.Teleport({ angles: { pitch: staff_ang.pitch, yaw: staff_ang.yaw, roll: 0 } });
+        return;
+    }
+
+    Instance.EntFireAtName({ name: items_script, input: "RunScriptInput", value: "TickFireItem", delay: Fire_Item_Tick });
+
+    if(!Fire_Item_Player?.IsValid() || !Fire_Item_Weapon?.IsValid() || !Fire_Item_Player.IsAlive() || Fire_Item_Player.GetTeamNumber() != 3 || Fire_Item_Weapon.GetOwner() != Fire_Item_Player)
+    {
+        return;
+    }
+
+    const player_eye_ang = Fire_Item_Player.GetEyeAngles();
+    const staff_ang = Fire_Item_Model.GetAbsAngles();
+
+    Fire_Item_Model.Teleport({ angles: { pitch: staff_ang.pitch, yaw: staff_ang.yaw, roll: -player_eye_ang.pitch - 90 } });
+});
+
+/////////////////////////////////////////////////////
+
+let Freeze_Item_Player = null;
+let Freeze_Item_Weapon = null;
+let Freeze_Item_Model = null;
+let Freeze_Item_Toggle = false;
+const Freeze_Item_Tick = 0.05;
+
+Instance.OnScriptInput("PickUpFreeze", ({caller, activator}) => {
+    if(!activator?.IsValid()) return;
+    if(!Freeze_Item_Model?.IsValid())
+    {
+        Freeze_Item_Model = Instance.FindEntityByName("freeze_staff");
+    }
+    Freeze_Item_Player = activator;
+    Freeze_Item_Weapon = caller;
+    if(Freeze_Item_Model?.IsValid())
+    {
+        if(!Freeze_Item_Toggle)
+        {
+            Freeze_Item_Model.Teleport({ angles: { pitch: Freeze_Item_Weapon.GetAbsAngles().pitch, yaw: Freeze_Item_Weapon.GetAbsAngles().yaw + 270, roll: 0 } });
+        }
+    }
+});
+
+Instance.OnScriptInput("UseFreezeItem", ({caller, activator}) => {
+    Freeze_Item_Toggle = true;
+    Instance.EntFireAtName({ name: items_script, input: "RunScriptInput", value: "TickFreezeItem" });
+});
+
+Instance.OnScriptInput("DisableFreezeItem", ({caller, activator}) => {
+    Freeze_Item_Toggle = false;
+});
+
+Instance.OnScriptInput("TickFreezeItem", ({caller, activator}) => {
+    if(!Freeze_Item_Model?.IsValid()) return;
+    if(!Freeze_Item_Toggle)
+    {
+        const staff_ang = Freeze_Item_Model.GetAbsAngles();
+        Freeze_Item_Model.Teleport({ angles: { pitch: staff_ang.pitch, yaw: staff_ang.yaw, roll: 0 } });
+        return;
+    }
+
+    Instance.EntFireAtName({ name: items_script, input: "RunScriptInput", value: "TickFreezeItem", delay: Freeze_Item_Tick });
+
+    if(!Freeze_Item_Player?.IsValid() || !Freeze_Item_Weapon?.IsValid() || !Freeze_Item_Player.IsAlive() || Freeze_Item_Player.GetTeamNumber() != 3 || Freeze_Item_Weapon.GetOwner() != Freeze_Item_Player)
+    {
+        return;
+    }
+
+    const player_eye_ang = Freeze_Item_Player.GetEyeAngles();
+    const staff_ang = Freeze_Item_Model.GetAbsAngles();
+
+    Freeze_Item_Model.Teleport({ angles: { pitch: staff_ang.pitch, yaw: staff_ang.yaw, roll: -player_eye_ang.pitch - 90 } });
+});
+
+/////////////////////////////////////////////////////
+
+Instance.OnRoundStart(() => {
+    Fire_Item_Player = null;
+    Fire_Item_Weapon = null;
+    Fire_Item_Model = null;
+    Fire_Item_Toggle = false;
+
+    Freeze_Item_Player = null;
+    Freeze_Item_Weapon = null;
+    Freeze_Item_Model = null;
+    Freeze_Item_Toggle = false;
 });
