@@ -274,7 +274,7 @@ Instance.SetThink(() => {
     Instance.SetNextThink(Instance.GetGameTime());
 });
 
-Instance.SetNextThink(Instance.GetGameTime());
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 
 /**
  * 监听玩家受到的伤害
