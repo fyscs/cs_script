@@ -167,7 +167,7 @@ class Spider
                     ignorePlayers: true
                 });
 
-                Instance.DebugLine({start: pos_off_2, end: trace.end, duration: 10.00, color: { r: 255, g: 0, b: 0 }});
+                // Instance.DebugLine({start: pos_off_2, end: trace.end, duration: 10.00, color: { r: 255, g: 0, b: 0 }});
 
                 const tpPos = trace.didHit ? trace.end : end;
 
