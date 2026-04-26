@@ -138,7 +138,7 @@ class Item_Bow
 
                 if(traceResult.didHit) 
                 {
-                    Instance.Msg(`Hit at: x=${traceResult.end.x.toFixed(1)}, y=${traceResult.end.y.toFixed(1)}, z=${traceResult.end.z.toFixed(1)}`);
+                    // Instance.Msg(`Hit at: x=${traceResult.end.x.toFixed(1)}, y=${traceResult.end.y.toFixed(1)}, z=${traceResult.end.z.toFixed(1)}`);
                     const boxSize = 4;
                     // Instance.DebugBox({
                     //     mins: {
@@ -162,7 +162,7 @@ class Item_Bow
                         {
                             this.lastArrowHitTarget = traceResult.hitEntity;
                             this.lastArrowHitInput = this.bow_targets[baseName];
-                            Instance.Msg(`Arrow will trigger ${this.lastArrowHitInput} on ${hitName}`);
+                            // Instance.Msg(`Arrow will trigger ${this.lastArrowHitInput} on ${hitName}`);
                         } 
                         else 
                         {
@@ -178,7 +178,7 @@ class Item_Bow
                 } 
                 else 
                 {
-                    Instance.Msg(`No hit after ${traceLength} units`);
+                    // Instance.Msg(`No hit after ${traceLength} units`);
                 }
                 this.bow_arrows--;
                 Instance.EntFireAtTarget({target: this.bow_text_ent, input: "SetMessage", value: `ARROWS: ${this.bow_arrows} / ${this.bow_max_arrows}`});
@@ -193,7 +193,7 @@ class Item_Bow
         }
         if(this.lastArrowHitTarget && this.lastArrowHitTarget?.IsValid() && this.lastArrowHitInput) 
         {
-            Instance.Msg(`ArrowPass → Sending ${this.lastArrowHitInput} to ${this.lastArrowHitTarget?.GetEntityName()}`);
+            // Instance.Msg(`ArrowPass → Sending ${this.lastArrowHitInput} to ${this.lastArrowHitTarget?.GetEntityName()}`);
             Instance.EntFireAtTarget({target: this.lastArrowHitTarget, input: this.lastArrowHitInput});
             this.lastArrowHitTarget = null;
             this.lastArrowHitInput = null;
