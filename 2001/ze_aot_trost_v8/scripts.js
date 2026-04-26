@@ -1,4 +1,4 @@
-import { Instance, CSInputs, } from "cs_script/point_script";
+import { Instance, CSInputs, CSDamageTypes, CSWeaponType } from "cs_script/point_script";
 
 var stage = 1;
 
@@ -25,7 +25,7 @@ const CONFIG = {
     STAGES: { INIT: 1, MAX_PLAYERS: 64 },
     THINK: { DELAY: 1/64, MAX_SPEED: 1750 },
     ABILITIES: {
-        LITI: { SPEED_DELAY: 20/64, MAX_SPEED_DELAY: 30, CHARGE: 0.2, MAX_NUM: 5, DEST: 3000 },
+        LITI: { SPEED_DELAY: 30/64, MAX_SPEED_DELAY: 30, CHARGE: 0.2, MAX_NUM: 5, DEST: 3000 },
         STEAM: { SPEED: 8, CHARGE: 0.4, MAX_NUM: 5, USE_SPEED: 400 },
         CUT: { MAX_NUM: 5, CHARGE: 0.5, MAX_CD: 2 }
     },
@@ -48,7 +48,7 @@ const CONFIG = {
             RIGHT_CLICK_CD: 25,
             COMBO_CD: 90,
             HP: 15,
-            COMBO_SEQUENCE: ["case13", "case12", "case11", "case14", "case15"]
+            COMBO_SEQUENCE: ["S", "A", "W", "D", "ATK"]
         },
         SKIN2: {
             ID: 8, 
@@ -62,7 +62,7 @@ const CONFIG = {
             RIGHT_CLICK_CD: 25,
             COMBO_CD: 90,
             HP: 20,
-            COMBO_SEQUENCE: ["case13", "case12", "case11", "case14", "case15"]
+            COMBO_SEQUENCE: ["S", "A", "W", "D", "ATK"]
         },
         SKIN3: {
             ID: 9, 
@@ -76,7 +76,7 @@ const CONFIG = {
             RIGHT_CLICK_CD: 25,
             COMBO_CD: 90,
             HP: 20,
-            COMBO_SEQUENCE: ["case13", "case12", "case11", "case14", "case15"]
+            COMBO_SEQUENCE: ["S", "A", "W", "D", "ATK"]
         },
         ZOMBIE_SKIN1: { 
             ID: 10, 
@@ -110,7 +110,8 @@ const CONFIG = {
         }
     },
     TEAMS: { ZOMBIE: 2, HUMAN: 3 },
-    RANGE: { HEAL: 600, AMMO: 600 }
+    RANGE: { HEAL: 600, AMMO: 600 },
+    HIGH_JUMP: { MAX_SPEED: 500, ACCEL_TIME: 0.5, DAMPING: 0.98 }
 };
 
 // =============================================
@@ -154,6 +155,7 @@ function fireT(target, input = "", val = "", delay = 0, caller, activator) {
 function find(name) { return Instance.FindEntityByName(name); }
 function findAll(name) { return Instance.FindEntitiesByName(name); }
 function findByClass(cls) { return Instance.FindEntitiesByClass(cls); }
+function _cmd(message, delay = 0) {fire("cmd", "command", `say ${message.toString()}`, delay);}
 
 // =============================================
 // 全局定时器（setTimeout 独立函数）
@@ -238,7 +240,7 @@ class PData {
         this.comboSequence = [];
         this.comboLastInputTime = 0;
         this.comboCooldown = 0;
-        this.comboTimeout = 0.3;
+        this.comboTimeout = 1;
 
         this.litiHookModel = null;
         this.litiTargetEntity = null;
@@ -250,13 +252,25 @@ class PData {
         // 阵营标签，-1表示未初始化
         this.teamTag = -1;
 
-        // 能力是否可用，默认为 true
+        // 能力是否可用，默认为 false，需要显式启用
         this.abilitiesEnabled = false;
 
-        // 高跳飞行模式相关（新增）
-        this.highJumpFlyingActive = false;   // 是否处于飞行模式
-        this.highJumpFlyingEndTime = 0;      // 飞行结束时间（游戏时间）
-        this.highJumpFlyingSpeed = 400;      // 飞行速度（单位/秒）
+        // 高跳飞行模式相关
+        this.highJumpFlyingActive = false;
+        this.highJumpFlyingEndTime = 0;
+        this.highJumpFlyingSpeed = 400;
+
+        // skin2 长按蓄力 AOE 字段（保留，但未启用）
+        this.skin2LmbCharging = false;
+        this.skin2LmbChargeStart = 0;
+        this.skin2AoeActive = false;
+        this.skin2AoeEndTime = 0;
+        this.skin2AoeLastDamageTime = 0;
+
+        // 按住F显示CD信息标志
+        this.showCDInfo = false;
+        // 按住F显示使用方法标志（用于剧情文本覆盖）
+        this.showUsage = false;
     }
     
     isValid() {
@@ -303,6 +317,7 @@ class PData {
         this.comboSequence.push(input);
         this.comboLastInputTime = currentTime;
         
+        print(`当前序列: ${this.comboSequence.join(" -> ")}`);
         return this.checkCombo();
     }
     
@@ -479,24 +494,9 @@ class ASys {
         print("已重置所有神器拾取计数器");
     }
 
-    // 添加皮肤特有输出（方向键和右键），利用控制器标志避免重复
+    // 皮肤特有UI设置（不再需要添加任何输入输出）
     addSkinOutputsIfNeeded(p) {
-        const ctrl = p.ctrl;
-        if (!ctrl || !p.isSkinItem()) return;
-
-        if (!ctrl.skinOutputsAdded) {
-            const skinOutputs = [
-                "OnCase11>script>RunScriptInput>w>0>0",
-                "OnCase12>script>RunScriptInput>a>0>0",
-                "OnCase13>script>RunScriptInput>s>0>0",
-                "OnCase14>script>RunScriptInput>d>0>0",
-                "OnCase16>script>RunScriptInput>useskinrightclick>0>0"
-            ];
-            skinOutputs.forEach(output => {
-                fire(`player_ui${p.slot}`, "AddOutput", output, 0);
-            });
-            ctrl.skinOutputsAdded = true;
-        }
+        // 输入检测已改为脚本内使用 CSInputs，不再需要向实体添加输出
     }
 
     getLitiOnly(p, maxNum = CONFIG.ABILITIES.LITI.MAX_NUM, chargeRate = CONFIG.ABILITIES.LITI.CHARGE) {
@@ -618,7 +618,6 @@ class ASys {
                 this.addSkinOutputsIfNeeded(p);
             }
             
-            const itemConfig = p.getItemConfig();
             switch(itemType) {
                 case "FLAME":
                     this.pMgr.Flame_User = p.pawn;
@@ -783,7 +782,7 @@ class ASys {
         }
 
         const itemNames = {
-            "FLAME": "火焰神器", "WIND": "风神器", "ELEC": "电神器", 
+            "FLAME": "火神器", "WIND": "风神器", "ELEC": "电神器", 
             "TGUN": "雷枪神器", "HEAL": "治疗神器", "AMMO": "弹药神器",
             "SKIN1": "艾伦", "SKIN2": "利威尔", "SKIN3": "三笠",
             "ZOMBIE_SKIN1": "兽之巨人", "ZOMBIE_SKIN2": "凯之巨人", 
@@ -820,11 +819,10 @@ class ASys {
     }
 
     useZombieSkin(p) {
-        if (!p.isZombie()) return;  // 仅僵尸可用
+        if (!p.isZombie()) return;
 
-        // 僵尸皮肤技能（item 10~14）
         if (p.item >= 10 && p.item <= 14) {
-            if (p.item_cd > 0) return;  // 皮肤技能冷却
+            if (p.item_cd > 0) return;
             const itemConfig = p.getItemConfig();
             if (!itemConfig) return;
             p.item_cd = itemConfig.CD;
@@ -837,7 +835,7 @@ class ASys {
             }
         }
         else if (p.item === 0 && p.zombieSkillCD <= 0) {
-            p.zombieSkillCD = 60;  // 设置60秒冷却
+            p.zombieSkillCD = 60;
             fireT(p.pawn, "keyvalues", "speed "+(1.2+stage/20).toFixed(2), 0);
             fireT(p.pawn, "keyvalues", "speed 1", 10);
             print(`玩家 ${p.ctrl?.GetPlayerName()} 发动暴走！`);
@@ -845,6 +843,7 @@ class ASys {
     }
 
     useBeastTitan(p) {
+        fire("beast_button","Press","",0,undefined,p.pawn)
         fire("monkey_filter","trigger","",0,undefined,p.pawn)
         p.pawn.SetHealth(CONFIG.ITEMS.ZOMBIE_SKIN1.HP)
         print(`兽之巨人投掷了石块！`);
@@ -868,7 +867,8 @@ class ASys {
     }
 
     useArmorTitan(p) {
-        fireT(p.pawn,"keyvalues","speed 2",0,undefined,p.pawn)
+        fire("armor_button","Press","",0,undefined,p.pawn)
+        fireT(p.pawn,"keyvalues","speed 2.4",0,undefined,p.pawn)
         fireT(p.pawn,"keyvalues","speed 1.4",8,undefined,p.pawn)
         fire("armor_filter","trigger","",0,undefined,p.pawn)
         p.pawn.SetHealth(CONFIG.ITEMS.ZOMBIE_SKIN2.HP)
@@ -895,6 +895,7 @@ class ASys {
     useColossalTitan(p) {
         find("big_s1_temp0").ForceSpawn( p.pawn.GetAbsOrigin() , p.pawn.GetAbsAngles() )
         fire("script","RunScriptInput","bigs1",0,undefined,p.pawn)
+        fire("chaoda_button","Press","",0,undefined,p.pawn)
     }
 
     ColossalSkill1(p){
@@ -981,19 +982,30 @@ class ASys {
         }
     }
 
-    // ---------- 高跳飞行模式（基于加速，速度上限500） ----------
+    // ---------- 高跳飞行模式（加速度机制） ----------
+    deactivateHighJumpFlying(p) {
+        if (!p.highJumpFlyingActive) return;
+        p.highJumpFlyingActive = false;
+        p.highJumpFlyingEndTime = 0;
+        if (p.pawn && p.pawn.IsValid()) {
+            fireT(p.pawn, "keyvalues", "gravity 1", 0);
+            fire(`jump_p${p.slot}`, "stop", "", 0);
+            fire(`jump_s_p${p.slot}`, "stop", "", 0);
+        }
+    }
+
     useHighJumpTitan(p) {
         const duration = 5.0;
         p.highJumpFlyingActive = true;
         p.highJumpFlyingEndTime = Instance.GetGameTime() + duration;
-        // 设置技能冷却
         p.item_cd = CONFIG.ITEMS.ZOMBIE_SKIN5.CD;
         
-        // 启动粒子效果
+        // 禁用重力
+        fireT(p.pawn, "keyvalues", "gravity 0", 0);
         fire(`jump_p${p.slot}`, "start", "", 0);
         fire(`jump_s_p${p.slot}`, "start", "", 0);
         
-        print(`玩家 ${p.ctrl?.GetPlayerName()} 进入高跳飞行模式，持续5秒，按住空格加速至500`);
+        print(`玩家 ${p.ctrl?.GetPlayerName()} 进入高跳飞行模式，持续5秒，按住空格加速，1秒后达到最高速度 ${CONFIG.HIGH_JUMP.MAX_SPEED}`);
     }
 
     updateHighJumpFlying(p) {
@@ -1001,45 +1013,38 @@ class ASys {
 
         const now = Instance.GetGameTime();
         if (now >= p.highJumpFlyingEndTime) {
-            p.highJumpFlyingActive = false;
-            fire(`jump_p${p.slot}`, "stop", "", 0);
-            fire(`jump_s_p${p.slot}`, "stop", "", 0);
+            this.deactivateHighJumpFlying(p);
             return;
         }
 
-        if (p.pawn && p.pawn.IsValid()) {
-            if (p.pawn.IsInputPressed(CSInputs.JUMP)) {
-                const eyeAngles = p.pawn.GetEyeAngles();
-                const forwardDir = fwd(eyeAngles);
-                const currentVel = p.pawn.GetAbsVelocity();
-                
-                // 加速度：1000 单位/秒²
-                const acceleration = 1000;
-                const delta = acceleration * CONFIG.THINK.DELAY;
-                
-                // 纯加速速度（不继承原速度）
-                const pureAccelVel = scale(forwardDir, delta);
-                
-                // XY轴：原速度水平分量 + 纯加速速度水平分量
-                const horizontalOriginal = { x: currentVel.x, y: currentVel.y, z: 0 };
-                const horizontalAccel = { x: pureAccelVel.x, y: pureAccelVel.y, z: 0 };
-                let newHorizontalVel = add(horizontalOriginal, horizontalAccel);
-                
-                // 限制水平速度上限为500
-                const maxSpeed = 500;
-                if (len2(newHorizontalVel) > maxSpeed) {
-                    const factor = maxSpeed / len2(newHorizontalVel);
-                    newHorizontalVel = scale(newHorizontalVel, factor);
-                }
-                
-                // Z轴：直接根据视角方向设置速度，上限500
-                const newZVel = forwardDir.z * maxSpeed;
-                
-                const newVel = { x: newHorizontalVel.x, y: newHorizontalVel.y, z: newZVel };
-                p.pawn.Teleport(undefined, undefined, newVel);
+        if (!p.pawn || !p.pawn.IsValid()) return;
+
+        let vel = p.pawn.GetAbsVelocity();
+        const isJumpPressed = p.pawn.IsInputPressed(CSInputs.JUMP);
+
+        if (isJumpPressed) {
+            const eyeAngles = p.pawn.GetEyeAngles();
+            const forwardDir = fwd(eyeAngles);
+            const maxSpeed = CONFIG.HIGH_JUMP.MAX_SPEED;
+            const acceleration = maxSpeed / CONFIG.HIGH_JUMP.ACCEL_TIME; // 500 / 1 = 500
+
+            // 速度增量
+            const delta = CONFIG.THINK.DELAY;
+            const accelVec = scale(forwardDir, acceleration * delta);
+            vel = add(vel, accelVec);
+
+            // 限制总速度不超过最大速度
+            const speed = len3(vel);
+            if (speed > maxSpeed) {
+                vel = scale(vel, maxSpeed / speed);
             }
-            // 不按空格时，不干预速度，让游戏物理自然衰减
+        } else {
+            // 松开空格：阻尼减速
+            const damping = CONFIG.HIGH_JUMP.DAMPING;
+            vel = scale(vel, damping);
         }
+
+        p.pawn.Teleport(undefined, undefined, vel);
     }
 
     useItem(p) {
@@ -1084,7 +1089,6 @@ class ASys {
             }
         }
         
-        // 更新僵尸默认技能CD
         if (p.isZombie() && p.zombieSkillCD > 0) {
             p.zombieSkillCD = Math.max(0, p.zombieSkillCD - CONFIG.THINK.DELAY);
         }
@@ -1093,6 +1097,7 @@ class ASys {
     useFlame(p) {
         find("fire_tem").ForceSpawn( add(p.pawn.GetAbsOrigin(),vec(0,0,64)) , p.pawn.GetAbsAngles());
         p.item_cd = CONFIG.ITEMS.FLAME.CD;
+        fire("fire_button","Press","",0,undefined,p.pawn)
     }
 
     useWind(p) {
@@ -1105,6 +1110,7 @@ class ASys {
             fire("wind_particle", "Start", "", 0, undefined, p.pawn);
         }
         p.item_cd = CONFIG.ITEMS.WIND.CD;
+        fire("wind_button","Press","",0,undefined,p.pawn)
     }
     
     updateWindEffect() {
@@ -1116,9 +1122,6 @@ class ASys {
                 return;
             }
             
-            // 每隔约0.2秒施加一次推力（因为帧率约为64帧，每帧都推太密集，原逻辑是 Math.floor(elapsedTime * 5) % 1 === 0）
-            // 这里简化：每帧都推，或者按原逻辑。原逻辑是每0.2秒一次，我们每帧推可能太强，保持原样。
-            // 为了保持原行为，记录上次更新时间，这里简单每帧推，效果可能略有变化，但基本可用。
             this.applyWindPush(this.pMgr.Wind_User);
         } else if (this.pMgr.Wind_User && !this.pMgr.Wind_User.IsValid()) {
             this.deactivateWind();
@@ -1129,7 +1132,6 @@ class ASys {
         const userPos = windUser.GetAbsOrigin();
         const allPlayers = findByClass("player");
 
-        // 推动僵尸
         for (const player of allPlayers) {
             if (!player.IsValid() || player === windUser) continue;
             if (player.GetTeamNumber() === CONFIG.TEAMS.HUMAN) continue;
@@ -1177,7 +1179,7 @@ class ASys {
     deactivateWind() {
         if (this.pMgr.Wind_User) {
             fire("wind_particle", "Stop", "", 0, undefined, this.pMgr.Wind_User);
-            this.pMgr.Wind_User = undefined;
+            // 不清空持有者引用，只重置剩余时间
             this.pMgr.Wind_Remaining = 0;
         }
     }
@@ -1185,6 +1187,7 @@ class ASys {
     useElec(p) {
         find("elec_tem").ForceSpawn( add(p.pawn.GetAbsOrigin(),vec(0,0,64)) , p.pawn.GetAbsAngles());
         p.item_cd = CONFIG.ITEMS.ELEC.CD;
+        fire("elec_button","Press","",0,undefined,p.pawn)
     }
 
     useTGun(p) {
@@ -1202,6 +1205,7 @@ class ASys {
             fire("heal_par0", "Start", "", 0, undefined, p.pawn);
         }
         p.item_cd = CONFIG.ITEMS.HEAL.CD;
+        fire("heal_button","Press","",0,undefined,p.pawn)
     }
 
     useAmmo(p) {
@@ -1214,6 +1218,7 @@ class ASys {
             fire("ammo_par0", "Start", "", 0, undefined, p.pawn);
         }
         p.item_cd = CONFIG.ITEMS.AMMO.CD;
+        fire("ammo_button","Press","",0,undefined,p.pawn)
     }
 
     updateHealEffect() {
@@ -1237,7 +1242,6 @@ class ASys {
             if (player.GetTeamNumber() === CONFIG.TEAMS.HUMAN && 
                 len2(sub(userPos, player.GetAbsOrigin())) <= CONFIG.RANGE.HEAL) {
                 
-                // 生命和护甲恢复
                 const currentHealth = player.GetHealth();
                 const maxHealth = player.GetMaxHealth();
                 if (currentHealth < maxHealth) {
@@ -1251,7 +1255,6 @@ class ASys {
                     player.SetArmor(newArmor);
                 }
 
-                // 皮肤特殊血量恢复
                 const playerData = this.pMgr.getPlayerDataByPawn(player);
                 if (playerData && playerData.isSkinItem() && playerData.skinMaxHP > 0) {
                     playerData.skinHP = Math.min(playerData.skinMaxHP, playerData.skinHP + 1 * CONFIG.THINK.DELAY);
@@ -1263,7 +1266,7 @@ class ASys {
     deactivateHeal() {
         if (this.pMgr.Heal_User) {
             fire("heal_par0", "Stop", "", 0, undefined, this.pMgr.Heal_User);
-            this.pMgr.Heal_User = undefined;
+            // 不清空持有者引用，只重置剩余时间
             this.pMgr.Heal_Remaining = 0;
         }
     }
@@ -1313,7 +1316,7 @@ class ASys {
     deactivateAmmo() {
         if (this.pMgr.Ammo_User) {
             fire("ammo_par0", "Stop", "", 0, undefined, this.pMgr.Ammo_User);
-            this.pMgr.Ammo_User = undefined;
+            // 不清空持有者引用，只重置剩余时间
             this.pMgr.Ammo_Remaining = 0;
         }
     }
@@ -1406,55 +1409,59 @@ class ASys {
         pawn.Teleport(undefined, undefined, newVel);
     }
 
+    // 钩锁
     activateLiti(p) {
         if (!p.abilitiesEnabled) return;
-        else if (p.isHuman()) {
-            const weapon = p.pawn.GetActiveWeapon();
-            if (!weapon || weapon.GetData().GetType() !== 0 || p.liti_num < 1) return;
+        if (!p.isHuman()) return;
+        const weapon = p.pawn.GetActiveWeapon();
+        if (!weapon || weapon.GetData().GetType() !== CSWeaponType.KNIFE) return;
+        if (p.liti_num < 1) return;
 
-            const start = p.pawn.GetEyePosition();
-            const forward = fwd(p.pawn.GetEyeAngles());
-            const end = add(start, scale(forward, 3100));
-            const ignore = [findByClass("func_button"),find("skin1_hitbox"),find("skin2_hitbox"),find("skin3_hitbox")];
-            const results = Instance.TraceLine({
-                start,
-                end,
-                ignoreEntity: ignore,
-                ignorePlayers: true
-            });
+        const start = p.pawn.GetEyePosition();
+        const forward = fwd(p.pawn.GetEyeAngles());
+        const end = add(start, scale(forward, 3100));
+        let wall = findByClass("func_wall_toggle")
+        let button = findByClass("func_button")
+        const ignore = [find("skin1_hitbox"),find("skin2_hitbox"),find("skin3_hitbox"), ...wall , ...button];
+        const results = Instance.TraceLine({
+            start,
+            end,
+            ignoreEntity: ignore,
+            ignorePlayers: true
+        });
+        //if(results.hitEntity){print(results.hitEntity.GetClassName())}
 
-            const dest = len3(sub(p.pawn.GetAbsOrigin(), results.end));
-            if (dest >= CONFIG.ABILITIES.LITI.DEST) return;
+        const dest = len3(sub(p.pawn.GetAbsOrigin(), results.end));
+        if (dest >= CONFIG.ABILITIES.LITI.DEST) return;
 
-            p.speed = dest / CONFIG.ABILITIES.LITI.DEST * 10;
-            p.liti = true;
-            p.liti_num--;
+        p.speed = dest / CONFIG.ABILITIES.LITI.DEST * 10;
+        p.liti = true;
+        p.liti_num--;
 
-            let litiModel = find(`player_m0_liti${p.slot}`);
-            if (!litiModel) {
-                litiModel = find("player_m0_liti_fix");
-                litiModel.SetEntityName(`player_m0_liti${p.slot}`);
-                find("player_m0_liti_fix_temp").ForceSpawn();
-            }
-            litiModel.Teleport(results.end);
-            litiModel.SetParent(undefined);
-            p.litiHookModel = litiModel;
-
-            p.liti_origin = results.end;
-
-            const hitEntity = results.hitEntity;
-            if (hitEntity && !hitEntity.IsWorld() && hitEntity.IsValid()) {
-                p.litiTargetEntity = hitEntity;
-                p.litiOffset = sub(results.end, hitEntity.GetAbsOrigin());
-            } else {
-                p.litiTargetEntity = undefined;
-                p.litiOffset = undefined;
-            }
-
-            fire(`player_p0_liti${p.slot}`, "start", "", 0);
-            fire(`player_p1_liti${p.slot}`, "start", "", 0);
-            fire(`player_liti_sound${p.slot}`, "startsound", "", 0);
+        let litiModel = find(`player_m0_liti${p.slot}`);
+        if (!litiModel) {
+            litiModel = find("player_m0_liti_fix");
+            litiModel.SetEntityName(`player_m0_liti${p.slot}`);
+            find("player_m0_liti_fix_temp").ForceSpawn();
         }
+        litiModel.Teleport(results.end);
+        litiModel.SetParent(undefined);
+        p.litiHookModel = litiModel;
+
+        p.liti_origin = results.end;
+
+        const hitEntity = results.hitEntity;
+        if (hitEntity && !hitEntity.IsWorld() && hitEntity.IsValid()) {
+            p.litiTargetEntity = hitEntity;
+            p.litiOffset = sub(results.end, hitEntity.GetAbsOrigin());
+        } else {
+            p.litiTargetEntity = undefined;
+            p.litiOffset = undefined;
+        }
+
+        fire(`player_p0_liti${p.slot}`, "start", "", 0);
+        fire(`player_p1_liti${p.slot}`, "start", "", 0);
+        fire(`player_liti_sound${p.slot}`, "startsound", "", 0);
     }
     
     deactivateLiti(p) {
@@ -1557,15 +1564,11 @@ class ASys {
     }
 
     activateCut(p) {
+        // 普通切割逻辑：仅持刀且有资源且未冷却时
         if (!p.abilitiesEnabled && p.item !== 8) return;
         const weapon = p.pawn.GetActiveWeapon();
-                
-        if (p.isSkinItem() && p.comboSequence.length > 0) {
-            this.handleComboInput(p, "case15");
-            return
-        }
-
-        if (weapon.GetData().GetType() !== 0 || p.cut_num < 1 || p.cut_cd > 0) return;
+        if (!weapon || weapon.GetData().GetType() !== CSWeaponType.KNIFE) return;
+        if (p.cut_num < 1 || p.cut_cd > 0) return;
         
         p.cut_num--;
         p.cut_cd = CONFIG.ABILITIES.CUT.MAX_CD;
@@ -1606,8 +1609,6 @@ class ASys {
                 len3(sub(playerPos, player.GetAbsOrigin())) <= damageRange) {
                 player.TakeDamage({ 
                     damage: baseDamage, 
-                    /*attacker: p.pawn, 
-                    weapon: p.pawn.GetActiveWeapon() */
                 });
                 fireT(player,"keyvalues","speed 0.1",0,undefined,p.pawn)
                 fireT(player,"keyvalues","speed 1",slow,undefined,p.pawn)
@@ -1635,17 +1636,15 @@ class ASys {
             const titanmdl = titanInfo.GetParent();
             
             if (titanP) {
-                titanP.TakeDamage({ damage: baseDamage/*, attacker: p.pawn, weapon: p.pawn.GetActiveWeapon()*/ });
+                titanP.TakeDamage({ damage: baseDamage });
                 if (!titanP.IsAlive()) {
                     this.handleTitanDeath(titanInfo);
                 }
             } else if (titanPhy && (titanPhy.GetEntityName().includes("s25_npc_phy") || titanPhy.GetEntityName().includes("s25_boss_phy"))) {
                 fireT(titanPhy, "fireuser2", "", 0);
             } else if (titanmdl && titanmdl.GetEntityName() === "lv1_npc1_mdl") {
-                find("lv1_npc1_break").TakeDamage({ damage: 5000/*, attacker: p.pawn, weapon: p.pawn.GetActiveWeapon()*/ });
-            }/* else if (titanmdl && titanmdl.GetEntityName() === "lv4_boss_mdl") {
-                fire("boss_death_realy","trigger","",0)
-            }*/
+                find("lv1_npc1_break").TakeDamage({ damage: 5000 });
+            }
         }
     }
     
@@ -1664,9 +1663,12 @@ class ASys {
         }
     }
 
+    // 皮肤火刀（右键），不再限制武器，只要不是刀即可使用
     useSkinRightClick(p) {
-        if (p.item_cd > 0 || !p.isHuman() || !p.isSkinItem() || p.pawn.GetActiveWeapon().GetData().GetType() === 0 ) return;
-        
+        if (p.item_cd > 0 || !p.isHuman() || !p.isSkinItem()) return;
+        const weapon = p.pawn.GetActiveWeapon();
+        // 非持刀状态（或没有武器）才允许火刀
+        if (weapon && weapon.GetData().GetType() === CSWeaponType.KNIFE) return;
         const itemConfig = p.getItemConfig();
         if (!itemConfig || !itemConfig.RIGHT_CLICK_CD) return;
         
@@ -1688,7 +1690,7 @@ class ASys {
             fireT(p.pawn,"keyvalues","speed "+(0.12*i+0.4),i)
         }
         print(this.pMgr.Skin1_User.GetPlayerController().GetPlayerName())
-        p.pawn.TakeDamage({ damage: 2000/*, attacker: this.pMgr.Skin1_User, weapon: this.pMgr.Skin1_User.GetActiveWeapon()*/ }) 
+        p.pawn.TakeDamage({ damage: 2000 }) 
     }
 
     useSkin2RightClick(p) {
@@ -1699,7 +1701,7 @@ class ASys {
         for(let i = 0; i <= 5;i += 0.02){
             fireT(p.pawn,"keyvalues","speed "+(0.12*i+0.4),i)
         }
-        p.pawn.TakeDamage({ damage: 2000/*, attacker: this.pMgr.Skin2_User, weapon: this.pMgr.Skin2_User.GetActiveWeapon()*/ }) 
+        p.pawn.TakeDamage({ damage: 2000 }) 
     }
 
     useSkin3RightClick(p) {
@@ -1710,9 +1712,10 @@ class ASys {
         for(let i = 0; i <= 5;i += 0.02){
             fireT(p.pawn,"keyvalues","speed "+(0.12*i+0.4),i)
         }
-        p.pawn.TakeDamage({ damage: 2000/*, attacker: this.pMgr.Skin3_User, weapon: this.pMgr.Skin3_User.GetActiveWeapon()*/ }) 
+        p.pawn.TakeDamage({ damage: 2000 }) 
     }
     
+    // 皮肤大招（搓招）
     useSkinCombo(p) {
         if (p.comboCooldown > 0 || !p.isHuman() || !p.isSkinItem()) return;
         
@@ -1722,24 +1725,26 @@ class ASys {
         p.comboCooldown = itemConfig.COMBO_CD;
         
         switch(p.item) {
-            case 7: this.useSkin1Combo(p); break;
-            case 8: this.useSkin2Combo(p); break;
-            case 9: this.useSkin3Combo(p); break;
+            case 7: this.useSkin1Combo(); break;
+            case 8: this.useSkin2Combo(); break;
+            case 9: this.useSkin3Combo(); break;
         }
     }
-    
-    useSkin1Combo(p) {
+
+    useSkin1Combo() {
+        fire("skin1_button","Press","",0,undefined,this.pMgr.Skin1_User)
         fire("skin1_s1_p0","start","",0)
+        fire("skin1_show_s0","startsound","",0)
         fire("skin1_s1_p0","stop","",6)
         fire("skin1_show_p0","start","",0)
         fire("skin1_show_p0","stop","",5)
         for(let i = 0;i <= 6 ; i +=0.02 ){
-            fire("script","RunScriptInput","skin1s1",i,undefined,p.pawn)
+            fire("script","RunScriptInput","skin1s1",i,undefined,this.pMgr.Skin1_User)
         }
     }
     
-    Skin1_S1(p){
-        const playerPos = p.pawn.GetAbsOrigin();
+    Skin1_S1(){
+        const playerPos = this.pMgr.Skin1_User.GetAbsOrigin();
         const allPlayers = findByClass("player");
         for (const player of allPlayers) {
             if (player.GetTeamNumber() === CONFIG.TEAMS.ZOMBIE && 
@@ -1754,38 +1759,48 @@ class ASys {
         }
     }
 
-    useSkin2Combo(p) {
-        p.cutBoostEndTime = Instance.GetGameTime() + 15;
-        p.cutBoostDamageMultiplier = 6;
-        p.cutBoostRangeMultiplier = 2;
+    useSkin2Combo() {
+        // 修复：获取玩家数据对象来设置增强状态
+        const playerData = this.pMgr.getPlayerDataByPawn(this.pMgr.Skin2_User);
+        if (!playerData) {
+            print("错误：无法获取利威尔皮肤玩家数据");
+            return;
+        }
+        playerData.cutBoostEndTime = Instance.GetGameTime() + 15;
+        playerData.cutBoostDamageMultiplier = 6;
+        playerData.cutBoostRangeMultiplier = 2;
         
+        fire("skin2_button","Press","",0,undefined,this.pMgr.Skin2_User)
+        fire("skin2_show_s0","startsound","",0)
         fire(`skin2_s1_p0`, "Start", "", 0);
         fire(`skin2_s1_p0`, "Stop", "", 15);
         fire("skin2_show_p0","start","",0)
         fire("skin2_show_p0","stop","",5)
         
-        print(`利威尔发动人类最强!切割能力在15秒内大幅增强!`);
+        print(`利威尔发动人类最强！切割能力在15秒内大幅增强！`);
     }
     
-    useSkin3Combo(p) {
+    useSkin3Combo() {
+        fire("skin3_button","Press","",0,undefined,this.pMgr.Skin3_User)
+        fire("skin3_show_s0","startsound","",0)
         fire("skin3_s1_p0","start","",0)
         fire("skin3_s1_p0","stop","",6)
         fire("skin3_show_p0","start","",0)
         fire("skin3_show_p0","stop","",5)
         for(let i = 0;i <= 6 ; i +=0.5 ){
-            fire("script","RunScriptInput","skin3s1",i,undefined,p.pawn)
+            fire("script","RunScriptInput","skin3s1",i,undefined,this.pMgr.Skin3_User)
         }
         print(`三笠发动自由之翼！`);
     }
     
-    Skin3_S1(p){
-        const playerPos = p.pawn.GetAbsOrigin();
+    Skin3_S1(){
+        const playerPos = this.pMgr.Skin3_User.GetAbsOrigin();
         const allPlayers = findByClass("player");
         for (const player of allPlayers) {
             if (player.GetTeamNumber() === CONFIG.TEAMS.ZOMBIE && 
                 len2(sub(playerPos, player.GetAbsOrigin())) <= 640) {
-                fireT(player,"keyvalues","speed 0.05",0,undefined,p.pawn)
-                fireT(player,"keyvalues","speed 1",0.49,undefined,p.pawn)
+                fireT(player,"keyvalues","speed 0.05",0,undefined,this.pMgr.Skin3_User)
+                fireT(player,"keyvalues","speed 1",0.49,undefined,this.pMgr.Skin3_User)
             }
         }
         let rock = find("monkey_ball_model")
@@ -1802,6 +1817,93 @@ class ASys {
         }
     }
     
+    // skin2 长按蓄力相关方法（保留但未启用，可按需开启）
+    updateSkin2LongPress(p) {
+        if (!p.isHuman() || p.item !== 8) return;
+
+        const now = Instance.GetGameTime();
+        const isBoostActive = (p.cutBoostEndTime > now);
+        const hasEnoughCut = (p.cut_num >= 8);
+        const isAttacking = p.pawn.IsInputPressed(CSInputs.ATTACK);
+        const aoeActive = p.skin2AoeActive;
+
+        if (aoeActive) {
+            if (p.skin2LmbCharging) p.skin2LmbCharging = false;
+            return;
+        }
+
+        if (isBoostActive && hasEnoughCut && isAttacking && !p.skin2LmbCharging) {
+            p.skin2LmbCharging = true;
+            p.skin2LmbChargeStart = now;
+            print(`玩家 ${p.ctrl?.GetPlayerName()} 开始蓄力利威尔技能...`);
+            return;
+        }
+
+        if (p.skin2LmbCharging) {
+            if (!isBoostActive || !hasEnoughCut || !isAttacking) {
+                p.skin2LmbCharging = false;
+                print(`蓄力取消`);
+                return;
+            }
+
+            if (now - p.skin2LmbChargeStart >= 1.0) {
+                this.releaseSkin2Aoe(p);
+                p.skin2LmbCharging = false;
+            }
+        }
+    }
+
+    releaseSkin2Aoe(p) {
+        if (p.cut_num < 8) return;
+
+        p.cut_num -= 8;
+        if (p.cut_num < 0) p.cut_num = 0;
+
+        const now = Instance.GetGameTime();
+        p.skin2AoeActive = true;
+        p.skin2AoeEndTime = now + 3.0;
+        p.skin2AoeLastDamageTime = now;
+
+        gameManager.uiSys.updatePlayerUI(p);
+
+        fire(`skin2_s1_p2`, "Start", "", 0);
+        fire(`skin2_show_p1`, "Start", "", 0);
+        fire(`skin2_s1_p2`, "Stop", "", 3);
+        fire(`skin2_show_p1`, "Stop", "", 3);
+
+        print(`玩家 ${p.ctrl?.GetPlayerName()} 释放利威尔AOE技能，持续3秒！`);
+    }
+
+    updateSkin2AoeDamage(p) {
+        if (!p.skin2AoeActive) return;
+
+        const now = Instance.GetGameTime();
+        if (now >= p.skin2AoeEndTime) {
+            p.skin2AoeActive = false;
+            fire(`skin2_s1_p2`, "Stop", "", 0);
+            return;
+        }
+
+        const DAMAGE_INTERVAL = 0.2;
+        const DAMAGE_VALUE = 3000;
+        const RANGE = 512;
+
+        if (now - p.skin2AoeLastDamageTime >= DAMAGE_INTERVAL) {
+            p.skin2AoeLastDamageTime = now;
+            const playerPos = p.pawn.GetAbsOrigin();
+            const allPlayers = findByClass("player");
+            for (const p of allPlayers) {
+                if (p.GetTeamNumber() === CONFIG.TEAMS.ZOMBIE &&
+                    len3(sub(playerPos, p.GetAbsOrigin())) <= RANGE) {
+                    p.TakeDamage({damage: DAMAGE_VALUE});
+                    fireT(p,"keyvalues","speed 0.1",0)
+                    fireT(p,"keyvalues","speed 1",0.19)
+                }
+            }
+        fire(`player_cut_sound${p.slot}`, "startsound", "", 0);
+        }
+    }
+
     updateSkinAbilities(p) {
         const currentTime = Instance.GetGameTime();
         
@@ -1818,9 +1920,11 @@ class ASys {
             p.cutBoostDamageMultiplier = 1.0;
             p.cutBoostRangeMultiplier = 1.0;
         }
+
+        this.updateSkin2LongPress(p);
+        this.updateSkin2AoeDamage(p);
     }
 
-    // 清理附着实体（模型、粒子、按钮等）
     cleanupAttachments(p) {
         if (!p.isValid()) return;
 
@@ -1834,24 +1938,21 @@ class ASys {
         const tgunModel = find(`tgun_mdl${p.slot}`);
         if (tgunModel && tgunModel.IsValid()) tgunModel.Kill();
 
-        if (this.pMgr.Flame_User === p.pawn) {
-            this.pMgr.Flame_User = undefined;
-        }
+        if (this.pMgr.Flame_User === p.pawn) this.pMgr.Flame_User = undefined;
         if (this.pMgr.Wind_User === p.pawn) {
-            this.deactivateWind(); // 这会清空 Wind_User 和停止粒子
+            this.deactivateWind();
+            this.pMgr.Wind_User = undefined;
         }
-        if (this.pMgr.Elec_User === p.pawn) {
-            this.pMgr.Elec_User = undefined;
-        }
+        if (this.pMgr.Elec_User === p.pawn) this.pMgr.Elec_User = undefined;
         if (this.pMgr.Heal_User === p.pawn) {
             this.deactivateHeal();
+            this.pMgr.Heal_User = undefined;
         }
         if (this.pMgr.Ammo_User === p.pawn) {
             this.deactivateAmmo();
+            this.pMgr.Ammo_User = undefined;
         }
-        if (p.item === 4) {
-            this.TGunnum = Math.max(0, this.TGunnum - 1);
-        }
+        if (p.item === 4) this.TGunnum = Math.max(0, this.TGunnum - 1);
         if (this.pMgr.Skin1_User === p.pawn) this.pMgr.Skin1_User = undefined;
         if (this.pMgr.Skin2_User === p.pawn) this.pMgr.Skin2_User = undefined;
         if (this.pMgr.Skin3_User === p.pawn) this.pMgr.Skin3_User = undefined;
@@ -1862,7 +1963,6 @@ class ASys {
         this.deactivateSteam(p);
     }
 
-    // 清理人类状态（用于变为僵尸时）
     cleanupHumanState(p) {
         if (!p.isValid()) return;
 
@@ -1886,14 +1986,15 @@ class ASys {
         p.cutBoostEndTime = 0;
         p.cutBoostDamageMultiplier = 1.0;
         p.cutBoostRangeMultiplier = 1.0;
+
+        p.skin2LmbCharging = false;
+        p.skin2AoeActive = false;
+        fire(`skin2_s1_p0`, "Stop", "", 0);
     }
 
-    // 修改原有的 cleanupPlayerModels 复用 cleanupAttachments
     cleanupPlayerModels(p) {
         if (p.highJumpFlyingActive) {
-            p.highJumpFlyingActive = false;
-            fire(`jump_p${p.slot}`, "stop", "", 0);
-            fire(`jump_s_p${p.slot}`, "stop", "", 0);
+            this.deactivateHighJumpFlying(p);
         }
 
         this.cleanupAttachments(p);
@@ -1926,15 +2027,22 @@ class ASys {
         p.comboLastInputTime = 0;
         p.comboCooldown = 0;
 
-        // 重置高跳飞行状态
         p.highJumpFlyingActive = false;
         p.highJumpFlyingEndTime = 0;
 
-        // 重置能力可用标志
         p.abilitiesEnabled = false;
+
+        p.skin2LmbCharging = false;
+        p.skin2LmbChargeStart = 0;
+        p.skin2AoeActive = false;
+        p.skin2AoeEndTime = 0;
+        p.skin2AoeLastDamageTime = 0;
+        
+        if (p.pawn && p.pawn.IsValid()) {
+            fireT(p.pawn, "keyvalues", "gravity 1", 0);
+        }
     }
 
-    // 禁用玩家所有能力（钩锁、蒸汽、刀刃）
     disableAbilities(p) {
         if (!p) return;
         p.abilitiesEnabled = false;
@@ -1942,26 +2050,23 @@ class ASys {
         this.deactivateSteam(p);
     }
 
-    // 启用玩家所有能力
     enableAbilities(p) {
         if (!p) return;
         p.abilitiesEnabled = true;
     }
 
     updateAbilities() {
-        // 先更新全局效果
         this.updateWindEffect();
         this.updateHealEffect();
         this.updateAmmoEffect();
         
-        // 再更新每个玩家的个体能力
         this.pMgr.getValidPlayers().forEach(p => {
             this.updateSteam(p);
             this.updateLiti(p);
             this.updateCut(p);
             this.updateItem(p);
             this.updateSkinAbilities(p);
-            this.updateHighJumpFlying(p);   // 新增：更新高跳飞行模式
+            this.updateHighJumpFlying(p);
         });
     }
 }
@@ -2060,13 +2165,12 @@ class UISys {
             } 
             else {
                 const itemNames = {
-                    1: "火焰", 2: "风", 3: "电", 
+                    1: "火", 2: "风", 3: "电", 
                     4: "雷枪", 5: "治疗", 6: "弹药"
                 };
                 
                 const itemName = itemNames[p.item] || "神器";
                 
-                // 从全局获取剩余时间
                 if (p.item === 2 && gameManager.pMgr.Wind_User === p.pawn && gameManager.pMgr.Wind_Remaining > 0) {
                     texts.push(`${itemName}剩余: ${gameManager.pMgr.Wind_Remaining.toFixed(1)}秒`);
                 }
@@ -2131,8 +2235,164 @@ class UISys {
         return texts.join("\n");
     }
 
+    // 获取人类 CD 信息（火、风、电、治疗、弹药 + 三个皮肤大招 CD）
+    getHumanCDInfo() {
+        const lines = [];
+        const gm = gameManager;
+        const pm = gm.pMgr;
+        const now = Instance.GetGameTime();
+
+        function getItemCD(pawn) {
+            if (!pawn || !pawn.IsValid()) return -1;
+            const pd = pm.getPlayerDataByPawn(pawn);
+            return pd ? pd.item_cd : -1;
+        }
+        function getComboCD(pawn) {
+            if (!pawn || !pawn.IsValid()) return -1;
+            const pd = pm.getPlayerDataByPawn(pawn);
+            return pd ? pd.comboCooldown : -1;
+        }
+
+        let flameCD = getItemCD(pm.Flame_User);
+        lines.push(`火: ${flameCD > 0 ? flameCD.toFixed(1) + "秒" : (flameCD === 0 ? "就绪" : "无人持有")}`);
+
+        let windCD = getItemCD(pm.Wind_User);
+        lines.push(`风: ${windCD > 0 ? windCD.toFixed(1) + "秒" : (windCD === 0 ? "就绪" : "无人持有")}`);
+
+        let elecCD = getItemCD(pm.Elec_User);
+        lines.push(`电: ${elecCD > 0 ? elecCD.toFixed(1) + "秒" : (elecCD === 0 ? "就绪" : "无人持有")}`);
+
+        let healCD = getItemCD(pm.Heal_User);
+        lines.push(`治疗: ${healCD > 0 ? healCD.toFixed(1) + "秒" : (healCD === 0 ? "就绪" : "无人持有")}`);
+
+        let ammoCD = getItemCD(pm.Ammo_User);
+        lines.push(`弹药: ${ammoCD > 0 ? ammoCD.toFixed(1) + "秒" : (ammoCD === 0 ? "就绪" : "无人持有")}`);
+
+        let skin1CD = getComboCD(pm.Skin1_User);
+        lines.push(`艾伦大招: ${skin1CD > 0 ? skin1CD.toFixed(1) + "秒" : (skin1CD === 0 ? "就绪" : "无人持有")}`);
+
+        let skin2CD = getComboCD(pm.Skin2_User);
+        lines.push(`利威尔大招: ${skin2CD > 0 ? skin2CD.toFixed(1) + "秒" : (skin2CD === 0 ? "就绪" : "无人持有")}`);
+
+        let skin3CD = getComboCD(pm.Skin3_User);
+        lines.push(`三笠大招: ${skin3CD > 0 ? skin3CD.toFixed(1) + "秒" : (skin3CD === 0 ? "就绪" : "无人持有")}`);
+
+        return lines.join("\n");
+    }
+
+    // 获取僵尸 CD 信息（铠之巨人、兽之巨人、超大型巨人）
+    getZombieCDInfo() {
+        const lines = [];
+        const gm = gameManager;
+        const pm = gm.pMgr;
+
+        function getItemCD(pawn) {
+            if (!pawn || !pawn.IsValid()) return -1;
+            const pd = pm.getPlayerDataByPawn(pawn);
+            return pd ? pd.item_cd : -1;
+        }
+
+        let armorCD = getItemCD(pm.Armor_User);
+        lines.push(`铠之巨人: ${armorCD > 0 ? armorCD.toFixed(1) + "秒" : (armorCD === 0 ? "就绪" : "无人持有")}`);
+
+        let beastCD = getItemCD(pm.Beast_User);
+        lines.push(`兽之巨人: ${beastCD > 0 ? beastCD.toFixed(1) + "秒" : (beastCD === 0 ? "就绪" : "无人持有")}`);
+
+        let colossalCD = getItemCD(pm.Colossal_User);
+        lines.push(`超大型巨人: ${colossalCD > 0 ? colossalCD.toFixed(1) + "秒" : (colossalCD === 0 ? "就绪" : "无人持有")}`);
+
+        return lines.join("\n");
+    }
+
+    // 获取道具使用方法（按 F 时显示，包含恢复等级）
+    getUsageText(p) {
+        if (p.isHuman()) {
+            if (p.item === 0) {
+                // 获取恢复等级（罗马数字）
+                const litiLevel = Math.ceil(p.liti_charge / 0.2);
+                const steamLevel = Math.ceil(p.steam_charge / 0.2);
+                const cutLevel = Math.ceil(p.cut_charge / 0.2);
+                const roman = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+                const litiRoman = litiLevel <= 10 ? roman[litiLevel] : litiLevel.toString();
+                const steamRoman = steamLevel <= 10 ? roman[steamLevel] : steamLevel.toString();
+                const cutRoman = cutLevel <= 10 ? roman[cutLevel] : cutLevel.toString();
+                
+                return `立体机动装置\n` +
+                       `持刀状态:\n` +
+                       `右键:发射钩锁(消耗钩锁)\n` +
+                       `左键:切割攻击(消耗刀刃)\n` +
+                       `Shift:喷气加速(消耗气体)\n` +
+                       `蹲下:中断钩锁\n` +
+                       `恢复:钩锁[${litiRoman}]|气体[${steamRoman}]|刀刃[${cutRoman}]`;
+            } else {
+                const itemConfig = p.getItemConfig();
+                if (!itemConfig) return "";
+                if (p.isSkinItem()) {
+                    const skinName = p.item === 7 ? "艾伦" : (p.item === 8 ? "利威尔" : "三笠");
+                    let usage = `${skinName}皮肤技能\n`;
+                    usage += `右键(非刀):发射火斩(CD ${itemConfig.RIGHT_CLICK_CD}秒)\n`;
+                    usage += `搓招大招:SAWD+左键(CD ${itemConfig.COMBO_CD}秒)\n`;
+                    if (p.item === 8) {
+                        usage += `大招效果:15秒内切割伤害*6,范围*2\n               持续时间内长按左键\n               消耗8格刀刃释放[暴风骤雨]`;
+                    } else if (p.item === 7) {
+                        usage += `大招效果:将附近僵尸传送回[道路]\n`;
+                    } else if (p.item === 9) {
+                        usage += `大招效果:大幅减速附近僵尸\n`;
+                    }
+                    return usage;
+                } else {
+                    const itemNames = {1:"火",2:"风",3:"电",4:"雷枪",5:"治疗",6:"弹药"};
+                    const name = itemNames[p.item] || "神器";
+                    let usage = `${name}神器\n`;
+                    usage += `按E键使用(CD ${itemConfig.CD}秒)\n`;
+                    if (p.item === 2) usage += `效果:持续${itemConfig.DURATION}秒,推开周围僵尸\n`;
+                    else if (p.item === 5) usage += `效果:持续${itemConfig.DURATION}秒,治疗周围人类\n`;
+                    else if (p.item === 6) usage += `效果:持续${itemConfig.DURATION}秒,补充弹药和资源\n`;
+                    else if (p.item === 1) usage += `效果:生成一片火场\n`;
+                    else if (p.item === 3) usage += `效果:生成一片雷电场\n`;
+                    else if (p.item === 4) usage += `效果:发射雷枪\n`;
+                    return usage;
+                }
+            }
+        } else if (p.isZombie()) {
+            if (p.item === 0) {
+                // 无僵尸皮肤，显示暴走技能
+                return `暴走技能\n` +
+                       `按E键发动暴走\n` +
+                       `效果:10秒内移速提升至${(1.2+stage/20).toFixed(2)}倍\n` +
+                       `冷却:60秒`;
+            } else {
+                const itemConfig = p.getItemConfig();
+                if (!itemConfig) return "";
+                let usage = `${itemConfig.NAME}\n`;
+                usage += `按E键使用(CD ${itemConfig.CD}秒)\n`;
+                switch(p.item) {
+                    case 10: usage += `效果:投掷石块攻击人类\n`; break;
+                    case 11: usage += `效果:8秒内移速提升至2.4倍\n`; break;
+                    case 12: usage += `效果:核爆攻击周围人类\n`; break;
+                    case 13: usage += `效果:8秒内移速提升至1.8倍\n`; break;
+                    case 14: usage += `效果:5秒内按住空格飞行\n`; break;
+                }
+                return usage;
+            }
+        }
+        return "";
+    }
+
+    // 根据 showCDInfo 标志选择显示内容
     updatePlayerUI(p) {
-        const statusText = this.getAbilityText(p);
+        let statusText;
+        if (p.showCDInfo) {
+            if (p.isZombie()) {
+                statusText = this.getZombieCDInfo();
+            } else if (p.isHuman()) {
+                statusText = this.getHumanCDInfo();
+            } else {
+                statusText = "";
+            }
+        } else {
+            statusText = this.getAbilityText(p);
+        }
         fire(`player_text${p.slot}`, "SetMessage", statusText, 0);
     }
     
@@ -2167,8 +2427,14 @@ class UISys {
         
         const textEntity = find(`player_text${p.slot}`);
         if (textEntity) {
-            textEntity.Teleport(add(pawn.GetAbsOrigin(), vec(8, 6, 64)));
+            textEntity.Teleport(add(pawn.GetAbsOrigin(), vec(8, 6, 67)),ang(0,285,90));
             fire(`player_text${p.slot}`, "SetParent", "!activator", 0, undefined, pawn);
+        }
+        
+        const text2Entity = find(`player_1text${p.slot}`);
+        if (text2Entity) {
+            text2Entity.Teleport(add(pawn.GetAbsOrigin(), vec(10, -2, 67)),ang(0,263,90));
+            fire(`player_1text${p.slot}`, "SetParent", "!activator", 0, undefined, pawn);
         }
     }
 }
@@ -2234,6 +2500,10 @@ class GMgr {
         fire("info7","SetMessage","雷枪\n0|3")
         fire("zinfo1","SetMessage","高跳\n0|3")
         fire("zinfo4","SetMessage","奇行种\n0|2")
+        settimeout(() => {settext(1)}, 3);
+        settimeout(() => {settext(2)}, 5);
+        settimeout(() => {settext(3)}, 7);
+        settimeout(() => {settext(990)}, 9);
         
         switch(stage) {
             case 1: this.setupStage1(); break;
@@ -2252,11 +2522,14 @@ class GMgr {
         fire("lv1_trigger1", "enable", "", 0);
         fire("s1_end_relay", "enable", "", 0);
         fire("city_wall5", "kill", "", 0);
+        
         fire("post_normal", "enable", "", 0.5);
         fire("s_l_city0", "showworldlayer", "", 0.1);
         this.setWallColors(["city_wall6", "city_wall2", "outcity_wall0"]);
 
         fire("s1_bgm0", "startsound", "", 10);
+        settimeout(() => {settext(4)}, 11);
+        settimeout(() => {settext(11)}, 15);
     }
     
     setupStage2() {
@@ -2271,6 +2544,7 @@ class GMgr {
         fire("sky_city*", "fireuser2", "", 0.1);
         fire("sky_night", "enable", "", 0.1);
         fire("s2_button1", "unlock", "", 0);
+        
         fire("lv2_button1_relay", "enable", "", 0);
         fire("outcity_wall1_tri0", "enable", "", 0);
         fire("outcity_wall0", "kill", "", 0);
@@ -2284,6 +2558,7 @@ class GMgr {
         fire("snow_ingame", "addoutput", "OnStartTouch>s2_bgm1>startsound>>0>1", 0);
 
         fire("s2_bgm0", "startsound", "", 10);
+        settimeout(() => {settext(5)}, 11);
     }
     
     setupStage3() {
@@ -2318,6 +2593,7 @@ class GMgr {
         }, 0.1);
         
         fire("s3_bgm0", "startsound", "", 10);
+        settimeout(() => {settext(6)}, 11);
     }
     
     setupStage4() {
@@ -2326,17 +2602,20 @@ class GMgr {
         fire("s4_relay0", "enable", "", 0);
         fire("s4_trigger0", "enable", "", 0);
         fire("s4_trigger3", "enable", "", 0);
+        
         fire("post_ex", "enable", "", 0.5);
         this.killWalls(["city_wall1", "city_wall2", "city_wall3", "city_wall4", "city_wall5", "city_wall6"]);
         this.setWallColors(["outcity_wall0", "outcity_wall1"]);
         
         fire("s4_bgm0", "startsound", "", 10);
+        settimeout(() => {settext(7)}, 11);
     }
     
     setupStage5() {
         this.teleportEntity("ammo_get_tp", vec(-13168,-1840,-8704), ang(0, 270, 0));
         this.teleportEntity("heal_get_tp", vec(-12280,-1840,-8704), ang(0, 270, 0));
         this.teleportEntity("start_dest1", vec(-12784,-5776,-8514), ang(0, 90, 0));
+        this.teleportEntity("snow_dest2", vec(-4157,6390,-10149), ang(0, 270, 0));
         fire("sky_city*", "fireuser2", "", 0.1);
         fire("sky_33", "enable", "", 0.1);
         fire("s5_trigger5", "enable", "", 0);
@@ -2348,10 +2627,11 @@ class GMgr {
         fire("s1_end_tri", "kill", "", 0);
         fire("s1_end_move*", "kill", "", 0);
 
-        fire("snow_ingame", "addoutput", "OnStartTouch>s5_bgm0>stopsound>>0>1", 0);
-        fire("snow_ingame", "addoutput", "OnStartTouch>s5_bgm1>startsound>>0>1", 0);
+        fire("s5_button2_relay", "addoutput", "OnTrigger>s5_bgm0>stopsound>>25>1", 0);
+        fire("s5_button2_relay", "addoutput", "OnTrigger>s5_bgm1>startsound>>25>1", 0);
         
         fire("s5_bgm0", "startsound", "", 10);
+        settimeout(() => {settext(8)}, 11);
     }
     
     setupStage6() {
@@ -2363,6 +2643,7 @@ class GMgr {
         fire("sky_senlin", "enable", "", 0.1);
         fire("sky_senlin*", "fireuser2", "", 0.1);
         fire("senlin_side_dy2", "kill", "", 0);
+        
         fire("s6_senlin_relay0", "enable", "", 0);
         fire("s6_senlin_relay1", "enable", "", 0);
         fire("post_ex_senlin", "enable", "", 0.5);
@@ -2374,6 +2655,7 @@ class GMgr {
         this.setWallColors(["outcity_wall0", "outcity_wall1"]);    
         
         fire("s6_bgm0", "startsound", "", 10);
+        settimeout(() => {settext(9)}, 11);
     }
     
     setupStage7() {
@@ -2409,10 +2691,10 @@ class GMgr {
         fire("lv1_end_qxz_pick", "enable", "", 0.5);
         
         this.s1_qxz_num++;
-        this.broadcastMessage(`丛林里出现了${this.s1_qxz_num}只奇行种!`);
+        _cmd(`丛林里出现了${this.s1_qxz_num}只奇行种!`);
         
         if (this.s1_qxz_num >= 5) {
-            this.broadcastMessage(`丛林里应该只有这${this.s1_qxz_num}只奇行种了!`, 1);
+            _cmd(`丛林里只有这${this.s1_qxz_num}只奇行种了!`, 1);
             fire("lv1_end_qxz_pick", "KillHierarchy", "", 0);
         }
     }
@@ -2427,10 +2709,10 @@ class GMgr {
         fire("s5_end_qxz_pick", "enable", "", 0.5);
         
         this.s5_qxz_num++;
-        this.broadcastMessage(`城镇里出现了${this.s5_qxz_num}只奇行种!`);
+        _cmd(`城镇里出现了${this.s5_qxz_num}只奇行种!`);
         
         if (this.s5_qxz_num >= 10) {
-            this.broadcastMessage(`城镇里应该只有这这${this.s5_qxz_num}只奇行种了!`, 1);
+            _cmd(`城镇里只有这${this.s5_qxz_num}只奇行种了!`, 1);
             fire("s5_end_qxz_pick", "KillHierarchy", "", 0);
         }
     }
@@ -2470,7 +2752,7 @@ class GMgr {
         for (const player of allPlayers) {
             if (player.GetTeamNumber() === CONFIG.TEAMS.HUMAN && 
                 len3(sub(activator.GetAbsOrigin(), player.GetAbsOrigin())) < 400) {
-                player.TakeDamage({ damage: 600/*, attacker: activator*/ });
+                player.TakeDamage({ damage: 600 });
             }
         }
     }
@@ -2612,10 +2894,6 @@ class GMgr {
             }
         }
     }
-    
-    broadcastMessage(message, delay = 0) {
-        fire("cmd", "command", `say ${message.toString()}`, delay);
-    }
 
     s6_boss_skill7() {
         const bright = 6
@@ -2636,13 +2914,7 @@ class GMgr {
         Instance.OnScriptInput("list_player", () => this.pMgr.listPlayers());
         Instance.OnScriptInput("getplayernum", () => this.pMgr.updatePlayerCount());
         
-        Instance.OnScriptInput("steamon", ({ activator }) => this.aSys.activateSteam(this.getPlayerData(activator)));
-        Instance.OnScriptInput("steamoff", ({ activator }) => this.aSys.deactivateSteam(this.getPlayerData(activator)));
-        Instance.OnScriptInput("lition", ({ activator }) => this.aSys.activateLiti(this.getPlayerData(activator)));
-        Instance.OnScriptInput("litioff", ({ activator }) => this.aSys.deactivateLiti(this.getPlayerData(activator)));
-        Instance.OnScriptInput("cut", ({ activator }) => this.aSys.activateCut(this.getPlayerData(activator)));
         Instance.OnScriptInput("getliti", ({ activator }) => this.aSys.getliti(this.getPlayerData(activator)));
-        
         Instance.OnScriptInput("getlitionly", ({ activator }) => this.aSys.getLitiOnly(this.getPlayerData(activator)));
         Instance.OnScriptInput("getsteamonly", ({ activator }) => this.aSys.getSteamOnly(this.getPlayerData(activator)));
         Instance.OnScriptInput("getcutonly", ({ activator }) => this.aSys.getCutOnly(this.getPlayerData(activator)));
@@ -2683,6 +2955,11 @@ class GMgr {
         for (let i = 1; i <= 7; i++) {
             Instance.OnScriptInput("test" + i, ({ activator , caller }) => this.handleTest(activator,caller, i));
         }
+
+        const textIndices = Object.keys(STORY_TEXTS).map(Number).filter(k => !isNaN(k));
+        for (let i of textIndices) {
+            Instance.OnScriptInput("settext" + i, () => settext(i));
+        }
         
         Instance.OnScriptInput("s6_boss_skill7", () => this.s6_boss_skill7());
         
@@ -2705,13 +2982,8 @@ class GMgr {
         Instance.OnScriptInput("skin1s1", ({ activator }) => { this.aSys.Skin1_S1(this.getPlayerData(activator));});
         Instance.OnScriptInput("skin3s1", ({ activator }) => { this.aSys.Skin3_S1(this.getPlayerData(activator));});
         
-        Instance.OnScriptInput("useskinrightclick", ({ activator }) => {this.aSys.useSkinRightClick(this.getPlayerData(activator));});
+        // 注意：useskinrightclick 输入已移除，改为脚本直接检测 ATTACK2
         
-        Instance.OnScriptInput("w", ({ activator }) => {this.aSys.handleComboInput(this.getPlayerData(activator), "case11");});
-        Instance.OnScriptInput("a", ({ activator }) => {this.aSys.handleComboInput(this.getPlayerData(activator), "case12");});
-        Instance.OnScriptInput("s", ({ activator }) => {this.aSys.handleComboInput(this.getPlayerData(activator), "case13");});
-        Instance.OnScriptInput("d", ({ activator }) => {this.aSys.handleComboInput(this.getPlayerData(activator), "case14");});
-
         Instance.OnScriptInput("ban_allskill", () => {
             this.pMgr.getValidPlayers().forEach(p => {
                 this.aSys.disableAbilities(p);
@@ -2797,8 +3069,8 @@ class GMgr {
             for (let i = 0; i < count; i++) {
                 const randomIndex = Math.floor(Math.random() * humanPlayers.length);
                 const randomPlayer = humanPlayers[randomIndex];
-                const spawnPos = add(randomPlayer.pawn.GetAbsOrigin(), vec(0, 0, 300));
                 settimeout(() => {
+                const spawnPos = add(randomPlayer.pawn.GetAbsOrigin(), vec(0, 0, 300));
                     find("s25_npc_temp0").ForceSpawn(spawnPos, ang(0, rand(0, 360), 0));
                 }, i);
             }
@@ -2895,7 +3167,8 @@ class GMgr {
             fireT(this.self,"RunScriptInput","refill_all_human",0)
             fire("sky_senlin_titan0","disable","",0)
             fire("senlin_camera_relay0","disablecameraall","",0)
-            fire("senlin_boss_wall0","toggle","",0)
+            fire("senlin_wall0","toggle","",0)
+            fire("senlin_wall1","toggle","",0)
             fire("s25_boss_hp","start","",0)
             fire("senlin_show_*","kill","",0)
         });
@@ -2943,7 +3216,7 @@ class GMgr {
                 p.liti_num = p.liti_max;
                 p.steam_num = p.steam_max;
                 p.cut_num = p.cut_max;
-                this.uiSys.updatePlayerUI(p); // 立即更新 UI 显示
+                this.uiSys.updatePlayerUI(p);
             });
             print("所有人类能力已补充满");
         });
@@ -2976,6 +3249,13 @@ class GMgr {
                 this.uiSys.updatePlayerUI(p);
                 print(`玩家 ${p.ctrl?.GetPlayerName()} 切割已补满`);
             }
+        });
+        
+        Instance.OnRoundEnd(() => {
+            this.pMgr.getValidPlayers().forEach(p => {
+                this.aSys.disableAbilities(p);
+            });
+            StoryManager.clearAll();
         });
     }
     
@@ -3019,7 +3299,6 @@ class GMgr {
     
     handleTest(activator,caller, i) {
         print("测试功能被调用" + i);
-        find("test").Teleport(vec(18420,-1097,-4467.9))
     }
     
     startMap() {
@@ -3074,19 +3353,23 @@ class GMgr {
         playerData.comboSequence = [];
         playerData.comboLastInputTime = 0;
         playerData.comboCooldown = 0;
-        playerData.comboTimeout = 0.3;
+        playerData.comboTimeout = 1;
         playerData.litiHookModel = null;
         playerData.litiTargetEntity = null;
         playerData.litiOffset = null;
         playerData.skinHP = 0;
         playerData.skinMaxHP = 0;
-        playerData.abilitiesEnabled = false; // 默认启用能力
-
-        // 新增：高跳飞行模式重置
+        playerData.abilitiesEnabled = false;
         playerData.highJumpFlyingActive = false;
         playerData.highJumpFlyingEndTime = 0;
-
-        // 重置控制器上的自定义标记
+        playerData.skin2LmbCharging = false;
+        playerData.skin2LmbChargeStart = 0;
+        playerData.skin2AoeActive = false;
+        playerData.skin2AoeEndTime = 0;
+        playerData.skin2AoeLastDamageTime = 0;
+        playerData.showCDInfo = false;
+        playerData.showUsage = false;
+        
         if (ctrl) {
             ctrl.skinOutputsAdded = false;
         }
@@ -3104,7 +3387,7 @@ class GMgr {
     think() {
         Instance.SetNextThink(Instance.GetGameTime() + CONFIG.THINK.DELAY);
         _processTimers();
-
+        
         for (let slot = 0; slot <= CONFIG.STAGES.MAX_PLAYERS; slot++) {
             const playerData = this.pMgr.players[slot];
             const ctrl = Instance.GetPlayerController(slot);
@@ -3138,6 +3421,7 @@ class GMgr {
             }
 
             if (playerData.isValid()) {
+                // 僵尸技能使用 E 键
                 if (pawn.WasInputJustPressed(CSInputs.USE)) {
                     if (playerData.isHuman()) {
                         this.aSys.useItem(playerData);
@@ -3145,17 +3429,232 @@ class GMgr {
                         this.aSys.useZombieSkin(playerData);
                     }
                 }
+
+                // ========== 所有人类玩家输入检测 ==========
+                if (playerData.isHuman()) {
+                    const weapon = pawn.GetActiveWeapon();
+                    const weaponType = weapon ? weapon.GetData().GetType() : -1;
+                    const isKnife = (weaponType === CSWeaponType.KNIFE);
+                    const isPistol = (weaponType === CSWeaponType.PISTOL);
+
+                    // 左键处理：搓招 + 切割
+                    if (pawn.WasInputJustPressed(CSInputs.ATTACK)) {
+                        // 皮肤搓招输入（序列非空时才推进）
+                        if (playerData.isSkinItem() && playerData.comboSequence.length > 0) {
+                            this.aSys.handleComboInput(playerData, "ATK");
+                        }
+                        // 切割能力（仅持刀）
+                        if (isKnife) {
+                            this.aSys.activateCut(playerData);
+                        }
+                    }
+
+                    // 右键处理：钩锁（持刀）或火刀（非持刀皮肤）
+                    if (pawn.WasInputJustPressed(CSInputs.ATTACK2)) {
+                        if (isKnife) {
+                            this.aSys.activateLiti(playerData);
+                        } else if (playerData.isSkinItem()) {
+                            this.aSys.useSkinRightClick(playerData);
+                        }
+                    }
+
+                    // 蒸汽：按住 Shift
+                    const shiftPressed = pawn.IsInputPressed(CSInputs.WALK);
+                    if (shiftPressed && !playerData.steam) {
+                        this.aSys.activateSteam(playerData);
+                    } else if (!shiftPressed && playerData.steam) {
+                        this.aSys.deactivateSteam(playerData);
+                    }
+
+                    // 蹲下取消钩锁
+                    if (pawn.WasInputJustPressed(CSInputs.DUCK) && playerData.liti) {
+                        this.aSys.deactivateLiti(playerData);
+                    }
+
+                    // ========== 皮肤专属功能：搓招方向键 ==========
+                    if (playerData.isSkinItem()) {
+                        if (pawn.WasInputJustPressed(CSInputs.BACK)) {    // S
+                            this.aSys.handleComboInput(playerData, "S");
+                        }
+                        if (pawn.WasInputJustPressed(CSInputs.LEFT)) {    // A
+                            this.aSys.handleComboInput(playerData, "A");
+                        }
+                        if (pawn.WasInputJustPressed(CSInputs.FORWARD)) { // W
+                            this.aSys.handleComboInput(playerData, "W");
+                        }
+                        if (pawn.WasInputJustPressed(CSInputs.RIGHT)) {   // D
+                            this.aSys.handleComboInput(playerData, "D");
+                        }
+                    }
+                }
+
+                // ========== 按 F 显示 CD 信息和道具使用方法 ==========
+                if (pawn.WasInputJustPressed(CSInputs.LOOK_AT_WEAPON)) {
+                    playerData.showCDInfo = true;
+                    this.uiSys.updatePlayerUI(playerData);
+                    
+                    // 显示道具使用方法（在剧情文本实体上）
+                    const usageText = this.uiSys.getUsageText(playerData);
+                    fire(`player_1text${playerData.slot}`, "SetMessage", usageText, 0);
+                    playerData.showUsage = true;
+                }
+                if (pawn.WasInputJustReleased(CSInputs.LOOK_AT_WEAPON)) {
+                    playerData.showCDInfo = false;
+                    this.uiSys.updatePlayerUI(playerData);
+                    
+                    // 清空使用方法，并强制刷新剧情文本
+                    fire(`player_1text${playerData.slot}`, "SetMessage", "", 0);
+                    playerData.showUsage = false;
+                    StoryManager.refreshDisplay(true); // 立即恢复剧情
+                }
             }
         }
 
         this.aSys.updateAbilities();
         this.uiSys.updateAllUI();
+        StoryManager.refreshDisplay();
 
         this.tickNum++;
         if (this.tickNum >= (1 / CONFIG.THINK.DELAY)) {
             this.tickNum = 0;
         }
     }
+}
+
+// =============================================
+// 全局剧情文本系统（支持强制刷新）
+// =============================================
+const STORY_TEXTS = {
+    1: "进击的巨人V8|10",
+    2: "作者: Zombie Land Saga|10",
+    3: "移植: Lopb|10",
+    4: "关卡: 1|10",
+    5: "关卡: 2|10",
+    6: "关卡: 3|10",
+    7: "关卡: EX-1|10",
+    8: "关卡: EX-2|10",
+    9: "关卡: EX-3|10",
+    10: "关卡: ZM|10",
+    11: "第一章: 战前准备|10",
+    12: "出发之前需要一些准备|20|timer",
+    13: "再坚持一下,筹集更多物资|20|timer",
+    14: "物资准备好了,到外城准备马车|35|timer",
+    15: "道路即将开放|20|timer",
+    16: "右转的道路无法通行\n去左边的升降梯|5",
+    17: "升降梯即将升起|20|timer",
+    18: "城门即将升起|25|timer",
+    19: "一切就绪,关上城门准备出发!|30|timer",
+    990: "按住F以显示神器信息和使用方法|10",
+    998: "清除剩余僵尸!|3",
+    999: "太晚了,僵尸成功逃亡!|3",
+};
+
+const StoryManager = {
+    entityNameBase: "player_1text",
+    typingDuration: 1.0,
+    defaultDisplayDuration: 10.0,
+    blocks: [],
+
+    addByIndex: function(textnum, t) {
+        const entry = STORY_TEXTS[textnum];
+        if (!entry) {
+            print(`[剧情] 索引 ${textnum} 不存在`);
+            return;
+        }
+        
+        let textContent, configDuration, showTimer = false;
+        if (typeof entry === 'string' && entry.includes('|')) {
+            const parts = entry.split('|');
+            textContent = parts[0];
+            configDuration = parseFloat(parts[1]);
+            if (isNaN(configDuration)) configDuration = this.defaultDisplayDuration;
+            if (parts.length >= 3 && parts[2] && parts[2].trim() !== "") {
+                showTimer = true;
+            }
+        } else {
+            textContent = entry.toString();
+            configDuration = this.defaultDisplayDuration;
+        }
+        
+        const duration = (typeof t === 'number') ? t : (configDuration || this.defaultDisplayDuration);
+        const now = Instance.GetGameTime();
+        this.blocks.push({
+            text: textContent,
+            fullText: textContent,
+            currentLen: 0,
+            startTime: now,
+            expireTime: now + duration,
+            typing: true,
+            showTimer: showTimer
+        });
+        this.refreshDisplay(true);
+    },
+
+    refreshDisplay: function(force = false) {
+        const now = Instance.GetGameTime();
+        let changed = force;
+
+        const oldLen = this.blocks.length;
+        this.blocks = this.blocks.filter(block => now < block.expireTime);
+        if (this.blocks.length !== oldLen) changed = true;
+
+        for (const block of this.blocks) {
+            if (block.typing) {
+                const elapsed = now - block.startTime;
+                let progress = Math.min(1.0, elapsed / this.typingDuration);
+                let newLen = Math.floor(progress * block.fullText.length);
+                if (progress > 0 && newLen === 0 && block.fullText.length > 0) newLen = 1;
+                if (newLen !== block.currentLen) {
+                    block.currentLen = newLen;
+                    changed = true;
+                }
+                if (progress >= 1.0) {
+                    block.typing = false;
+                    block.currentLen = block.fullText.length;
+                    changed = true;
+                }
+            }
+        }
+
+        // 存在倒计时块则强制刷新
+        const hasTimer = this.blocks.some(block => block.showTimer);
+        if (hasTimer) changed = true;
+
+        if (changed || this.blocks.length === 0) {
+            let display = "";
+            for (let i = 0; i < this.blocks.length; i++) {
+                const block = this.blocks[i];
+                let lineText = block.fullText.substring(0, block.currentLen);
+                if (block.showTimer) {
+                    const remaining = Math.max(0, block.expireTime - now);
+                    const remainingSeconds = remaining.toFixed(1);
+                    lineText += ` [${remainingSeconds}]`;
+                }
+                display += lineText;
+                if (i < this.blocks.length - 1) display += "\n";
+            }
+            const pm = gameManager.pMgr;
+            for (let slot = 0; slot <= CONFIG.STAGES.MAX_PLAYERS; slot++) {
+                const player = pm.players[slot];
+                if (player && player.showUsage) continue;
+                fire(`${this.entityNameBase}${slot}`, "SetMessage", display, 0);
+            }
+            this.lastDisplay = display;
+        }
+    },
+
+    clearAll: function() {
+        this.blocks = [];
+        for (let slot = 0; slot <= CONFIG.STAGES.MAX_PLAYERS; slot++) {
+            fire(`${this.entityNameBase}${slot}`, "SetMessage", "", 0);
+        }
+        this.lastDisplay = "";
+    }
+};
+
+// 辅助函数，保持原有调用方式
+function settext(textnum, t) {
+    StoryManager.addByIndex(textnum, t);
 }
 
 // =============================================
