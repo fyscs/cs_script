@@ -77,10 +77,10 @@ Instance.SetThink(function ()
             DelayedCalls.splice(i, 1);
         }
     }
-    Instance.SetNextThink(now + 0.01);
+    Instance.SetNextThink(now + 0.1);
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 
 Instance.OnRoundStart(() => {
     ITEMS_SET.clear();
