@@ -11,9 +11,6 @@ Instance.OnScriptInput("LaunchTROLL", (inputData) => {
     if (player && player.IsValid()) {
         // 将玩家加入受保护集合
         protectedPlayers.add(player);
-        
-        // 打印调试信息
-        Instance.Msg("[TROLL] 玩家已获得 60% 减伤效果");
     }
 });
 
@@ -21,17 +18,24 @@ Instance.OnBeforePlayerDamage((event) => {
     // 检查受害者 (event.player) 是否在我们的受保护列表中
     if (protectedPlayers.has(event.player)) {
 
-    const attackerName = event.attacker.GetEntityName();
+    const attackerName = event.attacker ? event.attacker.GetEntityName() : "";
 
     // 如果攻击者是 "item_goliath_24"，则直接返回原始伤害
     if (attackerName === "item_goliath_24") {
         return { damage: event.damage };
     }
-        // 计算减伤后的数值 (40% 伤害)
-        const newDamage = event.damage * 0.4;
+        // 计算减伤后的数值 (30% 伤害)
+        const newDamage = event.damage * 0.3;
 
         // 返回修改后的伤害值对象
         return { damage: newDamage };
+    }
+});
+
+Instance.OnPlayerKill((event) => {
+    // 当玩家死亡时，从受保护集合中移除该玩家
+    if (event.player && event.player.IsValid()) {
+        protectedPlayers.delete(event.player);
     }
 });
 
