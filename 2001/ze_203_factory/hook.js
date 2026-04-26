@@ -258,7 +258,7 @@ Instance.SetThink(() => {
     hooks.forEach((hook, player) => {
         if (!hook.isActive) {
             hook.checkReady();
-            if (player.WasInputJustPressed(CSInputs.USE)) hook.startHook();
+            if (player.IsInputPressed(CSInputs.USE)) hook.startHook();
             return;
         }
 
@@ -271,7 +271,7 @@ Instance.SetThink(() => {
         hook.updatePlayer1();
         hook.updatePlayer2();
     });
-    Instance.SetNextThink(Instance.GetGameTime());
+    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 });
 
 Instance.SetNextThink(Instance.GetGameTime() + 0.1);
