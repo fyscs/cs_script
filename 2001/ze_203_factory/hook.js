@@ -1,17 +1,19 @@
-import { Instance } from "cs_script/point_script";
+import { Instance, CSInputs } from "cs_script/point_script";
 
 /**
  * 钩锁拉扯系统：
  * 1. 玩家1按下按钮，MAX_DISTANCE距离内视线捕获不同阵营玩家2
  * 2. 玩家1在XY平面静止不动（Z轴保留，可自由落体）
  * 3. 玩家2无法自由移动，受到XY平面朝向玩家1的恒定吸力
- * 4. 断开条件：玩家1受伤害累计超过MAX_DAMAGE_LIMIT，或两人距离超过MAX_DISTANCE，或任意一方死亡
+ * 4. 断开条件：玩家1受伤害累计超过MAX_DAMAGE_LIMIT，或两人距离超过MAX_DISTANCE，或任意一方死亡，或钩子持续时间超过HOOK_DURATION
  */
 
 const CONFIG = {
     MAX_DISTANCE: 500,        // 触发和维持的最大距离
-    PULL_SPEED: 100,          // 玩家2在XY平面受到的吸力速度
+    PULL_SPEED: 80,          // 玩家2在XY平面受到的吸力速度
     MAX_DAMAGE_LIMIT: 1000,     // 玩家1断开连接的最大承受伤害
+    HOOK_DURATION: 10,       // 钩子最大持续时间（秒）
+    HOOK_COOLDOWN: 60,       // 钩子冷却时间（秒）
 
     // 实体前缀字段
     HUD_P1_NAME: "item_hook_player1_hud",
@@ -29,15 +31,45 @@ class Hook {
         this.player2 = null;            // 被吸附者 (P2)
         this.slot = slot;                 // 钩子槽位
         this.p1DamageTaken = 0;         // P1累计承受伤害
+        this.time = 0;                  // 标记起始时间
+        this.isReady = true;            // 是否处于就绪状态
     }
 
     /**
      * 激活钩子状态
     */
-    startHook(p2) {
+    startHook() {
+        Instance.Msg(this.player1.GetPlayerController().GetPlayerName() + " try to hook");
+        if (!this.player1 || !this.player1.IsValid() || !this.player1.IsAlive() || this.isActive || !this.checkCooldown()) {
+            return;
+        }
+
+        const eyePos = this.player1.GetEyePosition();
+        const eyeAngles = this.player1.GetEyeAngles();
+        const forwardVec = getForward(eyeAngles);
+        const endPos = vectorAdd(eyePos, vectorScale(forwardVec, CONFIG.MAX_DISTANCE));
+        const ignoreEntities = [this.player1, Instance.FindEntitiesByClass("func_button")];
+
+        const trace = Instance.TraceLine({
+            start: eyePos,
+            end: endPos,
+            ignoreEntity: ignoreEntities
+        });
+
+        if (!trace.didHit || !trace.hitEntity || trace.hitEntity.GetClassName() !== "player" || this.player1.GetTeamNumber() === trace.hitEntity.GetTeamNumber()) {
+            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: "释放失败..." });
+            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1 });
+            Instance.Msg("Hook failed");
+            return;
+        }
+
         this.isActive = true;
-        this.player2 = p2;
+        this.player2 = trace.hitEntity;
         this.p1DamageTaken = 0;
+        this.time = Instance.GetGameTime();
+        this.isReady = false;
+
+        Instance.Msg(this.player1.GetPlayerController().GetPlayerName() + " hooks " + this.player2.GetPlayerController().GetPlayerName());
 
         // 通知p1
         let message = "钩住了 " + this.player2.GetPlayerController().GetPlayerName();
@@ -49,8 +81,50 @@ class Hook {
         Instance.EntFireAtName({ name: CONFIG.HUD_P2_NAME + "_" + this.slot, input: "SetMessage", value: message });
         Instance.EntFireAtName({ name: CONFIG.HUD_P2_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player2 });
 
+        // 更新一次目标位置
+        const target = Instance.FindEntityByName(CONFIG.ROPE_TARGET_NAME + "_" + this.slot);
+        if (target) {
+            let origin = this.player2.GetAbsOrigin();
+            origin.z += 40;
+            target.Teleport({ position: origin });
+        }
+
         // 播放音频
         Instance.EntFireAtName({ name: CONFIG.SOUND_NAME + "_" + this.slot, input: "StartSound" });
+    }
+
+    /**
+     * 检查冷却状态
+     */
+    checkCooldown() {
+        if (this.isReady) return true;
+
+        const cooldownTime = Math.ceil(CONFIG.HOOK_COOLDOWN - (Instance.GetGameTime() - this.time));
+        if (cooldownTime > 0) {
+            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: "钩子冷却时间: " + cooldownTime + "秒" });
+            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1 });
+            Instance.Msg("Hook still has " + cooldownTime + " seconds cooldown");
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    /** 
+     * 检查就绪状态
+     */
+    checkReady() {
+        if (this.isReady) return true;
+
+        if (Instance.GetGameTime() - this.time > CONFIG.HOOK_COOLDOWN) {
+            this.isReady = true;
+            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: "钩子准备好了~" });
+            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1 });
+            Instance.Msg("Hook is ready now");
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -76,16 +150,24 @@ class Hook {
     }
 
     /** 
+     * 检查钩子连接时间
+     */
+    checkLinkTime() {
+        const currentTime = Instance.GetGameTime();
+        if (currentTime - this.time > CONFIG.HOOK_DURATION) {
+            this.stopHook();
+            Instance.Msg("Hook duration exceeded");
+            return false;
+        }
+        return true;
+    }
+
+    /** 
      * 检查损伤
      */
     // 超过MAX_DAMAGE_LIMIT点伤害断开
     checkDamage() {
         if (this.p1DamageTaken >= CONFIG.MAX_DAMAGE_LIMIT) {
-            // 通知p1
-            let message = "钩子断开了~";
-            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: message });
-            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1 });
-
             this.stopHook();
             Instance.Msg("Damage exceeded");
             return false;
@@ -99,11 +181,6 @@ class Hook {
     checkDistance() {
         const dist = vectorDistance(this.player1.GetAbsOrigin(), this.player2.GetAbsOrigin());
         if (dist > CONFIG.MAX_DISTANCE) {
-            // 通知p1
-            let message = "钩子断开了~";
-            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: message });
-            Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1 });
-
             this.stopHook();
             Instance.Msg("Distance exceeded");
             return false;
@@ -157,23 +234,18 @@ class Hook {
      * 结束钩子状态
      */
     stopHook() {
-        Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "DestroyImmediately", delay: 0 });
-        Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "Stop", delay: 0.01 });
+        // 通知p1
+        let message = "钩子断开了~";
+        Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: message });
+        Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1 });
+        // 粒子销毁
+        Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "DestroyImmediately"});
+        Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "Stop", delay: 0.1 });
+        // 状态更新
         this.isActive = false;
         this.player2 = null;
         this.p1DamageTaken = 0;
-        Instance.EntFireAtName({ name: CONFIG.BUTTON_NAME + "_" + this.slot, input: "lock", delay: 0 });
-        Instance.EntFireAtName({ name: CONFIG.BUTTON_NAME + "_" + this.slot, input: "unlock", delay: 60 });
-        Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "SetMessage", value: "钩子准备好了~", delay: 60 });
-        Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player1, delay: 60 });
-    }
-
-    /**
-     * 重置钩子状态
-     */
-    resetHook() {
-        Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "DestroyImmediately", delay: 0 });
-        Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "Stop", delay: 0.01 });
+        this.time = Instance.GetGameTime();
     }
 }
 
@@ -184,11 +256,16 @@ const hooks = new Map();
  */
 Instance.SetThink(() => {
     hooks.forEach((hook, player) => {
-        if (!hook.isActive) return;
+        if (!hook.isActive) {
+            hook.checkReady();
+            if (player.WasInputJustPressed(CSInputs.USE)) hook.startHook();
+            return;
+        }
 
         if (!hook.checkPlayerStatus()) return;
         if (!hook.checkDamage()) return;
         if (!hook.checkDistance()) return;
+        if (!hook.checkLinkTime()) return;
 
         hook.updateParticle();
         hook.updatePlayer1();
@@ -198,57 +275,6 @@ Instance.SetThink(() => {
 });
 
 Instance.SetNextThink(Instance.GetGameTime());
-
-/**
- * 监听玩家输入触发钩子 (在 Hammer 中触发 "start_hook" input)
- */
-Instance.OnScriptInput("start_hook", (inputData) => {
-    const p1 = inputData.activator;
-    if (!hooks.has(p1)) return;
-    const hook = hooks.get(p1);
-
-    // 校验触发者必须是有效玩家，且当前未在使用钩子
-    if (!p1 || !p1.IsValid() || p1.GetClassName() !== "player" || hook.isActive) {
-        return;
-    }
-
-    // 获取视线起点和方向
-    let eyePos = p1.GetEyePosition();
-    let eyeAngles = p1.GetEyeAngles();
-    let forwardVec = getForward(eyeAngles);
-
-    // 计算视线最大距离的终点
-    let endPos = vectorAdd(eyePos, vectorScale(forwardVec, CONFIG.MAX_DISTANCE));
-
-    const ignoreEntities = [p1, Instance.FindEntitiesByClass("func_button")];
-
-    // 发射射线检测视线
-    let trace = Instance.TraceLine({
-        start: eyePos,
-        end: endPos,
-        ignoreEntity: ignoreEntities
-    });
-
-    // 如果击中实体并且是玩家
-    if (trace.didHit && trace.hitEntity && trace.hitEntity.GetClassName() === "player") {
-        let p2 = trace.hitEntity;
-
-        Instance.Msg("Player " + p1.GetPlayerController().GetPlayerName() + " hit " + p2.GetPlayerController().GetPlayerName() + " with hook");
-
-        // 判断是否为不同阵营
-        if (p1.GetTeamNumber() !== p2.GetTeamNumber()) {
-            hook.startHook(p2);
-            return;
-        }
-    }
-
-    Instance.Msg("start_hook failed");
-
-    // 通知p1
-    let message = "释放失败...";
-    Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + hook.slot, input: "SetMessage", value: message });
-    Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + hook.slot, input: "ShowHudHint", activator: p1 });
-});
 
 /**
  * 监听玩家受到的伤害
@@ -266,9 +292,6 @@ Instance.OnPlayerDamage((event) => {
  * 回合重新开始时重置状态
  */
 Instance.OnRoundStart(() => {
-    hooks.forEach((hook) => {
-        hook.resetHook();
-    });
     hooks.clear();
 });
 
@@ -280,6 +303,9 @@ Instance.OnScriptInput("register", (inputData) => {
 
     const hook = new Hook(player, slot);
     hooks.set(player, hook);
+
+    Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + slot, input: "SetMessage", value: "钩子 | 瞄准敌人按e缓慢拖向自己 | 半径 500 | 冷却 60s" });
+    Instance.EntFireAtName({ name: CONFIG.HUD_P1_NAME + "_" + slot, input: "ShowHudHint", activator: player });
 
     Instance.Msg("hook registered for player: " + player.GetPlayerController().GetPlayerName() + " in slot: " + slot);
 })
