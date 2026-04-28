@@ -39,9 +39,9 @@ class Vec3 {
     // @ts-ignore
     constructor(xOrVector, y, z) {
         if (typeof xOrVector === 'object') {
-            this.x = xOrVector.x === 0 ? 0 : xOrVector.x;
-            this.y = xOrVector.y === 0 ? 0 : xOrVector.y;
-            this.z = xOrVector.z === 0 ? 0 : xOrVector.z;
+            this.x = xOrVector.x + 0;
+            this.y = xOrVector.y + 0;
+            this.z = xOrVector.z + 0;
         }
         else {
             this.x = xOrVector === 0 ? 0 : xOrVector;
@@ -213,9 +213,22 @@ Instance.OnScriptInput("hitNAZGUL", (inputData) => {
     Instance.Msg("[NAZGUL] 被攻击的实体不在记录中。");
 });
 
+Instance.OnPlayerKill((event) => {
+    // 移除所有归属于该玩家的 Nazgul 实体
+    const toDelete = [];
+    for (const nazgul_item of nazgul_items) {
+        if (nazgul_item.player === event.player) {
+            toDelete.push(nazgul_item);
+        }
+    }
+    for (const item of toDelete) {
+        nazgul_items.delete(item);
+    }
+});
+
 // 3. 回合开始清理
 Instance.OnRoundStart(() => {
-    nazgul_items = new Set();
+    nazgul_items.clear();
     // 重置所有数组，防止引用旧实体 
     Instance.Msg("[NAZGUL] 回合开始");
 });

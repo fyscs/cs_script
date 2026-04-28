@@ -3,10 +3,10 @@ import { Instance, Entity, CSWeaponAttackType } from "cs_script/point_script";
 /**
  * 防化脚本
  * 此脚本用于实现类似求生之路中的感染者攻击而非ze模式中的直接感染
- * 此脚本为针对风云社参数适配后的版本，对比原版，将僵尸低血量时的1000血降为600血
+ * 此脚本为针对风云社适配后的版本
  * 使用其他方式来代替返回abort实现免抓的效果
  * 此脚本由皮皮猫233编写
- * 2026/3/17
+ * 2026/4/20
  */
 
 let deinfectSwitch = false;
@@ -107,7 +107,7 @@ function SetLowHP(player) {
     if (player.GetMaxHealth() > 100) {
         Delay(0.5, () => {
             player.SetMaxHealth(1);
-            player.SetHealth(600);
+            player.SetHealth(1000);
         });
     }
 }
