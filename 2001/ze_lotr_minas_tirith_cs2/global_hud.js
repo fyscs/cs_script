@@ -6,7 +6,7 @@ let isCounting = false; // 添加一个标志来控制倒计时，防止重复�
 function tickCountdown() {
     if (!isCounting) return;
 
-    if (remaining < 0) {
+    if (remaining <= 0) {
         Instance.Msg("Countdown finished!");
         isCounting = false;
         return;
@@ -27,8 +27,6 @@ function tickCountdown() {
     });
 
     remaining--;
-    Instance.EntFireAtName
-    Instance.Msg("Countdown " + remaining);
     
     Instance.SetNextThink(Instance.GetGameTime() + 1.0);
 }

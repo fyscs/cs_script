@@ -482,7 +482,7 @@ Instance.OnScriptInput("RockThrowing", ({ caller, activator }) => {
     }
 });
 
-Instance.OnBeforePlayerDamage((event) => {
+Instance.OnModifyPlayerDamage((event) => {
     if(EntInstancesMap.size == 0)
     {
         return;

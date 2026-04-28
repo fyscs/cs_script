@@ -319,3 +319,4 @@ function ResetBossS()
     ITEM_DAMAGE = "";
     GRENADE_DAMAGE = 0;
 }
+

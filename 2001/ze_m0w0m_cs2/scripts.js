@@ -257,19 +257,11 @@ Instance.OnScriptInput("caidan", ({}) => {
 
 Instance.OnScriptInput("caidan_hurt", ({activator}) => {
     let user = EMgr.find("player_caidan")
-    if(activator.GetHealth() <= 5000){
-        activator.TakeDamage({
-            damage:999999,
-            attacker:user
-        })
-    }else{
-        activator.TakeDamage({
-            damage:3000,
-            attacker:user
-        })
-        EMgr.fireT(activator,"keyvalues","speed 0.1",0)
-        EMgr.fireT(activator,"keyvalues","speed 1",3)
-    }
+    activator.TakeDamage({
+        damage:1000,
+        attacker:user
+    })
+    activator.Teleport({velocity:vMath.vec(0,0,0)})
 })
 
 Instance.OnScriptInput("s36miniadd", ({}) => {

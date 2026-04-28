@@ -207,7 +207,7 @@ function BuildHud()
         BOSS_HUD_TEXT = BOSS_HUD_TEXT + "]";
     }
     ShowHudHint(BOSS_HUD_TEXT);
-    Instance.DebugScreenText({ text: BOSS_HUD_TEXT, x: 625, y: 250, duration: 0.01, color: {r: 0, g: 255, b:255} });
+    // Instance.DebugScreenText({ text: BOSS_HUD_TEXT, x: 625, y: 250, duration: 0.01, color: {r: 0, g: 255, b:255} });
     // Instance.Msg(BOSS_HUD_TEXT);
 }
 

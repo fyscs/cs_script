@@ -63,7 +63,7 @@ Instance.OnScriptInput("Defence",() => {
     Instance.SetNextThink(Time);
 });
 
-Instance.OnBeforePlayerDamage(({ player, damage }) => {
+Instance.OnModifyPlayerDamage(({ player, damage }) => {
 
     if (!player || !player.IsValid()) return;
 
@@ -75,7 +75,6 @@ Instance.OnBeforePlayerDamage(({ player, damage }) => {
     if (Dis < Distance && player.GetTeamNumber() == 3) {
         return { damage: damage / 2 };
     }
-    else return { damage: damage };
 });
 
 function EliminateFlyingEntity() {
