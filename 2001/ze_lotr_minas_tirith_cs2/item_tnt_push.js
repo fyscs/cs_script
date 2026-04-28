@@ -33,14 +33,13 @@ Instance.OnScriptInput("LaunchTNT", (inputData) => {
         return;
     }
 
-    if (player.IsAlive && !player.IsAlive()) {
-        Instance.Msg("[TNT] 玩家不存在");
+    if (!player.IsAlive()) {
         return;
     }
 
     let tnt = Get_TNT_Phys();
+
     if (!tnt || !tnt.IsValid()) {
-        Instance.Msg("[TNT] 实体不存在");
         return;
     }
 
@@ -55,8 +54,8 @@ Instance.OnScriptInput("LaunchTNT", (inputData) => {
     // 获取玩家当前的绝对速度向量 {x, y, z}
     let playerVel = player.GetAbsVelocity(); // 
 
-    // 检查 Z 轴速度。使用 Math.abs 处理向上(正)或向下(负)的速度
-    if (playerVel && Math.abs(playerVel.z) > 10) {
+    // 检查 Z 轴速度。使用 Math.abs 处理向上(正)的速度
+    if (playerVel && Math.abs(playerVel.z) > 5) {
         launchSpeed += launchBoost;
         Instance.Msg("[TNT] Z-Speed: " + playerVel.z);
     }

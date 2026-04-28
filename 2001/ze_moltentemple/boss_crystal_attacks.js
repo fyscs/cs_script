@@ -588,14 +588,14 @@ Instance.OnScriptInput("DoDamageHeatFlow", ({ caller, activator }) => {
             if(center_explosion != null)
             {
                 let ent_pos = center_explosion?.GetAbsOrigin();
-                if(mega_explode)
-                {
-                    Instance.DebugSphere({ center: ent_pos, radius: HEAT_FLOW_MEGA_DAMAGE_R, duration: 10.00, color: {r: 255, g: 0, b: 0} });
-                }
-                else
-                {
-                    Instance.DebugSphere({ center: ent_pos, radius: HEAT_FLOW_DAMAGE_R, duration: 10.00, color: {r: 255, g: 0, b: 0} });
-                }
+                // if(mega_explode)
+                // {
+                //     Instance.DebugSphere({ center: ent_pos, radius: HEAT_FLOW_MEGA_DAMAGE_R, duration: 10.00, color: {r: 255, g: 0, b: 0} });
+                // }
+                // else
+                // {
+                //     Instance.DebugSphere({ center: ent_pos, radius: HEAT_FLOW_DAMAGE_R, duration: 10.00, color: {r: 255, g: 0, b: 0} });
+                // }
                 let players = Instance.FindEntitiesByClass("player");
                 for(let k = 0; k < players.length; k++)
                 {
@@ -874,7 +874,8 @@ Instance.OnScriptInput("DoDamageFlareFlow", ({ caller, activator }) => {
             {
                 if(FLARE_FLOW_PLAYER.player?.IsValid())
                 {
-                    player?.TakeDamage({damage: FLARE_FLOW_DAMAGE, damageTypes: 2048, attacker: FLARE_FLOW_PLAYER.player, damageFlags: 32});
+                    player?.TakeDamage({damage: FLARE_FLOW_DAMAGE, damageTypes: 2048});
+                    // player?.TakeDamage({damage: FLARE_FLOW_DAMAGE, damageTypes: 2048, attacker: FLARE_FLOW_PLAYER.player, damageFlags: 32});
                 }
                 else
                 {
@@ -906,7 +907,7 @@ Instance.OnScriptInput("FlareTickPos", ({ caller, activator }) => {
             FLARE_FLOW_PLAYER.laser_end?.Teleport({position: pos_offset});
         }
         FLARE_PATH_02?.Teleport({position: pos_offset});
-        Instance.DebugSphere({ center: pos_offset, radius: 8, duration: 0.01, color: {r: 0, g: 255, b: 0} });
+        // Instance.DebugSphere({ center: pos_offset, radius: 8, duration: 0.01, color: {r: 0, g: 255, b: 0} });
         Instance.EntFireAtName( { name: BOSS_SCRIPT, input: "RunScriptInput", value: "FlareTickPos", delay: 0.01 });
     }
     else
@@ -1001,7 +1002,7 @@ Instance.OnScriptInput("TestFlareTickPos", ({ caller, activator }) => {
         {
             FLARE_FLOW_PLAYER.laser_end?.Teleport({position: pos_offset});
         }
-        Instance.DebugSphere({ center: pos_offset, radius: 8, duration: 0.01, color: {r: 0, g: 255, b: 0} });
+        // Instance.DebugSphere({ center: pos_offset, radius: 8, duration: 0.01, color: {r: 0, g: 255, b: 0} });
         Instance.EntFireAtName( { name: BOSS_SCRIPT, input: "RunScriptInput", value: "TestFlareTickPos", delay: 0.01 });
     }
     else

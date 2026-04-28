@@ -152,7 +152,7 @@ Instance.OnScriptInput("GandalfCanGetDamage", ({ caller, activator }) => {
     gandalf_can_get_damage = true;
 });
 
-Instance.OnBeforePlayerDamage((event) => {
+Instance.OnModifyPlayerDamage((event) => {
     if(gandalf_player == null || !gandalf_player?.IsValid())
     {
         return;
