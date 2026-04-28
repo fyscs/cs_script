@@ -1,0 +1,10 @@
+import { Instance } from "cs_script/point_script";
+
+Instance.OnPlayerReset((event) => {
+    let team = event.player.GetTeamNumber();
+    if (team == 3) {
+        event.player.SetModel("models/player/rayman/rayman.vmdl");
+    } else if (team == 2) {
+        event.player.SetModel("models/player/dingodile/dingodile.vmdl");
+    }
+})

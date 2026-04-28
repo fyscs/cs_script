@@ -51,36 +51,42 @@ const InPuts = [
 
     ["item_spawner_u1", "OnTrigger", "", "origin -10845 12400 392 ultimate_temp", SpawnItems, 0.00, -1],
 ]
-
-const InPutsSpawned = [
-    [],
-]
+const InPutsSpawned = [[]];
 const FiredOnceTracker = new Set();
-
 const DelayedCalls = [];
 
-function Delay(callback, delaySeconds) {
+const ITEMS_SET = new Set();
+
+function Delay(callback, delaySeconds) 
+{
     DelayedCalls.push({
         time: Instance.GetGameTime() + delaySeconds,
         callback: callback
     });
 }
 
-Instance.SetThink(function () {
+Instance.SetThink(function () 
+{
     const now = Instance.GetGameTime();
 
-    for (let i = DelayedCalls.length - 1; i >= 0; i--) {
-        if (DelayedCalls[i].time <= now) {
+    for(let i = DelayedCalls.length - 1; i >= 0; i--) 
+    {
+        if(DelayedCalls[i].time <= now) 
+        {
             DelayedCalls[i].callback();
             DelayedCalls.splice(i, 1);
         }
     }
-    Instance.SetNextThink(now + 0.01);
+    Instance.SetNextThink(now + 0.1);
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 
 Instance.OnRoundStart(() => {
+    ITEMS_SET.clear();
+    ZM_SKIN_1 = null;
+    ZM_SKIN_2 = null;
+    ZM_SKIN1_lastUseTime = 0;
     FiredOnceTracker.clear();
     DelayedCalls.length = 0;
     if(InPuts.length > 0)
@@ -101,11 +107,11 @@ Instance.OnRoundStart(() => {
             
             if(!ent)
             {
-                Instance.Msg("Can't Find: "+entName);
+                // Instance.Msg("Can't Find: "+entName);
                 continue;
             } 
 
-            Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Target: ${target} | Param: ${param} | Func: ${handlerFn.name} | Delay: ${delay} | FireOnceOnly: ${FireOnceOnly}`);
+            // Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Target: ${target} | Param: ${param} | Func: ${handlerFn.name} | Delay: ${delay} | FireOnceOnly: ${FireOnceOnly}`);
 
             if(Array.isArray(ent))
             {
@@ -211,7 +217,42 @@ function CAddOutput(ent, outputName, target, param, handlerFn, delay, FireOnceOn
 
 Instance.OnRoundEnd(() => {
     DelayedCalls.length = 0;
-})
+});
+
+Instance.OnPlayerReset((event) => {
+    const player = event.player;
+    if(player?.IsValid())
+    {
+        const player_controller = player?.GetPlayerController();
+        const player_name = player_controller?.GetPlayerName();
+        const player_slot = player_controller?.GetPlayerSlot();
+        if(player_slot == null) return;
+        if(ITEMS_SET.has(player_slot))
+        {
+            ITEMS_SET.delete(player_slot);
+        }
+        player.SetColor({r: 255, g: 255, b: 255, a: 255})
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
+        player.SetModelScale(1.00);
+        Instance.EntFireAtTarget({ target: player, input: "ClearContext" });
+        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "stk_nofall" });
+        player?.SetEntityName("player_"+player_slot);
+    }
+});
+
+Instance.OnPlayerKill((event) => {
+    const player = event.player;
+    if(player === ZM_SKIN_1)
+    {
+        Instance.EntFireAtName({ name: "zmskin1_skin", input: "Kill"});
+        ZM_SKIN_1 = null;
+    }
+    else if(player === ZM_SKIN_2)
+    {
+        Instance.EntFireAtName({ name: "zmskin2_skin", input: "Kill"});
+        ZM_SKIN_2 = null;
+    }
+});
 
 function TeleportObject(arg, activator)
 {
@@ -224,8 +265,8 @@ function TeleportObject(arg, activator)
 
     const name = IsPlayerT(activator) ? activator?.GetPlayerController()?.GetPlayerName() : activator.GetEntityName();
 
-    Instance.Msg(`Teleport: ${name} | TO: ${origin.x} ${origin.y} ${origin.z}`);
-    activator.Teleport(origin, null, null);
+    // Instance.Msg(`Teleport: ${name} | TO: ${origin.x} ${origin.y} ${origin.z}`);
+    activator.Teleport({position: origin});
 }
 
 function SetAngToObject(arg, activator)
@@ -239,8 +280,8 @@ function SetAngToObject(arg, activator)
 
     const name = IsPlayerT(activator) ? activator?.GetPlayerController()?.GetPlayerName() : activator.GetEntityName();
 
-    Instance.Msg(`SetAngTo: ${name} | Ang: ${angles.pitch} ${angles.yaw} ${angles.roll}`);
-    activator.Teleport(null, angles, null);
+    // Instance.Msg(`SetAngTo: ${name} | Ang: ${angles.pitch} ${angles.yaw} ${angles.roll}`);
+    activator.Teleport({angles: angles});
 }
 
 function SetTargetName(arg, activator)
@@ -250,7 +291,7 @@ function SetTargetName(arg, activator)
 
     const name = IsPlayerT(activator) ? activator?.GetPlayerController()?.GetPlayerName() : activator.GetEntityName();
 
-    Instance.Msg(`SetNameTo: ${name} | Name: ${targetname}`);
+    // Instance.Msg(`SetNameTo: ${name} | Name: ${targetname}`);
 
     activator.SetEntityName(targetname);
 }
@@ -259,7 +300,7 @@ function SetPlayerModel(arg, activator)
 {
     const name = IsPlayerT(activator) ? activator?.GetPlayerController()?.GetPlayerName() : activator.GetEntityName();
 
-    Instance.Msg(`SetPlayerModelTo: ${name} | Model: ${arg}`);
+    // Instance.Msg(`SetPlayerModelTo: ${name} | Model: ${arg}`);
 
     activator.SetModel(arg);
 }
@@ -276,7 +317,7 @@ function SetHealthToObject(arg, activator)
 
     const name = IsPlayerT(activator) ? activator?.GetPlayerController()?.GetPlayerName() : activator.GetEntityName();
 
-    Instance.Msg(`SetHpTo: ${name} | Hp: ${hp}`);
+    // Instance.Msg(`SetHpTo: ${name} | Hp: ${hp}`);
     activator.SetHealth(hp);
 }
 
@@ -292,7 +333,7 @@ function SetMaxHealthToObject(arg, activator)
 
     const name = IsPlayerT(activator) ? activator?.GetPlayerController()?.GetPlayerName() : activator.GetEntityName();
 
-    Instance.Msg(`SetMaxHpTo: ${name} | Hp: ${hp}`);
+    // Instance.Msg(`SetMaxHpTo: ${name} | Hp: ${hp}`);
     activator.SetMaxHealth(hp);
 }
 
@@ -312,7 +353,7 @@ function SpawnItems(param, activator)
     }
     else
     {
-        Instance.Msg("Can't find: "+temp);
+        // Instance.Msg("Can't find: "+temp);
     }
 }
 
@@ -398,4 +439,160 @@ function getPositionKey(ent)
 {
     const pos = ent.GetAbsOrigin();
     return `${Math.floor(pos.x)}_${Math.floor(pos.y)}_${Math.floor(pos.z)}`;
+}
+
+Instance.OnScriptInput("StripKnifeZm", ({caller, activator}) => {
+    if(!activator || !caller) return;
+
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const player_pawn = player_controller?.GetPlayerPawn();
+
+    if(!player?.IsValid() || !player?.IsAlive() || player?.GetTeamNumber() != 2 || ITEMS_SET.has(player_slot)) return;
+    ITEMS_SET.add(player_slot);
+    const weapon_knife = player_pawn.FindWeaponBySlot(2);
+    weapon_knife?.Remove();
+    caller?.Remove();
+});
+
+///////////////////////////////////////////////////////////////////////
+let ZM_SKIN_1 = null;
+const ZM_SKIN1_JUMP_CD = 40;
+let ZM_SKIN1_lastUseTime = 0;
+
+let ZM_SKIN_2 = null;
+
+Instance.OnScriptInput("PickUpZSkin1", ({caller, activator}) => {
+    activator.SetEntityName("zmskin1_player");
+    ZM_SKIN_1 = activator;
+});
+
+Instance.OnScriptInput("PickUpZSkin2", ({caller, activator}) => {
+    activator.SetEntityName("zmskin2_player");
+    ZM_SKIN_2 = activator;
+});
+
+Instance.OnKnifeAttack((event) => {
+    if(ITEMS_SET.size === 0) return;
+    const player = event.weapon?.GetOwner();
+    if(player?.IsValid())
+    {
+        const player_controller = player?.GetPlayerController();
+        const player_slot = player_controller?.GetPlayerSlot();
+        if(!ITEMS_SET.has(player_slot)) return;
+        const isPrimary = event.attackType == 1;
+        if(isPrimary)
+        {
+            if(player === ZM_SKIN_1)
+            {
+                Instance.EntFireAtName({name: "zmskin1_branch1", input: "Test"});
+            }
+            else if(player === ZM_SKIN_2)
+            {
+                Instance.EntFireAtName({name: "zmskin2_branch1", input: "Test"});
+            }
+        }
+        else
+        {
+            if(player === ZM_SKIN_1)
+            {
+                const now = Instance.GetGameTime();
+                if(now - ZM_SKIN1_lastUseTime < ZM_SKIN1_JUMP_CD)
+                {
+                    return;
+                }
+
+                ZM_SKIN1_lastUseTime = now;
+
+                M_SetAbsVelocity(player, {x: 0, y: 0, z: 650});
+            }
+            else if(player === ZM_SKIN_2)
+            {
+                Instance.EntFireAtName({name: "zmskin2_branch2", input: "Test"});
+            }
+        }
+    }
+});
+
+const Ultimate_Radius = 2020;
+
+Instance.OnScriptInput("UltimaDoDamage", ({caller, activator}) => {
+
+    if(!caller?.IsValid()) return;
+
+    const player = activator?.IsValid() ? activator : null;
+    const player_weapon = player?.GetActiveWeapon();
+    const rage_pos = caller.GetAbsOrigin();
+
+    let players = Instance.FindEntitiesByClass("player");
+    let validPlayers = [];
+
+    for(let i = 0; i < players.length; i++)
+    {
+        let p = players[i];
+        if(p?.IsValid() && p?.IsAlive() && p.GetTeamNumber() == 2 &&
+           VectorDistance(p.GetAbsOrigin(), rage_pos) <= Ultimate_Radius)
+        {
+            validPlayers.push(p);
+        }
+    }
+
+    if(validPlayers.length > 0)
+    {
+        let survivor = validPlayers[Math.floor(Math.random() * validPlayers.length)];
+
+        for(let i = 0; i < validPlayers.length; i++)
+        {
+            let p = validPlayers[i];
+            if(p !== survivor)
+            {
+                p.TakeDamage({ damage: 1, damageTypes: 0, damageFlags: 16 | 32, inflictor: player_weapon?.IsValid() ? player_weapon : null, attacker: player?.IsValid() ? player : null });
+            }
+        }
+    }
+});
+
+function VectorDistance(vec1, vec2)
+{
+    const dx = vec1.x - vec2.x;
+    const dy = vec1.y - vec2.y;
+    const dz = vec1.z - vec2.z;
+
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+///////////////////////////////////////////////////////////////////////
+Instance.OnScriptInput("Add100Score", ({caller, activator}) => {
+    AddScoreAllCt(100);
+});
+
+Instance.OnScriptInput("Add1000Score", ({caller, activator}) => {
+    AddScoreAllCt(1000);
+});
+
+function M_SetAbsVelocity(ent, velocity)
+{
+    ent?.Teleport({velocity: velocity});
+}
+
+function M_SetBaseVelocity(ent, velocity)
+{
+    ent?.Teleport({velocity: {
+            x: ent?.GetAbsVelocity().x + velocity.x, 
+            y: ent?.GetAbsVelocity().y + velocity.y, 
+            z: ent?.GetAbsVelocity().z + velocity.z
+        }
+    });
+}
+
+function AddScoreAllCt(amount)
+{
+    let players = Instance.FindEntitiesByClass("player");
+    for(const p of players) 
+    {
+        if(!p?.IsValid() || !p?.IsAlive() || p.GetTeamNumber() != 3) continue;
+        const controller = p?.GetPlayerController();
+        controller?.AddScore(amount);
+    }
 }

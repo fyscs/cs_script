@@ -401,3 +401,4 @@ Instance.OnScriptInput("BossKill", () => {
     BOSS_MOVE_S = false;
     Instance.EntFireAtTarget({ target: b_ScriptEnt, input: "RunScriptInput", value: "ResetScript", delay: 0.10 });
 });
+

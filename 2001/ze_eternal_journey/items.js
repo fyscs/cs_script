@@ -36,14 +36,6 @@ Instance.OnScriptInput("PickUpZFreez", ({caller, activator}) => {
     activator.SetEntityName("zmfreeze_player");
 });
 
-Instance.OnScriptInput("PickUpZSkin1", ({caller, activator}) => {
-    activator.SetEntityName("zmskin1_player");
-});
-
-Instance.OnScriptInput("PickUpZSkin2", ({caller, activator}) => {
-    activator.SetEntityName("zmskin2_player");
-});
-
 Instance.OnScriptInput("SetZmItemHP", ({caller, activator}) => {
     activator.SetHealth(50000);
 });
