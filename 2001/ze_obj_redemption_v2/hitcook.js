@@ -2,8 +2,6 @@
 
 import { Instance } from "cs_script/point_script";
 
-Instance.Msg("希区柯克变焦脚本已加载");
-
 let zoomEffect = {
     isActive: false,
     startTime: 0,
@@ -49,7 +47,7 @@ function startHitcookZoom() {
             return;
         }
         
-        Instance.SetNextThink(Instance.GetGameTime() + 0.00833);
+        Instance.SetNextThink(Instance.GetGameTime() + 0.1);
     });
 }
 
