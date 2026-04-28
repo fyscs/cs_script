@@ -126,34 +126,34 @@ class Item_Bow
                     return;
                 }
 
-                Instance.DebugLine({
-                    start: start,
-                    end: traceResult.end,
-                    duration: 5,
-                    color: { r: 0, g: 255, b: 0 }
-                });
+                // Instance.DebugLine({
+                //     start: start,
+                //     end: traceResult.end,
+                //     duration: 5,
+                //     color: { r: 0, g: 255, b: 0 }
+                // });
 
                 this.bow_path_02?.Teleport({position: traceResult.end});
                 Instance.EntFireAtTarget({target: this.bow_tracktrain, input: "StartForward"});
 
                 if(traceResult.didHit) 
                 {
-                    Instance.Msg(`Hit at: x=${traceResult.end.x.toFixed(1)}, y=${traceResult.end.y.toFixed(1)}, z=${traceResult.end.z.toFixed(1)}`);
+                    // Instance.Msg(`Hit at: x=${traceResult.end.x.toFixed(1)}, y=${traceResult.end.y.toFixed(1)}, z=${traceResult.end.z.toFixed(1)}`);
                     const boxSize = 4;
-                    Instance.DebugBox({
-                        mins: {
-                            x: traceResult.end.x - boxSize,
-                            y: traceResult.end.y - boxSize,
-                            z: traceResult.end.z - boxSize
-                        },
-                        maxs: {
-                            x: traceResult.end.x + boxSize,
-                            y: traceResult.end.y + boxSize,
-                            z: traceResult.end.z + boxSize
-                        },
-                        duration: 5,
-                        color: { r: 255, g: 0, b: 0 }
-                    });
+                    // Instance.DebugBox({
+                    //     mins: {
+                    //         x: traceResult.end.x - boxSize,
+                    //         y: traceResult.end.y - boxSize,
+                    //         z: traceResult.end.z - boxSize
+                    //     },
+                    //     maxs: {
+                    //         x: traceResult.end.x + boxSize,
+                    //         y: traceResult.end.y + boxSize,
+                    //         z: traceResult.end.z + boxSize
+                    //     },
+                    //     duration: 5,
+                    //     color: { r: 255, g: 0, b: 0 }
+                    // });
                     if(traceResult.hitEntity && traceResult.hitEntity?.IsValid()) 
                     {
                         const hitName = traceResult.hitEntity?.GetEntityName();
@@ -162,7 +162,7 @@ class Item_Bow
                         {
                             this.lastArrowHitTarget = traceResult.hitEntity;
                             this.lastArrowHitInput = this.bow_targets[baseName];
-                            Instance.Msg(`Arrow will trigger ${this.lastArrowHitInput} on ${hitName}`);
+                            // Instance.Msg(`Arrow will trigger ${this.lastArrowHitInput} on ${hitName}`);
                         } 
                         else 
                         {
@@ -178,7 +178,7 @@ class Item_Bow
                 } 
                 else 
                 {
-                    Instance.Msg(`No hit after ${traceLength} units`);
+                    // Instance.Msg(`No hit after ${traceLength} units`);
                 }
                 this.bow_arrows--;
                 Instance.EntFireAtTarget({target: this.bow_text_ent, input: "SetMessage", value: `ARROWS: ${this.bow_arrows} / ${this.bow_max_arrows}`});
@@ -193,7 +193,7 @@ class Item_Bow
         }
         if(this.lastArrowHitTarget && this.lastArrowHitTarget?.IsValid() && this.lastArrowHitInput) 
         {
-            Instance.Msg(`ArrowPass → Sending ${this.lastArrowHitInput} to ${this.lastArrowHitTarget?.GetEntityName()}`);
+            // Instance.Msg(`ArrowPass → Sending ${this.lastArrowHitInput} to ${this.lastArrowHitTarget?.GetEntityName()}`);
             Instance.EntFireAtTarget({target: this.lastArrowHitTarget, input: this.lastArrowHitInput});
             this.lastArrowHitTarget = null;
             this.lastArrowHitInput = null;

@@ -87,7 +87,7 @@ Instance.OnScriptInput("StartVirtue", ({ caller, activator }) => {
     if(IsValidPlayerTeam(BLESSING_VIRTUE, 3))
     {
         Instance.EntFireAtName({ name: blessing_script, input: "RunScriptInput", value: "StartVirtue", delay: 1.00 });
-        if(BLESSING_VIRTUE?.IsCrouched())
+        if(BLESSING_VIRTUE?.IsDucked())
         {
             if(VIRTUE_USE < VIRTUE_TM_USE)
             {
@@ -120,7 +120,7 @@ Instance.OnScriptInput("StartVirtue", ({ caller, activator }) => {
                     VIRTUE_USE = VIRTUE_TM_USE;
                 }
                 Instance.EntFireAtTarget({ target: VIRTUE_TEXT, input: "SetMessage", value: `VIRTUE CHARGE: ${Math.round(VIRTUE_USE)} / ${VIRTUE_TM_USE}` });
-                Instance.DebugScreenText({ text: "VIRTUE_USE: "+VIRTUE_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
+                // Instance.DebugScreenText({ text: "VIRTUE_USE: "+VIRTUE_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
             }
             else
             {
@@ -140,7 +140,7 @@ Instance.OnScriptInput("StartVirtue", ({ caller, activator }) => {
             {
                 VIRTUE_USE -= VIRTUE_RECHARGE;
             }
-            Instance.DebugScreenText({ text: "VIRTUE_USE: "+VIRTUE_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
+            // Instance.DebugScreenText({ text: "VIRTUE_USE: "+VIRTUE_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
             Instance.EntFireAtTarget({ target: VIRTUE_TEXT, input: "SetMessage", value: `VIRTUE CHARGE: ${Math.round(VIRTUE_USE)} / ${VIRTUE_TM_USE}` });
             Instance.EntFireAtTarget({ target: VIRTUE_PARTICLE, input: "FireUser2" });
         }
@@ -200,7 +200,7 @@ Instance.OnScriptInput("StartIllu", ({ caller, activator }) => {
     if(IsValidPlayerTeam(BLESSING_ILLU, 3))
     {
         Instance.EntFireAtName({ name: blessing_script, input: "RunScriptInput", value: "StartIllu", delay: 1.00 });
-        if(BLESSING_ILLU?.IsCrouched())
+        if(BLESSING_ILLU?.IsDucked())
         {
             if(ILLU_USE < ILLU_TM_USE)
             {
@@ -217,7 +217,7 @@ Instance.OnScriptInput("StartIllu", ({ caller, activator }) => {
                     ILLU_USE = ILLU_TM_USE;
                 }
                 Instance.EntFireAtTarget({ target: ILLU_TEXT, input: "SetMessage", value: `ILLU CHARGE: ${Math.round(ILLU_USE)} / ${ILLU_TM_USE}` });
-                Instance.DebugScreenText({ text: "ILLU_USE: "+ILLU_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
+                // Instance.DebugScreenText({ text: "ILLU_USE: "+ILLU_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
             }
             else
             {
@@ -237,7 +237,7 @@ Instance.OnScriptInput("StartIllu", ({ caller, activator }) => {
             {
                 ILLU_USE -= ILLU_RECHARGE;
             }
-            Instance.DebugScreenText({ text: "ILLU_USE: "+ILLU_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
+            // Instance.DebugScreenText({ text: "ILLU_USE: "+ILLU_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
             Instance.EntFireAtTarget({ target: ILLU_TEXT, input: "SetMessage", value: `ILLU CHARGE: ${Math.round(ILLU_USE)} / ${ILLU_TM_USE}` });
             Instance.EntFireAtTarget({ target: ILLU_PARTICLE, input: "FireUser2" });
         }
@@ -298,7 +298,7 @@ Instance.OnScriptInput("StartZephyr", ({ caller, activator }) => {
     if(IsValidPlayerTeam(BLESSING_ZEPHYR, 3))
     {
         Instance.EntFireAtName({ name: blessing_script, input: "RunScriptInput", value: "StartZephyr", delay: 1.00 });
-        if(BLESSING_ZEPHYR?.IsCrouched())
+        if(BLESSING_ZEPHYR?.IsDucked())
         {
             if(ZEPHYR_USE < ZEPHYR_TM_USE)
             {
@@ -315,7 +315,7 @@ Instance.OnScriptInput("StartZephyr", ({ caller, activator }) => {
                     ZEPHYR_USE = ZEPHYR_TM_USE;
                 }
                 Instance.EntFireAtTarget({ target: ZEPHYR_TEXT, input: "SetMessage", value: `ZEPHYR CHARGE: ${Math.round(ZEPHYR_USE)} / ${ZEPHYR_TM_USE}` });
-                Instance.DebugScreenText({ text: "ZEPHYR_USE: "+ZEPHYR_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
+                // Instance.DebugScreenText({ text: "ZEPHYR_USE: "+ZEPHYR_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
             }
             else
             {
@@ -335,7 +335,7 @@ Instance.OnScriptInput("StartZephyr", ({ caller, activator }) => {
             {
                 ZEPHYR_USE -= ZEPHYR_RECHARGE;
             }
-            Instance.DebugScreenText({ text: "ZEPHYR_USE: "+ZEPHYR_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
+            // Instance.DebugScreenText({ text: "ZEPHYR_USE: "+ZEPHYR_USE, x: 625, y: 250, duration: 1.00, color: {r: 0, g: 255, b:255} });
             Instance.EntFireAtTarget({ target: ZEPHYR_TEXT, input: "SetMessage", value: `ZEPHYR CHARGE: ${Math.round(ZEPHYR_USE)} / ${ZEPHYR_TM_USE}` });
             Instance.EntFireAtTarget({ target: ZEPHYR_PARTICLE, input: "FireUser2" });
         }

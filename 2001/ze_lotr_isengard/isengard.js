@@ -14,13 +14,12 @@ Instance.OnPlayerReset((event) => {
     let player = event.player;
     if(player?.IsValid())
     {
-        Instance.EntFireAtTarget({ target: player, input: "Alpha", value: "255" });
-        Instance.EntFireAtTarget({ target: player, input: "Color", value: "255 255 255" });
+        player.SetColor({r: 255, g: 255, b: 255, a: 255})
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
-        Instance.EntFireAtTarget({ target: player, input: "SetScale", value: "1" });
+        player.SetModelScale(1.00);
         Instance.EntFireAtTarget({ target: player, input: "ClearContext" });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter" });
-        Instance.EntFireAtName( { name: "player_model_*", input: "TestActivator", activator: player });
+        // Instance.EntFireAtName( { name: "player_model_*", input: "TestActivator", activator: player });
         player?.SetEntityName("player_"+player?.GetPlayerController()?.GetPlayerSlot());
     }
 });
@@ -32,6 +31,10 @@ Instance.OnRoundStart(() => {
     if(STAGE > MAP_STAGES)
     {
         STAGE = MAP_STAGES;
+    }
+    if(STAGE === 3)
+    {
+        Instance.EntFireAtName({ name: "skywater", input: "SetPosition", value: "1", delay: 5.00 });
     }
     Instance.EntFireAtName({ name: ""+STAGE_RELAY+STAGE, input: "Trigger" });
 });
