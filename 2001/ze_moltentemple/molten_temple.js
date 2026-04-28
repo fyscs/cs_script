@@ -282,10 +282,10 @@ const InPuts = [
     ["temple_added_door", "OnOpen", "afk_dest", "origin -677 6052 3620", TeleportObject, 24.90, -1],
     ["temple_added_door", "OnOpen", "afk_dest", "angles 0 0 0", SetAngToObject, 24.90, -1],
     ["temple_door5", "OnOpen", "arrow_refill_temp", "origin -2352 5651 2439", SpawnPointTemplate, 0.00, -1],
-    ["player_model_1", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
-    ["player_model_2", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
-    ["player_model_3", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
-    ["player_model_4", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
+    // ["player_model_1", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
+    // ["player_model_2", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
+    // ["player_model_3", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
+    // ["player_model_4", "OnPass", "!activator", "", SetPlayerModel, 0.00, -1],
 ];
 
 const InPutsSpawned = [
@@ -563,21 +563,21 @@ function SetTargetName(arg, activator)
     activator.SetEntityName(targetname);
 }
 
-function SetPlayerModel(arg, activator)
-{
-    let player = activator;
-    if(player && player?.IsValid())
-    {
-        if(player?.GetTeamNumber() == 3)
-        {
-            player.SetModel("characters/models/player/custom_player/serp_hibrido.vmdl");
-        }
-        else if(player?.GetTeamNumber() == 2)
-        {
-            player.SetModel("characters/models/mountain_escape/buttmunch/buttmunch.vmdl");
-        }
-    }
-}
+// function SetPlayerModel(arg, activator)
+// {
+//     let player = activator;
+//     if(player && player?.IsValid())
+//     {
+//         if(player?.GetTeamNumber() == 3)
+//         {
+//             player.SetModel("characters/models/player/custom_player/serp_hibrido.vmdl");
+//         }
+//         else if(player?.GetTeamNumber() == 2)
+//         {
+//             player.SetModel("characters/models/mountain_escape/buttmunch/buttmunch.vmdl");
+//         }
+//     }
+// }
 
 function SpawnPointTemplate(param, activator)
 {
