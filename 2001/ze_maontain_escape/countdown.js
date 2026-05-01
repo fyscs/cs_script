@@ -15,7 +15,7 @@ const CONFIG = {
         ZONE_SHOW: "countdown_game_zone_player_show",
         ZONE_HIDE: "countdown_game_zone_player_hide",
     },
-    THINK_INTERVAL: 0.25, // think 更新间隔（秒）
+    THINK_INTERVAL: 0.1, // 更新间隔（秒）
     ZERO_DISPLAY_TIME: 0.5 // 0 显示多久后消失（秒）
 };
 
