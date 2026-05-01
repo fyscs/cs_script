@@ -1,4 +1,4 @@
-//纯预设模版的倒计时脚本，游戏内对point_script实体输入RunScriptInput，值为endin_30，则触发30秒内结束战斗的倒计时
+//纯预设模版的倒计时脚本，游戏内对point_script实体输入RunScriptInput，值为pushin_30，则触发30秒内结束战斗的倒计时
 //回合重启或者输入值为stop时倒计时会直接停止
 //局内需存在以下实体
      //①、一个game_zone_player固实体，命名为countdown_game_zone_player_hide，实体内io:OnPlayerOutZone>countdown_hudhint>HideHudHint>>0>-1
@@ -15,13 +15,13 @@ const CONFIG = {
         ZONE_SHOW: "countdown_game_zone_player_show",
         ZONE_HIDE: "countdown_game_zone_player_hide",
     },
-    THINK_INTERVAL: 0.1,
+    THINK_INTERVAL: 0.1, // 更新间隔（秒）
     ZERO_DISPLAY_TIME: 0.5 // 0 显示多久后消失（秒）
 };
 
 // 文本模板
 const TEMPLATES = {
-    endin: "{time}秒内结束战斗",
+    pushin: "随机推力{time}",
     flykill: "{time}秒后禁飞",
     knifefight: "{time}秒后用刀决战！！！",
     nukeboom: "{time}秒后核弹降临",
@@ -172,7 +172,7 @@ Instance.OnScriptInput("stop", CountdownManager.stop);
 
 // 预设倒计时
 [
-    "endin_30",
+    "pushin_5",
     "flykill_30",
     "knifefight_30",
     "nukeboom_120",
