@@ -4,7 +4,7 @@ import { CSPlayerPawn, Instance } from "cs_script/point_script";
  * Tank获取脚本
  * 已针对风云社更改为随机挑选玩家成为Tank
  * 此脚本由皮皮猫233编写
- * 2026/4/29
+ * 2026/5/1
  */
 
 // let enableTank = false;
@@ -97,10 +97,11 @@ function BecomeTank(pawn) {
             Instance.EntFireAtTarget({ target: entity, input: "Activate", activator: currentTank });
         } else if (entityName === "tank_yell_sound") {
             Instance.EntFireAtTarget({ target: entity, input: "StartSound" });
-        } else if (entityName !== "tank_phy_mm" && entityName !== "tank_phy" && entityName !== "tank_walk_sound" && entityName !== "tank_walk_sound_loop_timer") {
+        } else if (entityName !== "tank_phy_mm" && entityName !== "tank_phy" && entityName !== "tank_walk_sound" && entityName !== "tank_walk_sound_loop_timer" && entityName !== "tank_punch_sound") {
             Instance.EntFireAtTarget({ target: entity, input: "SetParent", value: "!activator", activator: currentTank });
         }
     }
+    Instance.EntFireAtName({ name: "become_tank_hudhint", input: "ShowHudHint", activator: currentTank });
     Instance.EntFireAtTarget({ target: currentTank, input: "SetDamageFilter", value: "god" });
     Instance.EntFireAtTarget({ target: currentTank, input: "Alpha", value: 0 });
     Instance.ServerCommand("say >> " + currentTank.GetPlayerController()?.GetPlayerName() + " << 成为了Tank!!!");
