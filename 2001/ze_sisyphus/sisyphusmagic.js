@@ -558,7 +558,7 @@ Instance.OnScriptInput("input_level_7", () => {
     boulder_force = 15.0 * boulder_force_fix;
 });
 Instance.OnScriptInput("input_level_8", () => {
-    boulder_force = 3.5 * boulder_force_fix;
+    boulder_force = 7.5 * boulder_force_fix;
 });
 function connect_boulder_think() {
     const boulder = Instance.FindEntityByName("boulder");
