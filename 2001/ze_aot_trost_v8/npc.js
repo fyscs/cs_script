@@ -50,7 +50,7 @@ let tracker = {
     MOVE_SPEED: 4000,
     ROTATION_SPEED: 360,
     IDLE_THINK_INTERVAL: 2.0,
-    NORMAL_THINK_INTERVAL: 1/64,
+    NORMAL_THINK_INTERVAL: 1/10,
     CLOSE_RANGE_NPC: 300,
     CLOSE_RANGE_BOSS: 500,
     bossParams: {
@@ -70,7 +70,7 @@ let tracker = {
     preparingSkillType: null,
     preparingSkillStartTime: 0,
     PREPARE_SKILL_DURATION: 0.5,
-    prepareThinkInterval: 0.02,
+    prepareThinkInterval: 0.1,
     prepareStartAngles: null,
     prepareTargetAngles: null,
     isSkillCasting: false,
@@ -122,9 +122,9 @@ let tracker = {
     // 角度和速度
     type: 0,
     currentAngles: { pitch: 0, yaw: 0, roll: 0 },
-    thinkInterval: 0.05,
+    thinkInterval: 0.1,
 
-    // 卡墙后退
+    // 卡墙后退（仅用于转向卡死）
     isStuckTurning: false,
     turnStartTime: 0,
     turnStartDelta: 0,
@@ -155,6 +155,8 @@ let tracker = {
 
     // 空闲行为
     idleBehavior: function() {},
+    isIdleMode: false,
+    idleCheckCounter: 0,
 
     // ========== 辅助函数 ==========
     getCloseRange() { return this.type === 1 ? this.CLOSE_RANGE_BOSS : this.CLOSE_RANGE_NPC; },
@@ -332,10 +334,10 @@ let tracker = {
             this.stage = 1;
             this.initStage();
         } else {
-        let hp = 50 + this.cachedPlayers.length * 10;
-        this.npc_hp = hp;
-        this.npc_maxhp = hp;
-    }
+            let hp = 50 + this.cachedPlayers.length * 10;
+            this.npc_hp = hp;
+            this.npc_maxhp = hp;
+        }
 
         this.thinkInterval = this.NORMAL_THINK_INTERVAL;
         this.startThink();
@@ -487,7 +489,7 @@ let tracker = {
             this.ROTATION_SPEED = 240;
         }
 
-        // 后退处理
+        // 后退处理（转向卡死时）
         if (this.isBackingUp) {
             if (this.updateBackup(now)) {
                 this.isBackingUp = false;
@@ -542,14 +544,13 @@ let tracker = {
             }
         }
 
-        // 移动与转向
+        // ========== 简单移动（无避障） ==========
         if (this.normalSub === 0 && hasTarget && !this.isSkillCasting && !this.isPreparingSkill && !this.isReacquiringTarget && !this.isBackingUp) {
             let npcPos = this.npc.GetAbsOrigin();
             let tPos = this.target.GetAbsOrigin();
-            this.startTurningTo(this.getDirection(npcPos, tPos).yaw);
-            if (!(this.type === 1 && this.stage === 2)) {
-                this.moveToTarget();
-            }
+            let dir = this.getDirection(npcPos, tPos);
+            this.startTurningTo(dir.yaw);
+            this.moveToTarget();
         } else {
             if (this.type === 0 && !hasTarget && !this.isSkillCasting && !this.isPreparingSkill && !this.isReacquiringTarget && !this.isBackingUp) {
                 if (typeof this.idleBehavior === 'function') this.idleBehavior();
@@ -562,7 +563,7 @@ let tracker = {
         this.thinkInterval = this.isIdleMode ? this.IDLE_THINK_INTERVAL : this.NORMAL_THINK_INTERVAL;
     },
 
-    // 移动到固定点
+    // 移动到固定点（转阶段专用）
     moveToFixedPoint(pos) {
         if (!this.npc?.IsValid()) return;
         let npcPos = this.npc.GetAbsOrigin();
@@ -624,7 +625,8 @@ let tracker = {
                 return;
             }
         }
-        let speed = this.ROTATION_SPEED * (this.isBackingUp ? 2 : 1);
+        // 后退时转向速度提升为4倍
+        let speed = this.ROTATION_SPEED * (this.isBackingUp ? 4 : 1);
         let desiredZ = (delta > 0 ? 1 : -1) * speed;
         let currentZ = this.npc.GetAbsAngularVelocity().z;
         if (Math.abs(currentZ) < 0.1 || (currentZ > 0) !== (desiredZ > 0)) {
@@ -643,7 +645,7 @@ let tracker = {
         }
     },
 
-    // 移动
+    // 移动（直接冲向目标）
     moveToTarget() {
         if (!this.target?.IsValid() || this.isSkillCasting || this.isPreparingSkill || this.isReacquiringTarget || this.isBackingUp) return;
         if (this.type === 1 && this.stage === 2) return;
@@ -920,6 +922,7 @@ let tracker = {
             if(type === 1){
                 fire("s25_boss_weak_p0","start","",0);
                 fire("s25_boss_weak_p0","stop","",10);
+                fire("cmd","Command","say 兽の巨人进入虚弱状态!子弹伤害提升至"+VULNERABLE_DAMAGE_MULTIPLIER+"倍!",0);
             }
         }
         let dmg = 50;
@@ -1043,7 +1046,7 @@ let tracker = {
         this.skillCastDuration = duration;
         this.currentSkillType = skill;
         this.npc.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
-        this.thinkInterval = 0.05;
+        this.thinkInterval = 0.1;
     },
 
     endSkillCast() {
@@ -1221,4 +1224,4 @@ Instance.OnScriptInput("npcdeath", ({caller, activator}) => tracker.handlenpcdie
 Instance.OnScriptInput("npcdeath2", ({caller, activator}) => tracker.handlenpcdie2());
 Instance.OnScriptInput("boss_zhenji", ({caller, activator}) => tracker.zhenji());
 
-Instance.Msg("NPC追踪系统已加载");
+Instance.Msg("NPC追踪系统已加载（无避障，后退转向速度4倍）");
