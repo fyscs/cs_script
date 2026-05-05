@@ -41,6 +41,7 @@ Instance.OnScriptInput("PickTank", () => {
 
 Instance.OnScriptInput("Die", () => {
     if (currentTank && currentTank.IsValid()) {
+        currentTank.SetEntityName("");
         Instance.EntFireAtTarget({ target: currentTank, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: currentTank, input: "Alpha", value: 255 });
         currentTank.Kill();
@@ -60,6 +61,7 @@ Instance.OnScriptInput("Hit", () => {
 
 Instance.OnRoundStart(() => {
     if (currentTank && currentTank.IsValid()) {
+        currentTank.SetEntityName("");
         Instance.EntFireAtTarget({ target: currentTank, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: currentTank, input: "Alpha", value: 255 });
     }
@@ -86,6 +88,7 @@ Instance.OnRoundStart(() => {
  */
 function BecomeTank(pawn) {
     currentTank = pawn;
+    currentTank.SetEntityName("player_tank");
     currentTank.Teleport({ velocity: { x: 0, y: 0, z: 0 }});
     const position = currentTank.GetAbsOrigin();
     const angles = currentTank.GetEyeAngles();
@@ -97,8 +100,10 @@ function BecomeTank(pawn) {
             Instance.EntFireAtTarget({ target: entity, input: "Activate", activator: currentTank });
         } else if (entityName === "tank_yell_sound") {
             Instance.EntFireAtTarget({ target: entity, input: "StartSound" });
-        } else if (entityName !== "tank_phy_mm" && entityName !== "tank_phy" && entityName !== "tank_walk_sound" && entityName !== "tank_walk_sound_loop_timer" && entityName !== "tank_punch_sound") {
+        } else if (entityName === "tank_model") {
             Instance.EntFireAtTarget({ target: entity, input: "SetParent", value: "!activator", activator: currentTank });
+        } else if (entityName === "tank_concrete_camera_mm") {
+            Instance.EntFireAtTarget({ target: entity, input: "SetMeasureTarget", value: "player_tank" });
         }
     }
     Instance.EntFireAtName({ name: "become_tank_hudhint", input: "ShowHudHint", activator: currentTank });
