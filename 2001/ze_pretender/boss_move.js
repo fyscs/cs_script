@@ -495,7 +495,7 @@ const VOID_CONFIG = {
 const MILKHEILTER_CONFIG = {
 	HITBOX_NAME: "milkheilter_hitbox_1",
 	BOSS_BAR_NAME: "stage3_milkheilter_hp_bar",
-	BASE_HP: 5000,
+	BASE_HP: 6000,
 	CT_BONUS: 600,
 	HURT_DELTA: 20,
 	BAR_STEPS: 40

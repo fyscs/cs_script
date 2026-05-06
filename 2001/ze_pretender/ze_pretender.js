@@ -65,6 +65,7 @@ const state = {
         luckValue: 0
     },
     roundStartSnapshot: null,
+    healthUpdateTime: 0,
 
     vote: {
         active: true,
@@ -1521,27 +1522,6 @@ function UpdateMoneyDisplay() {
 }
 
 function SaveGameData() {
-    try {
-        const saveData = JSON.stringify({
-            totalWins: state.totalWins
-        });
-        Instance.SetSaveData(saveData);
-    } catch (error) {
-    }
-}
-
-function LoadGameData() {
-    try {
-        const saveData = Instance.GetSaveData();
-        if (saveData && saveData.length > 0) {
-            const parsed = JSON.parse(saveData);
-            state.totalWins = parsed.totalWins || 0;
-        } else {
-            state.totalWins = 0;
-        }
-    } catch (error) {
-        state.totalWins = 0;
-    }
 }
 
 function UpdateWinDisplay() {
@@ -1738,8 +1718,9 @@ function ApplyPillBonus() {
 
 function UpdateAllCTHealth() {
     const teamStats = GetCTTeamStats();
-    const players = GetCachedPlayers();
-    for (const player of players) {
+    cachedPlayerList = Instance.FindEntitiesByClass("player");
+    playerListCacheTime = Instance.GetGameTime();
+    for (const player of cachedPlayerList) {
         if (!player || !player.IsValid() || !IsCTPlayer(player)) {
             continue;
         }
@@ -2101,6 +2082,12 @@ function ProcessCooldowns() {
 
     let hasActive = false;
 
+    if (state.healthUpdateTime > 0 && now >= state.healthUpdateTime) {
+        state.healthUpdateTime = 0;
+        UpdateAllCTHealth();
+        UpdateAllDisplays();
+    }
+
     if (activatorStunState.size > 0) {
         hasActive = true;
         const toDelete = [];
@@ -2269,6 +2256,15 @@ Instance.OnPlayerActivate((event) => {
                 });
             }
         }
+
+        if (team === CT_TEAM) {
+            const teamStats = GetCTTeamStats();
+            const baseHP = 100;
+            const hpBonus = Math.min(teamStats.hpBonus || 0, MAX_LIMITS.MAX_HP_BONUS);
+            const newMaxHP = Math.min(baseHP + hpBonus, MAX_LIMITS.MAX_HP);
+            player.SetMaxHealth(newMaxHP);
+            player.SetHealth(newMaxHP);
+        }
     } catch (error) {
     }
 });
@@ -2315,6 +2311,8 @@ Instance.OnPlayerReset((event) => {
 
         player.SetMaxHealth(newMaxHP);
         player.SetHealth(newMaxHP);
+
+        UpdateAllDisplays();
     } catch (error) {
     }
 });
@@ -2374,8 +2372,8 @@ Instance.OnRoundStart(() => {
     milkmanState.clear();
     sandstormState.clear();
 
-    LoadGameData();
     SaveRoundStartSnapshot();
+    state.healthUpdateTime = Instance.GetGameTime() + 2.0;
 
     state.vote.active = true;
     state.vote.yesSlots = new Set();
@@ -2428,17 +2426,24 @@ Instance.OnRoundStart(() => {
 });
 
 Instance.OnRoundEnd((event) => {
-    if (event.winningTeam === CT_TEAM) {
+    const isCTWin = event.winningTeam === CT_TEAM;
+    const isDraw = event.winningTeam === 4;
+
+    if (isCTWin) {
         state.roundStartSnapshot = null;
     } else {
         RollbackToRoundStart();
+    }
+
+    if (!isCTWin) {
+        state.ctTeamStats.money = 0;
     }
 
     if (state.zmrandom.exSelectActive && !state.zmrandom.started) {
         ResetZMStateForNewRound();
     }
 
-    if (event.winningTeam === CT_TEAM) {
+    if (isCTWin) {
         Instance.EntFireAtName({
             name: "you_win",
             input: "StartSound"
@@ -3454,7 +3459,10 @@ function DropShopItemAtCaller(position, angles) {
         { template: "@temp_axemodel", name: "axe" },
         { template: "@temp_pushmodel", name: "push" },
         { template: "@temp_godshieldmodel", name: "godshield" },
-        { template: "@temp_ammomodel", name: "ammo" }
+        { template: "@temp_ammomodel", name: "ammo" },
+        { template: "@temp_pill", name: "pill" },
+        { template: "@temp_nukemini", name: "nukemini" },
+        { template: "@temp_random", name: "random" }
     ];
     
     const item = shopItems[Math.floor(Math.random() * shopItems.length)];
@@ -3808,8 +3816,15 @@ Instance.OnScriptInput("clear", (inputData) => {
     }
 });
 
+Instance.OnScriptInput("loadhp", (inputData) => {
+    try {
+        UpdateAllCTHealth();
+        Instance.ServerCommand("say HP properties refreshed for all CT players!");
+    } catch (error) {
+    }
+});
+
 Instance.OnActivate(() => {
-    LoadGameData();
     UpdateMoneyDisplay();
     UpdateAllDisplays();
     UpdateWinDisplay();
@@ -3884,6 +3899,27 @@ Instance.OnScriptInput("zmhome", (inputData) => {
 
         activator.Teleport({
             position: { x: -13212.8, y: 11068.4, z: -1415.69 },
+            angles: { pitch: 0, yaw: 90, roll: 0 },
+            velocity: { x: 0, y: 0, z: 0 },
+            angularVelocity: { x: 0, y: 0, z: 0 }
+        });
+    } catch (error) {
+    }
+});
+
+Instance.OnScriptInput("humanhome", (inputData) => {
+    try {
+        const activator = inputData?.activator;
+        if (!activator || !activator.IsValid()) {
+            return;
+        }
+
+        if (activator.GetClassName() !== "player") {
+            return;
+        }
+
+        activator.Teleport({
+            position: { x: -11042.2, y: 10727.7, z: -1356.91 },
             angles: { pitch: 0, yaw: 90, roll: 0 },
             velocity: { x: 0, y: 0, z: 0 },
             angularVelocity: { x: 0, y: 0, z: 0 }
@@ -4910,6 +4946,7 @@ Instance.OnScriptInput("randomuse", () => {
             for (let i = 0; i < propMap.length; i++) {
                 state.ctTeamStats[propMap[i]] = existingProps[i];
             }
+            UpdateAllDisplays();
             Instance.ServerCommand("say ** All properties are scrambled. **");
         } else {
             if (!state.zmrandom.enabled || state.zmrandom.selectedEvents.length === 0) {
@@ -4928,6 +4965,11 @@ Instance.OnScriptInput("randomuse", () => {
                 Instance.ServerCommand("say ** A random zmrandom has been triggered. **");
             }
         }
+        Instance.EntFireAtName({
+            name: "shop",
+            input: "RunScriptInput",
+            value: "buyluck"
+        });
     } catch (error) {
     }
 });
