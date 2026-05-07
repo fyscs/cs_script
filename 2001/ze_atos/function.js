@@ -1,7 +1,7 @@
 import { Instance, Entity, CSPlayerPawn, CSGearSlot, PointTemplate } from "cs_script/point_script";
 /**
  * 此脚本由皮皮猫233移植
- * 2026/3/27
+ * 2026/5/7
  */
 // let item_arc_lightning_pos1 = null;
 Instance.OnScriptInput("item_arc_lightning_pos1 <- null;", () => item_arc_lightning_pos1 = Vector(0, 0, 0));
@@ -1142,46 +1142,48 @@ function SpawnArcLightning(flag, activator) {
 		// 	}
 		if (targets && targets.length !== 0) {
 			// if (!isFind) {
-			for (const target of targets) {
+			for (let i = 0; i < targets.length; i++) {
+				const target = targets[i];
 				// if (target.GetTeam() == 2) {
-				if (target.GetTeamNumber() === 2) {
-					// item_arc_lightning_target.push(target);
-					// item_arc_lightning_pos2 = target.GetOrigin();
-					item_arc_lightning_pos2 = target.GetAbsOrigin();
-					item_arc_lightning_pos2 = ModifyOriginZ(item_arc_lightning_pos2, 48);
-					if (lightning1 && lightning2) {
-						// let name = target.GetName();
-						let name = target.GetEntityName();
-						if (name == "cure_user"
-							|| name == "alacrity_user"
-							|| name == "blackhole_user"
-							|| name == "rock_monster_user"
-							|| name == "rasengan_user"
-							|| name == "particle_gun_user") {
-							target.SetHealth(Math.ceil(target.GetHealth() / 2));
-						} else {
-							target.SetHealth(1000);
+				Delay(i * 0.1, () => {
+					if (target.GetTeamNumber() === 2) {
+						// item_arc_lightning_target.push(target);
+						// item_arc_lightning_pos2 = target.GetOrigin();
+						item_arc_lightning_pos2 = target.GetAbsOrigin();
+						item_arc_lightning_pos2 = ModifyOriginZ(item_arc_lightning_pos2, 48);
+						if (lightning1 && lightning2) {
+							// let name = target.GetName();
+							let name = target.GetEntityName();
+							if (name == "cure_user"
+								|| name == "alacrity_user"
+								|| name == "blackhole_user"
+								|| name == "rock_monster_user"
+								|| name == "rasengan_user"
+								|| name == "particle_gun_user") {
+								target.SetHealth(Math.ceil(target.GetHealth() / 2));
+							} else {
+								target.SetHealth(1000);
+							}
+							// lightning1.SetOrigin(item_arc_lightning_pos1);
+							// lightning2.SetOrigin(item_arc_lightning_pos2);
+							lightning1.Teleport({ position: item_arc_lightning_pos1 });
+							lightning2.Teleport({ position: item_arc_lightning_pos2 });
+							item_arc_lightning_pos1 = item_arc_lightning_pos2;
+							// EntFire("item_arc_lightning_beam", "TurnOn", "");
+							// EntFire("item_arc_lightning_beam", "TurnOff", "", 0.24);
+							EntFire("item_arc_lightning_beam", "Start", "");
+							EntFire("item_arc_lightning_beam", "Stop", "", 0.24);
+							for (let i = 0; i < 10; i++) {
+								// EntFire("speed", "ModifySpeed", "0", i * 0.1, target);
+								EntFireByHandle(target, "KeyValue", "speed 0.01", i * 0.1);
+							}
+							// EntFire("speed", "ModifySpeed", "1", 1, target);
+							EntFireByHandle(target, "KeyValue", "speed 1", 1);
+							EntFire("item_arc_lightning_sound", "SetLocalOrigin", ConvertOrigin(item_arc_lightning_pos1));
+							ChooseArcLightningSound(item_arc_lightning_target.length);
 						}
-						// lightning1.SetOrigin(item_arc_lightning_pos1);
-						// lightning2.SetOrigin(item_arc_lightning_pos2);
-						lightning1.Teleport({ position: item_arc_lightning_pos1 });
-						lightning2.Teleport({ position: item_arc_lightning_pos2 });
-						item_arc_lightning_pos1 = item_arc_lightning_pos2;
-						// EntFire("item_arc_lightning_beam", "TurnOn", "");
-						// EntFire("item_arc_lightning_beam", "TurnOff", "", 0.24);
-						EntFire("item_arc_lightning_beam", "Start", "");
-						EntFire("item_arc_lightning_beam", "Stop", "", 0.24);
-						for (let i = 0; i < 10; i++) {
-							// EntFire("speed", "ModifySpeed", "0", i * 0.1, target);
-							EntFireByHandle(target, "KeyValue", "speed 0.01", i * 0.1);
-						}
-						// EntFire("speed", "ModifySpeed", "1", 1, target);
-						EntFireByHandle(target, "KeyValue", "speed 1", 1);
-						EntFire("item_arc_lightning_sound", "SetLocalOrigin", ConvertOrigin(item_arc_lightning_pos1));
-						ChooseArcLightningSound(item_arc_lightning_target.length);
-					};
-					break;
-				}
+					}
+				});
 			}
 		}
 	}
@@ -2621,6 +2623,10 @@ function DirectionDetect() {
 	});
 	Delay(0.1, DirectionDetect);
 }
+
+Instance.OnPlayerKill((event) => {
+	Instance.EntFireAtTarget({ target: event.player, input: "Alpha", value: 255 });
+});
 
 /**
  * 旧版csgo API支持
