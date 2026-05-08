@@ -74,7 +74,7 @@ function Tick() {
         Skill_2();
         Skill_3();
         // Schedule next tick
-        Instance.SetNextThink(Instance.GetGameTime() + 0.02);
+        Instance.SetNextThink(Instance.GetGameTime() + 0.1);
     }
 }
 
