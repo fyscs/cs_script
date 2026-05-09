@@ -378,7 +378,7 @@ class BeanNPC {
 
 class BeanNPCManager {
     static instances = new Map();
-    static tickRate = 0.01;
+    static tickRate = 0.1;
     static lastTickTime = 0;
     static tickCount = 0;
 
