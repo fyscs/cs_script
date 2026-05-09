@@ -458,7 +458,7 @@ class Rocket {
 }
 
 Instance.SetThink(() => {
-    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
     Item001RocketManager.updateSlowedPlayers();
     for (const rocket of Item001RocketManager.instances.values()) {
         if (rocket?.rocketBase?.IsValid()) {
@@ -467,7 +467,7 @@ Instance.SetThink(() => {
         }
     }
 });
-Instance.SetNextThink(Instance.GetGameTime());
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 
 Instance.OnScriptInput("connect_rocket", (event) => {
     Item001RocketManager.connect(event.caller);
