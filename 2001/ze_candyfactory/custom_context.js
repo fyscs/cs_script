@@ -72,7 +72,7 @@ Instance.SetThink(() => {
     Instance.SetNextThink(Instance.GetGameTime() + 10.0);
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+Instance.SetNextThink(Instance.GetGameTime());
 
 Instance.OnScriptInput("clear_context", (event) => {
     clearAllContexts();

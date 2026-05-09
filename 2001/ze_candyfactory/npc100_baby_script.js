@@ -541,7 +541,7 @@ class BabyNPC {
 
 class BabyNPCManager {
     static instance = null;
-    static tickRate = 0.1;
+    static tickRate = 0.01;
     static lastTickTime = 0;
     static tickCount = 0;
 
