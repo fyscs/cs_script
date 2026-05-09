@@ -110,6 +110,7 @@ Instance.OnScriptInput("Die", ({ caller, activator }) => {
         Instance.EntFireAtName({ name: "music_win", input: "StartSound" });
         Instance.EntFireAtName({ name: "boss_win_pyramid", input: "Close", delay: 20.00 });
         Instance.EntFireAtName({ name: "boss_win_push", input: "Enable", delay: 60.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***PUSH WILL ENABLE IN 60 SECONDS***" });
         Instance.EntFireAtName({ name: "boss_win_push_particle", input: "Stop", delay: 59.90 });
         Instance.EntFireAtName({ name: "boss_win_push_particle", input: "Start", delay: 59.95 });
         Instance.EntFireAtName({ name: "boss_win_push_sound", input: "StartSound", delay: 59.98 });
@@ -169,6 +170,7 @@ Instance.OnScriptInput("SpawnEndWalls", ({ caller, activator }) => {
 	Instance.EntFireAtName({ name: "boss_win_pyramid", input: "Kill" });
 	Instance.EntFireAtName({ name: "boss_win_push", input: "Disable" });
 	Instance.EntFireAtName({ name: "fade_white_killboss", input: "Fade" });
+	Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***HUMANS ON BRIDGE WILL DIE IN 35 SECONDS***"});
 	Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***HUMANS MUST GO AND SLAY THE REMAINING ZOMBIES***", delay: 20.00 });
 	Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***STAYING BEHIND WILL RESULT IN DEATH***", delay: 21.00 });
 	Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***HUMANS BEHIND WILL NOW DIE***", delay: 35.00 });

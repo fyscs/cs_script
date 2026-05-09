@@ -474,6 +474,7 @@ Instance.OnScriptInput("RunNextEvent", () => {
     {
         Instance.EntFireAtName({ name: "shortcut0", input: "Open", delay: 1.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE OPENING IN 40 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***MAP by Luffaren. Port by Waffel***" });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE OPENING IN 20 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE OPENING IN 5 SECONDS***", delay: 35.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE IS OPENING***", delay: 40.00 });
@@ -496,7 +497,7 @@ Instance.OnScriptInput("RunNextEvent", () => {
     }
     else if(event == 2)
     {
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 30 SECONDS***", delay: 0.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR1 WILL OPEN IN 30 SECONDS***", delay: 0.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 10 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR IS OPENING***", delay: 30.00 });
         Instance.EntFireAtName({ name: "doorwood1", input: "Open", delay: 30.00 });
@@ -510,7 +511,7 @@ Instance.OnScriptInput("RunNextEvent", () => {
     {
         Instance.EntFireAtName({ name: "teleport_destination", input: "SetAbsOrigin", value: "-10055 1820 -7300" });
         Instance.EntFireAtName({ name: "teleport_destination", input: "KeyValue", value: "angles 0 90 0" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 40 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR2 WILL OPEN IN 40 SECONDS***" });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 10 SECONDS***", delay: 30.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR IS OPENING***", delay: 40.00 });
         Instance.EntFireAtName({ name: "doorwood2", input: "Open", delay: 40.00 });
@@ -595,8 +596,8 @@ Instance.OnScriptInput("RunNextEvent", () => {
     }
     else if(event == 10)
     {
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 30 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 10 SECONDS***", delay: 20.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR6 OPENING IN 30 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR6 OPENING IN 10 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR IS OPEN***", delay: 30.00 });
         Instance.EntFireAtName({ name: "door6", input: "Open", delay: 30.00 });
         Instance.EntFireAtName({ name: "levermodel_auto_11", input: "SetGlowRange", value: "1000", delay: 30.00 });
@@ -613,8 +614,8 @@ Instance.OnScriptInput("RunNextEvent", () => {
         Instance.EntFireAtName({ name: "trap_roller", input: "FireUser1", delay: trand + 1.70 });
         Instance.EntFireAtName({ name: "trap_hurt", input: "FireUser1", delay: trand + 1.95 });
         Instance.EntFireAtName({ name: "trap_roller", input: "Break", delay: trand + 2.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 30 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 10 SECONDS***", delay: 20.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR7 OPENING IN 30 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR7 OPENING IN 10 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR IS OPEN***", delay: 30.00 });
         Instance.EntFireAtName({ name: "door7", input: "Open", delay: 30.00 });
         Instance.EntFireAtName({ name: "levermodel_auto_12", input: "SetGlowRange", value: "1000", delay: 30.00 });
@@ -635,10 +636,10 @@ Instance.OnScriptInput("RunNextEvent", () => {
     else if(event == 12)
     {
         Instance.EntFireAtName({ name: "zombienooo", input: "FireUser1", delay: 10.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 40 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 20 SECONDS***", delay: 20.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 10 SECONDS***", delay: 30.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 5 SECONDS***", delay: 35.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 40 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 20 SECONDS***", delay: 20.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 10 SECONDS***", delay: 30.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 5 SECONDS***", delay: 35.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR IS OPENING***", delay: 40.00 });
         Instance.EntFireAtName({ name: "levermodel_auto_13", input: "SetGlowRange", value: "1000", delay: 40.00 });
         Instance.EntFireAtName({ name: "doorwood3", input: "Open", delay: 40.00 });
