@@ -1195,12 +1195,12 @@ let currentRoundRandomItems = [];
 
 const NPC_MOVE_CONFIG = {
     TICKRATE_IDLE: 1.8,
-    TICKRATE_ACTIVE: 0.02,
+    TICKRATE_ACTIVE: 0.1,
     TARGET_DISTANCE: 2000,
     TARGET_TIME: 5,
     FORWARD_TIMEOUT: 0.2,
     FRONT_ANGLE: 5,
-    FORWARD_SPEED: 500,
+    FORWARD_SPEED: 600,
     ANGULAR_SPEED: 500
 };
 
@@ -2433,10 +2433,6 @@ Instance.OnRoundEnd((event) => {
         state.roundStartSnapshot = null;
     } else {
         RollbackToRoundStart();
-    }
-
-    if (!isCTWin) {
-        state.ctTeamStats.money = 0;
     }
 
     if (state.zmrandom.exSelectActive && !state.zmrandom.started) {
@@ -4971,5 +4967,12 @@ Instance.OnScriptInput("randomuse", () => {
             value: "buyluck"
         });
     } catch (error) {
+    }
+});
+
+Instance.OnScriptInput("SetModel", (ctx) => {
+    const pawn = ctx.activator;
+    if (pawn && pawn.GetTeamNumber() === CT_TEAM) {
+        pawn.SetModel("models/player/wolfkk/models/mastermilk/mastermilk.vmdl");
     }
 });

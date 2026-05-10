@@ -13,7 +13,7 @@ const bananaState = {
 const SLIDE_SPEED = 150;
 const MIN_ANGULAR_SPEED = 270;
 const MAX_ANGULAR_SPEED = 720;
-const THINK_INTERVAL = 0.05;
+const THINK_INTERVAL = 0.1;
 const MAX_ACTIVE_PLAYERS = 8; 
 
 const spinState = {
