@@ -124,7 +124,7 @@ Instance.OnModifyPlayerDamage((event) => {
 
 Instance.SetThink(function () {
     const now = Instance.GetGameTime();
-    Instance.SetNextThink(now + 0.01);
+    Instance.SetNextThink(now + 0.1);
 
     // Because I don't want to fix all func_doors and func_movelinears
     ITEMS_LIST.forEach((item, id) => {
@@ -144,7 +144,7 @@ Instance.SetThink(function () {
     })
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 
 let ITEMS_LIST = [];
 
