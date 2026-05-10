@@ -3,7 +3,7 @@ import { Instance, PointTemplate, Entity } from "cs_script/point_script";
 /**
  * 油桶收集脚本
  * 此脚本由皮皮猫233编写
- * 2026/2/23
+ * 2026/5/6
  */
 
 let gasNumber = 0;
@@ -43,6 +43,11 @@ Instance.OnScriptInput("Add", (inputData) => {
     gasNumber ++;
     if (gasNumber < 26) {
         Instance.ServerCommand("say 当前油量" + gasNumber + "/26");
+        Instance.EntFireAtName({ name: "global_hudhint", input: "SetMessage", value: "当前油量" + gasNumber + "/26" });
+        const players = Instance.FindEntitiesByClass("player");
+        for (const player of players) {
+            Instance.EntFireAtName({ name: "global_hudhint", input: "ShowHudHint", activator: player });
+        }
         if (gasBgm === 1) {
             if (gasNumber >= 10) {
                 Instance.EntFireAtName({ name: "bgm_zombat_fadeout", input: "FireUser1" });

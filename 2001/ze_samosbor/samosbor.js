@@ -491,8 +491,8 @@ const Inputs = [
 ]
 
 const SKINS_LIST = [
-    { number: 1, path: "characters/models/waffel/rurune_bunny/rurune.vmdl" },
-    { number: 2, path: "characters/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" }
+    { number: 1, path: "agents/models/waffel/rurune_bunny/rurune.vmdl" },
+    { number: 2, path: "agents/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" }
 ]
 
 const MUSIC_LIST_MAIN = [
@@ -540,10 +540,10 @@ const MUSIC_LIST_MAIN = [
 let MUSIC_LIST = []
 
 let FLOOR_TYPE_CHANCE = [
-    { value: 0, weight: 70 },       // Normal Floor
-    { value: 1, weight: 13 },       // Freezy Floor
-    { value: 2, weight: 13 },       // Fiery Floor
-    { value: 3, weight: 4 }         // Black&White Floor
+    { value: 0, weight: 80 },       // Normal Floor
+    { value: 1, weight: 9 },        // Freezy Floor
+    { value: 2, weight: 9 },        // Fiery Floor
+    { value: 3, weight: 2 }         // Black&White Floor
 ]
 
 let MINI_BOSS_CHANCE = [
@@ -898,18 +898,15 @@ Instance.OnPlayerReset((event) => {
                 }
                 if(inst.BodyGroup == "1" && player.GetTeamNumber() === 3)
                 {
-                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,0" });
-                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,0" });
+                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,1" });
                 }
                 if(inst.BodyGroup == "2" && player.GetTeamNumber() === 3)
                 {
-                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,1" });
-                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,1" });
+                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,4" });
                 }
                 if(inst.BodyGroup == "3" && player.GetTeamNumber() === 3)
                 {
-                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,1" });
-                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,0" });
+                    Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,5" });
                 }
             }
         } 
@@ -1042,20 +1039,17 @@ Instance.OnPlayerChat((event) => {
             if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) == 1)
             {
                 inst.BodyGroup = "1"
-                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,0" });
-                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,0" });
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,1" });
             }
             if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) == 2)
             {
                 inst.BodyGroup = "2"
-                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,1" });
-                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,1" });
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,4" });
             }
             if(Number(text[1]) && Number(text[1]) > 0 && Number.isInteger(Number(text[1])) && Number(text[1]) == 3)
             {
                 inst.BodyGroup = "3"
-                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_armlets,1" });
-                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "rurune_thighs,0" });
+                Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,5" });
             }
         }
     }
@@ -1099,7 +1093,7 @@ Instance.OnScriptInput("SetSponsorSkin", ({ caller, activator }) => {
     const inst = PlayerInstancesMap.get(player_slot);
     if(inst.Sponsor || inst.Mapper || inst.Vip && inst.player.GetTeamNumber() === 3)
     {
-        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "characters/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" });
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" });
     }
 })
 
@@ -3053,10 +3047,10 @@ function ResetVariables()
         // CHANCES
         FAKE_EXIT_CHANCE[0].weight = 90;
         FAKE_EXIT_CHANCE[1].weight = 10;
-        FLOOR_TYPE_CHANCE[0].weight = 70;
-        FLOOR_TYPE_CHANCE[1].weight = 13;
-        FLOOR_TYPE_CHANCE[2].weight = 13;
-        FLOOR_TYPE_CHANCE[3].weight = 4;
+        FLOOR_TYPE_CHANCE[0].weight = 80;
+        FLOOR_TYPE_CHANCE[1].weight = 9;
+        FLOOR_TYPE_CHANCE[2].weight = 9;
+        FLOOR_TYPE_CHANCE[3].weight = 2;
     }
     if(isExtremeMode)
     {
