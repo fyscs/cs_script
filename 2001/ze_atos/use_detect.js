@@ -3,8 +3,9 @@ import { Instance, CSPlayerPawn, CSInputs, Entity } from "cs_script/point_script
 /**
  * E键检测脚本
  * 此脚本由于解决移植地图中的button神器检测方式导致的各种bug
+ * 此脚本为针对fys降低检测频率后的特供版本
  * 此脚本由皮皮猫233编写
- * 2026/3/26
+ * 2026/5/14
  */
  
 const itemButtonName = [
@@ -47,7 +48,7 @@ Instance.SetThink(() => {
             }
         }
     }
-    Instance.SetNextThink(Instance.GetGameTime());
+    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 });
 
 /**
@@ -57,7 +58,7 @@ Instance.SetThink(() => {
 function CheckPressingButton(button) {
     const player = /** @type {CSPlayerPawn|undefined} */ (button.GetParent()?.GetOwner());
     if (!player || !player.IsValid()) return;
-    if (player.WasInputJustPressed(CSInputs.USE)) {
+    if (player.IsInputPressed(CSInputs.USE)) {
         Instance.EntFireAtTarget({ target: button, input: "Press", activator: player });
     }
 }

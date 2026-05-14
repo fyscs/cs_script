@@ -65,7 +65,7 @@ class SmoothMoveManager {
     constructor() {
         this.activeMoves = new Map();
         this.waitingMultiStage = new Map(); // 等待中的多阶段移动
-        this.thinkInterval = 1/64;
+        this.thinkInterval = 1/10;
         this.setupEventHandlers();
         this.setupThink();
     }
