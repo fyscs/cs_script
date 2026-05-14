@@ -1,10 +1,10 @@
-import { Instance, CSPlayerPawn, CSGearSlot, CSInputs } from 'cs_script/point_script';
+//Instance.Msg { Instance, CSPlayerPawn, CSGearSlot, CSInputs } from 'cs_script/point_script';
 
 // SCRIPT BY TILGEP (hi)
 // STUFF THAT MIGHT NEED CHANGING FOR BALANCE
 let BLOCK_INFECTION = true; // Whether to block infection, licker can only use its abilities to kill
 // Lick Ability
-const LICK_COOLDOWN = 15; // Cooldown of lick ability (+use)
+const LICK_COOLDOWN = 25; // Cooldown of lick ability (+use)
 const TONGUE_LENGTH = 1500; // Max range of lick
 const TONGUE_SPEED = 2500; // Speed of tongue going out
 const TONGUE_SPEED_RETRACT = 4000; // Tongue missed, speed as it goes back
@@ -13,7 +13,7 @@ const TONGUE_RADIUS = 8; // Radius of the tongue
 const TONGUE_PHYSBOX_HP_BASE = 1000; // Base HP of grabbed CT physbox
 const TONGUE_PHYSBOX_HP_PER_CT = 25; // HP added per alive CT to grabbed physbox
 // Jump Ability
-const JUMP_COOLDOWN = 6; // Cooldown of jump ability (right click)
+const JUMP_COOLDOWN = 8; // Cooldown of jump ability (right click)
 const JUMP_FORCE = {
     forward: 800, // Force applied forward
     right: 0, // Force applied right
@@ -22,8 +22,7 @@ const JUMP_FORCE = {
 // Swipe Attack
 const SWIPE_COOLDOWN = 10; // Cooldown of swipe attack (left click)
 // Knockback options
-const KB_SCALE = 2.5; // Global knockback scale
-const LICKER_THINK_INTERVAL = 0.1;
+const KB_SCALE = 3; // Global knockback scale
 const ABILTY_KB_MODIFIER = {
     lick: 0, // Knockback scale during ability
     jump: 0.1,
@@ -36,6 +35,7 @@ const ABILTY_KB_MODIFIER = {
 const RAD_TO_DEG = 180 / Math.PI;
 const CS_TEAM_T = 2;
 const CS_TEAM_CT = 3;
+const THINK_INTERVAL = 0.1;
 // VECTOR UTILS
 function vec(_x, _y, _z) { return { x: _x, y: _y, z: _z }; }
 const VEC0 = { x: 0, y: 0, z: 0 };
@@ -403,12 +403,13 @@ function SetLicker(controller, pawn) {
     licker.model.entity.Teleport({ position: vecAdd(licker.pawn?.GetAbsOrigin(), vecScale(fwd, -20)), angles: ang });
     licker.model.entity.SetParent(licker.pawn);
     ticking = true;
-    Instance.SetNextThink(Instance.GetGameTime() + LICKER_THINK_INTERVAL);
+    lastTick = Instance.GetGameTime();
+    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
 }
 let lastTick = 0;
 Instance.SetThink(() => {
     if (ticking)
-        Instance.SetNextThink(Instance.GetGameTime() + LICKER_THINK_INTERVAL);
+        Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
     else
         return;
     if (!licker.player || !licker.player.IsValid() || !licker.pawn || !licker.pawn.IsValid() || lastTick == 0) {

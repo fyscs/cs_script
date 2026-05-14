@@ -444,7 +444,9 @@ class Euler {
 
 let idPool = 0;
 let tasks = [];
-const SCHEDULER_INTERVAL = 0.1;
+const SCHEDULER_TICK = 0.1;
+const NPC_TICK_INTERVAL = 0.1;
+const NPC_TICK_SCALE = 5;
 function setTimeout(callback, ms) {
 	const id = idPool++;
 	tasks.unshift({
@@ -484,19 +486,19 @@ function runSchedulerTick() {
 			task.callback();
 		}
 		catch (err) {
-			Instance.Msg('An error occurred inside a scheduler task');
+			//Instance.Msg('An error occurred inside a scheduler task');
 			if (err instanceof Error) {
-				Instance.Msg(err.message);
-				Instance.Msg(err.stack ?? '<no stack>');
+				//Instance.Msg(err.message);
+				//Instance.Msg(err.stack ?? '<no stack>');
 			}
 		}
 	}
 }
 Instance.SetThink(() => {
-	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_INTERVAL);
+	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_TICK);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_INTERVAL);
+Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_TICK);
 Instance.OnScriptReload({ after: (undefined$1) => {
 	CLEAR_ALL_INTERVAL = false;
 }});
@@ -757,7 +759,7 @@ class class_npc_zombie
 				return;
 			}
 			this.Tick();
-		}, 0.1 * 1000);
+		}, NPC_TICK_INTERVAL * 1000);
 	}
 
 	PostSpawn()
@@ -1107,7 +1109,7 @@ class class_npc_zombie
 		let vVelocity = {x: 0, y: 0, z: 0}
 		if (fDistance > fDistance_Limit)
 		{
-			let fSpeed = 100;
+			let fSpeed = 100 * NPC_TICK_SCALE;
 			let fLimit = this.fSpeed;
 			if (this.bCharge)
 			{
@@ -1228,7 +1230,7 @@ class class_npc_zombie
 				this.BreakBase()
 			}
 
-			Instance.Msg(`${aData.activator?.GetEntityName()} Damaged Npc ${aData.caller?.GetEntityName()}, Damage: ${item.damage} | Previous Hp: ${this.iHP_Base + item.damage} | Current Hp ${this.iHP_Base}`);
+			//Instance.Msg(`${aData.activator?.GetEntityName()} Damaged Npc ${aData.caller?.GetEntityName()}, Damage: ${item.damage} | Previous Hp: ${this.iHP_Base + item.damage} | Current Hp ${this.iHP_Base}`);
 		}
 	}
 	//
@@ -1363,9 +1365,9 @@ class class_npc_zombie
 				this.KillBaseFull();
 				return;
 			}
-			iAlpha -= 3;
+			iAlpha -= 6;
 			Instance.EntFireAtTarget({target: this.lModel, input: "Alpha", value: "" + iAlpha})
-		}, 0.1 * 1000);
+		}, SCHEDULER_TICK * 1000);
 
 		}, fDelay * 1000);
 	}
@@ -1764,7 +1766,7 @@ function Input_Item_Damage_NPC(aData)
 	{
 		return;
 	}
-	Instance.Msg(`PhysBox GetDamage From ${aData.activator?.GetEntityName()}`);
+	//Instance.Msg(`PhysBox GetDamage From ${aData.activator?.GetEntityName()}`);
 	class_NPC.ItemDamage(aData)
 }
 
@@ -1868,5 +1870,5 @@ function getPosKey(vec)
 	return `${Math.floor(vec.x)}_${Math.floor(vec.y)}_${Math.floor(vec.z)}`;
 }
 
-Instance.Msg("Script Loaded!");
+//Instance.Msg("Script Loaded!");
 OnRoundStart()

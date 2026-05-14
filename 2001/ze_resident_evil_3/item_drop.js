@@ -1,8 +1,9 @@
 import { Instance } from 'cs_script/point_script';
 
+const SCHEDULER_TICK = 0.1;
+
 let idPool = 0;
 let tasks = [];
-const SCHEDULER_INTERVAL = 0.1;
 
 function setTimeout(callback, ms) {
 	const id = idPool++;
@@ -45,10 +46,10 @@ function runSchedulerTick() {
 			task.callback();
 		}
 		catch (err) {
-			Instance.Msg('An error occurred inside a scheduler task');
+			//Instance.Msg('An error occurred inside a scheduler task');
 			if (err instanceof Error) {
-				Instance.Msg(err.message);
-				Instance.Msg(err.stack ?? '<no stack>');
+				//Instance.Msg(err.message);
+				//Instance.Msg(err.stack ?? '<no stack>');
 			}
 		}
 	}
@@ -72,7 +73,7 @@ Instance.OnScriptInput("PickUp_Kar", (Activator_Caller_Data) => {
     Kar_Owner = Activator_Caller_Data.activator;
     Kar_Owner.SetEntityName("Kar_Owner")
 
-    Instance.EntFireAtName({name: "kar_mm", input: "SetMeasureTarget", value: "Kar_Owner", delay: 0.1});
+    Instance.EntFireAtName({name: "kar_mm", input: "SetMeasureTarget", value: "Kar_Owner", delay: 0.02});
 
     const hTimer = setInterval(() =>
     {
@@ -89,7 +90,7 @@ Instance.OnScriptInput("PickUp_Kar", (Activator_Caller_Data) => {
 
             return;
         }
-    }, 0.1 * 1000);
+    }, SCHEDULER_TICK * 1000);
 })
 
 function IsValidAlive(player)
@@ -111,7 +112,7 @@ Instance.OnRoundEnd((stuff) => {
     CLEAR_ALL_INTERVAL = true;
 });
 Instance.SetThink(() => {
-	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_INTERVAL);
+	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_TICK);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_INTERVAL);
+Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_TICK);

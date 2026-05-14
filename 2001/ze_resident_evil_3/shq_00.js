@@ -10,7 +10,7 @@ import { Instance } from 'cs_script/point_script';
 // 8 Антоний и Клеопатра (1606)
 // 9 Кориолан (1607–1608)
 // 0 Тимон Афинский (1607–1608)
-Instance.Msg(`asd`)
+////Instance.Msg(`asd`)
 class Vec3 {
 	x;
 	y;
@@ -30,7 +30,7 @@ class Vec3 {
 	}
 }
 
-Instance.Msg(`45`)
+////Instance.Msg(`45`)
 let g_hButtons = [];
 let g_iCode = "";
 let g_iPressCode = "";
@@ -39,33 +39,33 @@ let g_Dir_x = 1;
 let g_Dir_y = 0;
 let g_Size = 8.40;
 
-Instance.Msg(`IzxcT`)
+////Instance.Msg(`IzxcT`)
 
 function OnRoundStart()
 {
-	Instance.EntFireAtName({name: "shq_script", input: "RunScriptInput", value: "Init", delay: 0.1})
+	Instance.EntFireAtName({name: "shq_script", input: "RunScriptInput", value: "Init", delay: 0.02})
 }
 
 Instance.OnScriptInput("Init", () => {Init()})
 
 function Init()
 {
-    Instance.Msg(`INIT SCRIPT`)
+    ////Instance.Msg(`INIT SCRIPT`)
     g_hButtons = [];
     let aButtons = ["00", "01", "02", "03", "04", "05", "06", "07", "08", "09"];
-    Instance.Msg(`322`)
+    ////Instance.Msg(`322`)
     g_iCode = "";
     g_iPressCode = "";
 
     if (aButtons.length === 0) {
-        Instance.Msg(`ERROR: aButtons is empty!`);
+        ////Instance.Msg(`ERROR: aButtons is empty!`);
         return;
     }
 
     for (let i = 0; i < 6; i++)
     {
         if (aButtons.length === 0) {
-            Instance.Msg(`ERROR: Not enough buttons! Only ${i} generated.`);
+            ////Instance.Msg(`ERROR: Not enough buttons! Only ${i} generated.`);
             break;
         }
         
@@ -74,7 +74,7 @@ function Init()
         const Ent = Instance.FindEntityByName(szName);
         
         if (!Ent) {
-            Instance.Msg(`ERROR: Entity not found: ${szName}`);
+            ////Instance.Msg(`ERROR: Entity not found: ${szName}`);
             continue;
         }
         
@@ -82,11 +82,11 @@ function Init()
         if (buttonValue && buttonValue[1]) {
             g_iCode += buttonValue[1];
         } else {
-            Instance.Msg(`ERROR: Invalid button value: ${buttonValue}`);
+            ////Instance.Msg(`ERROR: Invalid button value: ${buttonValue}`);
             g_iCode += "?";
         }
         
-        Instance.Msg(`INIT SCRIPT`)
+        ////Instance.Msg(`INIT SCRIPT`)
 
         aButtons.splice(iRandomValue, 1);
         const vecSet = new Vec3(g_vecButtonsSpawn.x + g_hButtons.length * g_Dir_x * g_Size, 
@@ -95,15 +95,15 @@ function Init()
 
         Instance.EntFireAtTarget({ target: Ent, input: "KeyValue", value: `origin ${vecSet.x} ${vecSet.y} ${vecSet.z}`});
 
-        Instance.Msg(`520 ${g_vecButtonsSpawn.y + g_hButtons.length * g_Dir_y * g_Size}`)
+        ////Instance.Msg(`520 ${g_vecButtonsSpawn.y + g_hButtons.length * g_Dir_y * g_Size}`)
         g_hButtons.push(Ent);
-        Instance.Msg(`INIT SCRIPT ${vecSet.x} ${vecSet.y} ${vecSet.z} `)
+        ////Instance.Msg(`INIT SCRIPT ${vecSet.x} ${vecSet.y} ${vecSet.z} `)
     }
     
-    Instance.Msg(`123`)
-    Instance.EntFireAtName({name: "shq_original", input: "SetMessage", value: g_iCode})
-    Instance.Msg(`zxc`)
-    Instance.Msg(`${g_iCode}`);
+    ////Instance.Msg(`123`)
+    //Instance.EntFireAtName({name: "shq_original", input: "SetMessage", value: g_iCode})
+    ////Instance.Msg(`zxc`)
+    ////Instance.Msg(`${g_iCode}`);
 }
 function PressButton(ID)
 {

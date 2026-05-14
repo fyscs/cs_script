@@ -41,7 +41,7 @@ Instance.OnScriptInput("SetSpeedX2", ({ caller, activator }) => {
 
 Instance.OnScriptInput("AttackSpeed", ({ caller, activator }) => {
     SPEED_FORWARD -= 100;
-    Instance.Msg("SOSAL?");
+    //Instance.Msg("SOSAL?");
 });
 
 Instance.OnScriptInput("SetSpeedX220", ({ caller, activator }) => {
@@ -71,7 +71,7 @@ function SetEntities()
         }
         else
         {
-            Instance.Msg("Can't Find: "+boss_model);
+            //Instance.Msg("Can't Find: "+boss_model);
         }
     }
 	if(!bmphy?.IsValid() )
@@ -83,7 +83,7 @@ function SetEntities()
         }
         else
         {
-            Instance.Msg("Can't Find: "+boss_move_physbox);
+            //Instance.Msg("Can't Find: "+boss_move_physbox);
         }
     }
 }
@@ -94,7 +94,7 @@ Instance.OnScriptInput("Start", () => {
 		// AutoDetectEntities();
         SetEntities();
 	    ticking = true;
-		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: TICKRATE });
+		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: 0.00 });
 	}
 });
 
@@ -180,16 +180,16 @@ function SearchTarget()
 		{
 			let rnd_player = candidates[GetRandomInt(0, candidates.length - 1)]
 			p = rnd_player;
-			Instance.Msg(`TARGET: ${p?.GetPlayerController()?.GetPlayerName()}`);
+			//Instance.Msg(`TARGET: ${p?.GetPlayerController()?.GetPlayerName()}`);
             return;
         } 
 		else 
 		{
-            Instance.Msg("No alive players found");
+            //Instance.Msg("No alive players found");
 			return null;
         }
 	}
-	Instance.Msg("Physbox not valid");
+	//Instance.Msg("Physbox not valid");
 	return null;
 }
 
