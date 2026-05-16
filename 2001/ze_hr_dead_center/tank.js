@@ -3,8 +3,9 @@ import { CSPlayerPawn, Instance } from "cs_script/point_script";
 /**
  * Tank获取脚本
  * 已针对风云社更改为随机挑选玩家成为Tank
+ * 已针对风云社修复Tank伤害无效问题
  * 此脚本由皮皮猫233编写
- * 2026/5/1
+ * 2026/5/16
  */
 
 // let enableTank = false;
@@ -88,6 +89,7 @@ Instance.OnRoundStart(() => {
  */
 function BecomeTank(pawn) {
     currentTank = pawn;
+    currentTank.SetHealth(100000);
     currentTank.SetEntityName("player_tank");
     currentTank.Teleport({ velocity: { x: 0, y: 0, z: 0 }});
     const position = currentTank.GetAbsOrigin();
@@ -98,12 +100,15 @@ function BecomeTank(pawn) {
         const entityName = entity.GetEntityName();
         if (entityName === "tank_ui") {
             Instance.EntFireAtTarget({ target: entity, input: "Activate", activator: currentTank });
+            Instance.EntFireAtTarget({ target: entity, input: "AddOutput", value: "OnCase02>tank_concrete_hurt*>KeyValue>damagetype 65536>0.1>-1" });
         } else if (entityName === "tank_yell_sound") {
             Instance.EntFireAtTarget({ target: entity, input: "StartSound" });
         } else if (entityName === "tank_model") {
             Instance.EntFireAtTarget({ target: entity, input: "SetParent", value: "!activator", activator: currentTank });
         } else if (entityName === "tank_concrete_camera_mm") {
             Instance.EntFireAtTarget({ target: entity, input: "SetMeasureTarget", value: "player_tank" });
+        } else if (entityName === "tank_hurt") {
+            Instance.EntFireAtTarget({ target: entity, input: "KeyValue", value: "damagetype 65536" });
         }
     }
     Instance.EntFireAtName({ name: "become_tank_hudhint", input: "ShowHudHint", activator: currentTank });
