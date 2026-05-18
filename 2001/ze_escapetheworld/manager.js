@@ -35,3 +35,24 @@ let players = Instance.FindEntitiesByClass("player");
             }
         }
 };
+let level = 1;
+Instance.OnRoundStart(() => {
+    Instance.Msg(level);
+    Instance.EntFireAtName("lv_case","InValue",level,0);
+});
+
+Instance.OnScriptInput("lv1", () => {
+  level = 1;
+});
+Instance.OnScriptInput("lv2", () => {
+  level = 2;
+  });
+Instance.OnScriptInput("lv3", () => {
+  level = 3;
+});
+Instance.OnScriptInput("lv4", () => {
+  level = 4;
+});
+Instance.OnScriptInput("lv5", () => {
+  level = 5;
+});
