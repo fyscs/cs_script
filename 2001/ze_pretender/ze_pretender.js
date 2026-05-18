@@ -1379,7 +1379,7 @@ function StartNpcMovement(inputData) {
     }
     state.npcMovementEnabled = true;
     state.npcMovement.set(caller, new NpcMover(caller));
-    Instance.SetNextThink(0.02);
+    Instance.SetNextThink(0.1);
 }
 
 function StopNpcMovement(inputData) {

@@ -158,7 +158,7 @@ if (this.dashState === DashState.WINDUP) {
 		if (elapsed >= DASH_CONFIG.WINDUP_TIME) {
 			this.StartDash();
 		}
-		this.nextTickAt = now + 0.05;
+		this.nextTickAt = now + 0.1;
 		return true;
 	}
   if (this.dashState === DashState.DASHING) {
@@ -167,7 +167,7 @@ if (this.dashState === DashState.WINDUP) {
       } else {
           this.UpdateDashMovement();
       }
-      this.nextTickAt = now + 0.02;
+      this.nextTickAt = now + 0.1;
       return true;
   }
 if (this.dashState === DashState.COOLDOWN) {
@@ -572,7 +572,7 @@ if (!caller || !caller.IsValid()) {
 }
 state.bossMovementEnabled = true;
 state.bossMovement.set(caller, new BossMover(caller));
-Instance.SetNextThink(0.02);
+Instance.SetNextThink(0.1);
 }
 function StopBossMovement(inputData) {
 const caller = inputData?.caller;
@@ -627,7 +627,7 @@ return hasActive;
 }
 Instance.SetThink(() => {
     if (state.bossMovementEnabled && ProcessBossMovement()) {
-        Instance.SetNextThink(0.02);
+        Instance.SetNextThink(0.1);
         return;
     } else if (state.bossMovementEnabled) {
         Instance.SetNextThink(0.1);
