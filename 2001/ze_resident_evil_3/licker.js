@@ -1,4 +1,4 @@
-//Instance.Msg { Instance, CSPlayerPawn, CSGearSlot, CSInputs } from 'cs_script/point_script';
+import { Instance, CSPlayerPawn, CSGearSlot, CSInputs } from 'cs_script/point_script';
 
 // SCRIPT BY TILGEP (hi)
 // STUFF THAT MIGHT NEED CHANGING FOR BALANCE
@@ -35,7 +35,6 @@ const ABILTY_KB_MODIFIER = {
 const RAD_TO_DEG = 180 / Math.PI;
 const CS_TEAM_T = 2;
 const CS_TEAM_CT = 3;
-const THINK_INTERVAL = 0.1;
 // VECTOR UTILS
 function vec(_x, _y, _z) { return { x: _x, y: _y, z: _z }; }
 const VEC0 = { x: 0, y: 0, z: 0 };
@@ -403,13 +402,12 @@ function SetLicker(controller, pawn) {
     licker.model.entity.Teleport({ position: vecAdd(licker.pawn?.GetAbsOrigin(), vecScale(fwd, -20)), angles: ang });
     licker.model.entity.SetParent(licker.pawn);
     ticking = true;
-    lastTick = Instance.GetGameTime();
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 }
 let lastTick = 0;
 Instance.SetThink(() => {
     if (ticking)
-        Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+        Instance.SetNextThink(Instance.GetGameTime() + 0.1);
     else
         return;
     if (!licker.player || !licker.player.IsValid() || !licker.pawn || !licker.pawn.IsValid() || lastTick == 0) {

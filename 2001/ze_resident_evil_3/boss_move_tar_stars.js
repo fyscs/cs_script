@@ -97,7 +97,7 @@ Instance.OnScriptInput("Start", () => {
 		// AutoDetectEntities();
         SetEntities();
 	    ticking = true;
-		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: 0.00 });
+		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: TICKRATE });
 	}
 });
 
