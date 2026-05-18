@@ -10,7 +10,7 @@ import { Instance, CSInputs } from "cs_script/point_script";
 
 const CONFIG = {
     MAX_DISTANCE: 500,        // 触发和维持的最大距离
-    PULL_SPEED: 80,          // 玩家2在XY平面受到的吸力速度
+    PULL_SPEED: 160,          // 玩家2在XY平面受到的吸力速度
     MAX_DAMAGE_LIMIT: 1000,     // 玩家1断开连接的最大承受伤害
     HOOK_DURATION: 10,       // 钩子最大持续时间（秒）
     HOOK_COOLDOWN: 60,       // 钩子冷却时间（秒）
@@ -48,7 +48,7 @@ class Hook {
         const eyeAngles = this.player1.GetEyeAngles();
         const forwardVec = getForward(eyeAngles);
         const endPos = vectorAdd(eyePos, vectorScale(forwardVec, CONFIG.MAX_DISTANCE));
-        const ignoreEntities = [this.player1, Instance.FindEntitiesByClass("func_button")];
+        const ignoreEntities = [this.player1, ...zombies];
 
         const trace = Instance.TraceLine({
             start: eyePos,
@@ -80,6 +80,10 @@ class Hook {
         message = "你被 " + this.player1.GetPlayerController().GetPlayerName() + " 钩住了";
         Instance.EntFireAtName({ name: CONFIG.HUD_P2_NAME + "_" + this.slot, input: "SetMessage", value: message });
         Instance.EntFireAtName({ name: CONFIG.HUD_P2_NAME + "_" + this.slot, input: "ShowHudHint", activator: this.player2 });
+
+        // 更新p1速度与状态
+        Instance.EntFireAtTarget({ target: this.player1, input: "keyvalue", value: "absvelocity 0 0 0" });
+        Instance.EntFireAtTarget({ target: this.player1, input: "keyvalue", value: "movetype 0" });
 
         // 更新一次目标位置
         const target = Instance.FindEntityByName(CONFIG.ROPE_TARGET_NAME + "_" + this.slot);
@@ -193,6 +197,12 @@ class Hook {
      */
     updateParticle() {
         Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "Start" });
+        const source = Instance.FindEntityByName(CONFIG.ROPE_START_NAME + "_" + this.slot);
+        if (source) {
+            let origin = this.player1.GetAbsOrigin();
+            origin.z += 40;
+            source.Teleport({ position: origin });
+        }
         const target = Instance.FindEntityByName(CONFIG.ROPE_TARGET_NAME + "_" + this.slot);
         if (target) {
             let origin = this.player2.GetAbsOrigin();
@@ -202,30 +212,18 @@ class Hook {
     }
 
     /** 
-     * 更新玩家1状态
-     */
-    updatePlayer1() {
-        let p1Vel = this.player1.GetAbsVelocity();
-        this.player1.Teleport({
-            velocity: { x: 0, y: 0, z: p1Vel.z }
-        });
-    }
-
-    /** 
      * 更新玩家2状态
      */
     updatePlayer2() {
-        let p2Pos = this.player2.GetAbsOrigin();
-        let dirToP1 = vectorSubtract(this.player1.GetAbsOrigin(), p2Pos);
+        let dirToP1 = vectorSubtract(this.player1.GetAbsOrigin(), this.player2.GetAbsOrigin());
         dirToP1.z = 0; // 只取 XY 平面方向
         dirToP1 = normalize(dirToP1);
 
-        let p2Vel = this.player2.GetAbsVelocity();
         this.player2.Teleport({
             velocity: {
                 x: dirToP1.x * CONFIG.PULL_SPEED,
                 y: dirToP1.y * CONFIG.PULL_SPEED,
-                z: p2Vel.z // 保留 Z 轴速度，允许下落或跳跃
+                z: this.player2.GetAbsVelocity().z // 保留 Z 轴速度，允许下落或跳跃
             }
         });
     }
@@ -241,6 +239,8 @@ class Hook {
         // 粒子销毁
         Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "DestroyImmediately"});
         Instance.EntFireAtName({ name: CONFIG.ROPE_START_NAME + "_" + this.slot, input: "Stop", delay: 0.1 });
+        // 恢复移动
+        Instance.EntFireAtTarget({ target: this.player1, input: "keyvalue", value: "movetype 2" });
         // 状态更新
         this.isActive = false;
         this.player2 = null;
@@ -255,6 +255,12 @@ const hooks = new Map();
  * 主函数
  */
 Instance.SetThink(() => {
+    zombies.length = 0;
+    players.forEach((player) => {
+        if (player.GetTeamNumber() == 2) {
+            zombies.push(player);
+        }
+    });
     hooks.forEach((hook, player) => {
         if (!hook.isActive) {
             hook.checkReady();
@@ -268,7 +274,6 @@ Instance.SetThink(() => {
         if (!hook.checkLinkTime()) return;
 
         hook.updateParticle();
-        hook.updatePlayer1();
         hook.updatePlayer2();
     });
     Instance.SetNextThink(Instance.GetGameTime() + 0.1);
@@ -309,6 +314,22 @@ Instance.OnScriptInput("register", (inputData) => {
 
     Instance.Msg("hook registered for player: " + player.GetPlayerController().GetPlayerName() + " in slot: " + slot);
 })
+
+// 维护玩家列表
+const players = new Map();
+const zombies = [];
+
+Instance.OnPlayerConnect((event) => {
+    const player = event.player;
+    if (!players.has(player.GetPlayerSlot())) {
+        players.set(player.GetPlayerSlot(), player);
+    }
+});
+
+Instance.OnPlayerDisconnect((event) => {
+    const playerSlot = event.playerSlot;
+    players.delete(playerSlot);
+});
 
 // 通用计算函数
 function getForward(angles) {
