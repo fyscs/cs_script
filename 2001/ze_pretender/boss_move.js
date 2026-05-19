@@ -598,7 +598,7 @@ if (!caller || !caller.IsValid()) {
 }
 const mover = state.bossMovement.get(caller);
 if (mover && mover.TriggerDash()) {
-  Instance.SetNextThink(0.02);
+  Instance.SetNextThink(0.1);
 }
 }
 function ProcessBossMovement() {
