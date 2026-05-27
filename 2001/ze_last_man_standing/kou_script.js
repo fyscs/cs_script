@@ -1410,6 +1410,19 @@ class BossHpSystem extends BaseSystem {
         Instance.OnScriptInput("StartBossHp", () => this.start());
         Instance.OnScriptInput("SubtractBossHp", () => this.subtract());
         Instance.OnScriptInput("GetBossHPPercent", () => this.display());
+        Instance.OnRoundStart(() => this.resetOnRoundStart());
+    }
+
+    resetOnRoundStart() {
+        if (this.active) 
+        this.hp = 0;
+        this.maxHp = 0;
+        this.active = false;
+        this.lastPhaseIndex = 0;
+        this.lastDisplayPercent = 100;
+        this.checkTimer = 0; 
+        this.bossFound = false; 
+        this.timeoutTimer = 0;
     }
 
     start() {
@@ -1496,7 +1509,6 @@ class BossHpSystem extends BaseSystem {
             } else {
                 this.timeoutTimer += 1.0; 
                 if (this.timeoutTimer >= 10.0) {
-                    utils.printl("BossHpSystem: Boss实体长时间未找到，强制结束。");
                     this.triggerDeath();
                 }
             }
