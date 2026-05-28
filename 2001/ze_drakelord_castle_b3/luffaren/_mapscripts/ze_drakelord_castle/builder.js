@@ -3081,36 +3081,36 @@ function SlotmachinePressed(heart, inputData) {
             const act = Rands([50.00, 30.00, 20.00]);
             if (act === 1) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: `health ${activator.GetHealth() + 100}`, delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** BUFF --- ${playerName} health +100 **`, delay: 0.90 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 增益 --- ${playerName} 血量 +100 **`, delay: 0.90 });
             } else if (act === 2) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "speed 1.50", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** BUFF --- ${playerName} speed up (1.50) **`, delay: 0.90 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 增益 --- ${playerName} 加速 (1.50) **`, delay: 0.90 });
             } else if (act === 3) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "gravity 0.40", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** BUFF --- ${playerName} gravity low (0.40) **`, delay: 0.90 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 增益 --- ${playerName} 低重力 (0.40) **`, delay: 0.90 });
             }
         } else if (res === 2) {
             if (boundModel) Instance.EntFireAtTarget({ target: boundModel, input: "FireUser2", delay: 1.00 });
             const act = Rands([50.00, 30.00, 20.00]);
             if (act === 1) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "health 1", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEBUFF --- ${playerName} health 1 **`, delay: 1.00 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 减益 --- ${playerName} 血量 1 **`, delay: 1.00 });
             } else if (act === 2) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "speed 0.50", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEBUFF --- ${playerName} speed down (0.50) **`, delay: 1.00 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 减益 --- ${playerName} 减速 (0.50) **`, delay: 1.00 });
             } else if (act === 3) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "gravity 1.50", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEBUFF --- ${playerName} gravity high (1.50) **`, delay: 1.00 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 减益 --- ${playerName} 高重力 (1.50) **`, delay: 1.00 });
             }
         } else if (res === 3) {
             if (boundModel) Instance.EntFireAtTarget({ target: boundModel, input: "FireUser3", delay: 1.05 });
-            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** REWARD --- ${playerName} health +300, speed 2.00, gravity 0.30 **`, delay: 1.05 });
+            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 奖励 --- ${playerName} 血量 +300, 速度 2.00, 重力 0.30 **`, delay: 1.05 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: `health ${activator.GetHealth() + 300}`, delay: 1.00 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "speed 2.00", delay: 1.00 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "gravity 0.30", delay: 1.00 });
         } else if (res === 4) {
             if (boundModel) Instance.EntFireAtTarget({ target: boundModel, input: "FireUser4", delay: 1.10 });
-            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEATH --- ${playerName} health ${Math.floor(activator.GetHealth() / 2)}, ignited **`, delay: 1.10 });
+            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 惩罚--- ${playerName} 血量 ${Math.floor(activator.GetHealth() / 2)}, 燃烧 **`, delay: 1.10 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: `health ${Math.floor(activator.GetHealth() / 2)}`, delay: 1.00 });
             Instance.EntFireAtTarget({ target: activator, input: "IgniteLifetime", value: "100", delay: 1.00 });
         }
