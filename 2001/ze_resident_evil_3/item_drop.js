@@ -2,6 +2,8 @@ import { Instance } from 'cs_script/point_script';
 
 let idPool = 0;
 let tasks = [];
+const SCHEDULER_THINK_INTERVAL = 0.1;
+const KAR_OWNER_CHECK_INTERVAL = 0.1;
 
 function setTimeout(callback, ms) {
 	const id = idPool++;
@@ -88,7 +90,7 @@ Instance.OnScriptInput("PickUp_Kar", (Activator_Caller_Data) => {
 
             return;
         }
-    }, 0.1 * 1000);
+    }, KAR_OWNER_CHECK_INTERVAL * 1000);
 })
 
 function IsValidAlive(player)
@@ -110,8 +112,8 @@ Instance.OnRoundEnd((stuff) => {
     CLEAR_ALL_INTERVAL = true;
 });
 Instance.SetThink(() => {
-	// Drive scheduled tasks at the minimum accepted interval.
-	Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+	// This has to run every tick
+	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);

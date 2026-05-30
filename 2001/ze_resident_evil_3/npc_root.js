@@ -444,6 +444,9 @@ class Euler {
 
 let idPool = 0;
 let tasks = [];
+const SCHEDULER_THINK_INTERVAL = 0.1;
+const NPC_TICK_INTERVAL = 0.1;
+const NPC_FADE_INTERVAL = 0.1;
 function setTimeout(callback, ms) {
 	const id = idPool++;
 	tasks.unshift({
@@ -492,11 +495,11 @@ function runSchedulerTick() {
 	}
 }
 Instance.SetThink(() => {
-	// Drive scheduled tasks at the minimum accepted interval.
-	Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+	// This has to run every tick
+	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
 Instance.OnScriptReload({ after: (undefined$1) => {
 	CLEAR_ALL_INTERVAL = false;
 }});
@@ -757,7 +760,7 @@ class class_npc_zombie
 				return;
 			}
 			this.Tick();
-		}, 0.1 * 1000);
+		}, NPC_TICK_INTERVAL * 1000);
 	}
 
 	PostSpawn()
@@ -1365,7 +1368,7 @@ class class_npc_zombie
 			}
 			iAlpha -= 6;
 			Instance.EntFireAtTarget({target: this.lModel, input: "Alpha", value: "" + iAlpha})
-		}, 0.1 * 1000);
+		}, NPC_FADE_INTERVAL * 1000);
 
 		}, fDelay * 1000);
 	}

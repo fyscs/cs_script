@@ -8,7 +8,7 @@ Instance.OnScriptInput("ChangeSkin", ({activator}) => {
         const player = activator;
         const player_c = player?.GetPlayerController();
         const player_p = player_c?.GetPlayerPawn();
-        player_p?.SetModel("characters/models/microrost/jill_valentine.vmdl");
+        player_p?.SetModel("characters/models/microrost/jill_val.vmdl");
     }   
 });
 

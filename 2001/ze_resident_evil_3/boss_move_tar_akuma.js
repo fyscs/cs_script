@@ -226,6 +226,11 @@ function SetGraduallyAng(ang_t, ent)
     {
         ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y - add_gs), roll: ent.GetAbsAngles().roll} });
     }
+    else
+    {
+        ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_t), roll: ent.GetAbsAngles().roll} });
+        return 0;
+    }
     return ang_dif
 }
 
