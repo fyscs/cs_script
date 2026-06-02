@@ -796,7 +796,7 @@ Instance.OnScriptInput("TeleportItemsGoToBoss", () => {
     Instance.EntFireAtName({ name: "item_holder_1", input: "SetAbsOrigin", value: "8645 -11900 13350" });
 });
 //// Remove DICK SKINS
-////
+//
 //Instance.OnScriptInput("SkinJarJarBinks", ({ caller, activator }) => {
 //    const player = activator;
 //    const player_controller = player?.GetPlayerController();
@@ -832,18 +832,19 @@ Instance.OnScriptInput("SkinSanta", ({ caller, activator }) => {
         player.SetModel("agents/models/luffaren/santa.vmdl");
     }
 });
-
-Instance.OnScriptInput("SkinMisterMuscle", ({ caller, activator }) => {
-    const player = activator;
-    const player_controller = player?.GetPlayerController();
-    const player_slot = player_controller?.GetPlayerSlot();
-    const inst = PlayerInstancesMap.get(player_slot);
-    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
-    {
-        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/mister_muscle.vmdl" });
-        player.SetModel("agents/models/luffaren/mister_muscle.vmdl");
-    }
-});
+//Remove Muscle Man
+//
+//Instance.OnScriptInput("SkinMisterMuscle", ({ caller, activator }) => {
+//    const player = activator;
+//    const player_controller = player?.GetPlayerController();
+//    const player_slot = player_controller?.GetPlayerSlot();
+//    const inst = PlayerInstancesMap.get(player_slot);
+//    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
+//    {
+//        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/mister_muscle.vmdl" });
+//        player.SetModel("agents/models/luffaren/mister_muscle.vmdl");
+//    }
+//});
 
 Instance.OnScriptInput("GiveTrail", ({ caller, activator }) => {
     const player = activator;
