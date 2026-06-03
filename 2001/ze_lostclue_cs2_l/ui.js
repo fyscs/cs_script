@@ -1,119 +1,98 @@
-import { Instance, CSGearSlot as CSGearSlot$1 } from "cs_script/point_script";
+import { Instance, CSInputs, CSGearSlot as CSGearSlot$1 } from "cs_script/point_script";
 
-// State Variables
+// ==========================================
+// 全局状态变量
+// ==========================================
 let BOSS_Alive = false;
 let Skilltick1 = false;
 let Skilltick2 = false;
 let Skilltick3 = false;
 
-// Key State Variables
-let g_key_A1 = false; // Attack 1
-let g_key_A2 = false; // Attack 2
-let g_key_W = false;
-let g_key_S = false;
-let g_key_A = false;
-let g_key_D = false;
+
+let g_hOwner = null;
 
 Instance.Msg("Launch ui.js");
 
-// --------------------------------------------------------------------------
-// Input Handling
-// --------------------------------------------------------------------------
+function GetBossPawn() {
+    if (!g_hOwner || !g_hOwner.IsValid()) return null;
+    
+    // 如果传入的是 Controller，则获取它的 Pawn
+    if (g_hOwner.GetClassName() === "cs_player_controller") {
+        return g_hOwner.GetPlayerPawn();
+    }
+    return g_hOwner; // 直接返回
+}
+
+// ==========================================
+// Logic & Skills
+// ==========================================
 
 Instance.OnScriptInput("Start", (inputData) => {
-
-    let g_hOwner = inputData.activator;
+    // 赋值全局变量
+    g_hOwner = inputData.activator;
 
     if (g_hOwner && g_hOwner.IsValid()) {
         g_hOwner.SetEntityName("g_hOwner"); 
         Instance.Msg("g_hOwner set: "+ g_hOwner.GetClassName());
     }
 
-    Instance.EntFireAtName({ name: "boss_ui", input: "Activate", caller: g_hOwner, activator: g_hOwner });
-
     BOSS_Alive = true;
     
-    // Start the Tick loop using the Think system
+    // 开始Tick循环
     Instance.SetThink(Tick);
     Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 
     if (g_hOwner && g_hOwner.IsValid()) {
-        // Teleport owner to start position
-        g_hOwner.Teleport({ position: { x: 6920, y: -376.5, z: -1684.5 } }); 
+        // 
+        g_hOwner.Teleport({ position: { x: 6928, y: -848, z: -1580 } }); 
     }
 });
 
-// --------------------------------------------------------------------------
-// Key Bindings (Inputs)
-// --------------------------------------------------------------------------
-
-Instance.OnScriptInput("Press_AT1", () => { g_key_A1 = true; });
-Instance.OnScriptInput("UnPress_AT1", () => { g_key_A1 = false; });
-Instance.OnScriptInput("Press_AT2", () => { g_key_A2 = true; });
-Instance.OnScriptInput("UnPress_AT2", () => { g_key_A2 = false; });
-
-Instance.OnScriptInput("Press_W", () => { g_key_W = true; });
-Instance.OnScriptInput("UnPress_W", () => { g_key_W = false; });
-
-Instance.OnScriptInput("Press_A", () => { g_key_A = true; });
-Instance.OnScriptInput("UnPress_A", () => { g_key_A = false; });
-
-Instance.OnScriptInput("Press_S", () => { g_key_S = true; });
-Instance.OnScriptInput("UnPress_S", () => { g_key_S = false; });
-
-Instance.OnScriptInput("Press_D", () => { g_key_D = true; });
-Instance.OnScriptInput("UnPress_D", () => { g_key_D = false; });
-
-// --------------------------------------------------------------------------
-// Logic & Skills
-// --------------------------------------------------------------------------
-
 function Tick() {
     if (BOSS_Alive) {
-        Skill_1();
-        Skill_2();
-        Skill_3();
-        // Schedule next tick
+        let pawn = GetBossPawn();
+        // 确保存活并且有效时再判定技能
+        if (pawn && pawn.IsValid() && pawn.IsAlive()) {
+            Skill_1(pawn);
+            Skill_2(pawn);
+            Skill_3(pawn);
+        }
+        
+        // 循环执行 Tick
         Instance.SetNextThink(Instance.GetGameTime() + 0.1);
     }
 }
 
-function Skill_1() {
-    if (g_key_A2) {
+function Skill_1(pawn) {
+    // 对应Attack 2 / 鼠标右键
+    if (pawn.IsInputPressed(CSInputs.ATTACK2)) {
         if (!Skilltick1) {
             Skilltick1 = true;
-            // EntFire replacements
+            
             Instance.EntFireAtName({ name: "prop_boss", input: "SetAnimationNoResetLooping", value: "zbs_attack_justiceSwing" });
             Instance.EntFireAtName({ name: "swing", input: "PlaySound", delay: 0.1 });
             Instance.EntFireAtName({ name: "jusitc_hurt", input: "Enable" });
             
-            // Note: player_speed entity assumed to exist
-            if(g_hOwner) {
-                Instance.EntFireAtName({ name: "boss_skill_1", input: "Trigger" });
-            }
+            Instance.EntFireAtName({ name: "boss_skill_1", input: "Trigger" });
 
             Instance.EntFireAtName({ name: "jusitc_hurt", input: "Disable", delay: 0.2 });
             Instance.EntFireAtName({ name: "prop_boss", input: "SetAnimationLooping", value: "zbs_run", delay: 2.0 });
 
-            // Reset cooldown using a JS timeout wrapper or EntFire self
             Instance.EntFireAtName({ name: "ui", input: "RunScriptInput", value: "ResetSkill1", delay: 5.0 });
         }
     }
 }
-
 Instance.OnScriptInput("ResetSkill1", () => { Skilltick1 = false; });
-// --------------------------------------------------------------------------
 
-function Skill_2() {
-    if (g_key_W && g_key_S) {
+function Skill_2(pawn) {
+    // 对应 W + S / 前进 + 后退
+    if (pawn.IsInputPressed(CSInputs.FORWARD) && pawn.IsInputPressed(CSInputs.BACK)) {
         if (!Skilltick2) {
             Skilltick2 = true;
             Instance.EntFireAtName({ name: "prop_boss", input: "SetAnimationNoResetLooping", value: "zbs_attack_shockwave" });
             Instance.EntFireAtName({ name: "shockwave", input: "PlaySound", delay: 0.1 });
 
-            if(g_hOwner) {
-                Instance.EntFireAtName({ name: "boss_skill_2", input: "Trigger" });
-            }
+            Instance.EntFireAtName({ name: "boss_skill_2", input: "Trigger" });
 
             Instance.EntFireAtName({ name: "drop_trigger", input: "Enable", delay: 2.0 });
             Instance.EntFireAtName({ name: "shock_part", input: "Start", delay: 2.5 });
@@ -125,12 +104,11 @@ function Skill_2() {
         }
     }
 }
-
 Instance.OnScriptInput("ResetSkill2", () => { Skilltick2 = false; });
-// --------------------------------------------------------------------------
 
-function Skill_3() {
-    if (g_key_W && g_key_A1) {
+function Skill_3(pawn) {
+    // 对应W + Attack1 / 前进 + 鼠标左键
+    if (pawn.IsInputPressed(CSInputs.FORWARD) && pawn.IsInputPressed(CSInputs.ATTACK)) {
         if (!Skilltick3) {
             Skilltick3 = true;
             Instance.EntFireAtName({ name: "prop_boss", input: "SetAnimationNoResetLooping", value: "zbs_attack_mahadash" });
@@ -148,19 +126,29 @@ function Skill_3() {
         }
     }
 }
-
 Instance.OnScriptInput("ResetSkill3", () => { Skilltick3 = false; });
-// --------------------------------------------------------------------------
+
+
+// ==========================================
+// 其它事件与接口
+// ==========================================
 
 Instance.OnScriptInput("Deatch", () => {
     BOSS_Alive = false;
     Instance.EntFireAtName({ name: "bosskill", input: "FindEntity" });
-    let g_hOwner = null;
-});;
+    g_hOwner = null; // 清除记录
+});
 
 Instance.OnScriptInput("StripKnife", (inputData) => {
     let activator = inputData.activator;
-    activator.DestroyWeapon(activator.FindWeaponBySlot(CSGearSlot$1.KNIFE));
+    if (activator && activator.IsValid()) {
+        // @ts-ignore
+    const knife = activator.FindWeaponBySlot(CSGearSlot$1.KNIFE);
+    if (knife) {
+        // @ts-ignore
+        activator.DestroyWeapon(knife);
+    }
+    }
 });
 
 Instance.OnScriptInput("Czmplayer", () => {
@@ -168,31 +156,21 @@ Instance.OnScriptInput("Czmplayer", () => {
     if (check == undefined || !check.IsValid()) {
         Instance.EntFireAtName({ name: "Czmplayer_relay", input: "Trigger" });
     }
-    else {
-        Instance.Msg("boss玩家还在场地中持续输出");
-    }
 });
 
 // --- 回合重置 ---
 Instance.OnRoundStart(() => {
-    // 重置所有数组，防止引用旧实体 
+    // 释放实体
+    if (g_hOwner && g_hOwner.IsValid()) {
+        g_hOwner.SetEntityName(""); 
+    }
 
-    g_hOwner.SetEntityName(""); 
+    // 重置全局状态
+    BOSS_Alive = false;
+    Skilltick1 = false;
+    Skilltick2 = false;
+    Skilltick3 = false;
+    g_hOwner = null;
 
-    // Key State Variables
-    let g_key_A1 = false; // Attack 1
-    let g_key_A2 = false; // Attack 2
-    let g_key_W = false;
-    let g_key_S = false;
-    let g_key_A = false;
-    let g_key_D = false;
-
-    // State Variables
-    let BOSS_Alive = false;
-    let Skilltick1 = false;
-    let Skilltick2 = false;
-    let Skilltick3 = false;
-
-    let g_hOwner = null;
-    Instance.Msg("LaunchUI: 回合开始，清空标记名单。");
+    Instance.Msg("LaunchUI: 回合开始，清空标记名单");
 });
