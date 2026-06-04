@@ -1310,11 +1310,13 @@ class TeleportSystem extends BaseSystem {
         if (globalcoords) {
             Object.keys(globalcoords).forEach(key => {
                 Instance.OnScriptInput(key, () => this.setGlobal(key));
+                Instance.EntFireAtName({ name: "fys_servercmd", input: "Command", value: "OverrideRoundTime 660", delay: 60.00 , limit: 1}); //roundtime 11min
             });
         }
         if (stagecoords) {
             Object.keys(stagecoords).forEach(key => {
                 Instance.OnScriptInput(key, () => this.setStage(key));
+                Instance.EntFireAtName({ name: "fys_servercmd", input: "Command", value: "OverrideRoundTime 660", delay: 60.00 , limit: 1}); //roundtime 11min
             });
         }
     }
