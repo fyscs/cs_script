@@ -200,7 +200,7 @@ const stagecoords = {
 const LangData = {
     CHS: { 
         cmd: {
-            welcome: "当前语言: 中文 / 脚本: 红. / 版本: v4.1",
+            welcome: "当前语言: 中文 / 脚本: 红. / 版本: v4.2",
             mapInfo1: "++ 地图制作: HANNIBAL[SPA] / Rafuron ++",
             mapInfo2: "++ 特别感谢: George / Sgt.zuff ++",
             mapinfo3: "++ CS2移植: Source2 ZE / 魔改&脚本: kou. ++",
@@ -706,7 +706,7 @@ const LangData = {
     },
     ENG: { 
         cmd: {
-            welcome: "Current language: English / Script v4.1 by kou.",
+            welcome: "Current language: English / Script v4.2 by kou.",
             mapInfo1: "++ Map by HANNIBAL[SPA] / Rafuron ++",
             mapInfo2: "++ Special thanks George / Sgt.zuff ++",
             mapinfo3: "++ CS2 port by Source2 ZE / Modify and script by kou. ++",
@@ -1310,13 +1310,11 @@ class TeleportSystem extends BaseSystem {
         if (globalcoords) {
             Object.keys(globalcoords).forEach(key => {
                 Instance.OnScriptInput(key, () => this.setGlobal(key));
-                Instance.EntFireAtName({ name: "fys_servercmd", input: "Command", value: "OverrideRoundTime 660", delay: 60.00 , limit: 1}); //roundtime 11min
             });
         }
         if (stagecoords) {
             Object.keys(stagecoords).forEach(key => {
                 Instance.OnScriptInput(key, () => this.setStage(key));
-                Instance.EntFireAtName({ name: "fys_servercmd", input: "Command", value: "OverrideRoundTime 660", delay: 60.00 , limit: 1}); //roundtime 11min
             });
         }
     }
@@ -1597,35 +1595,6 @@ class HpLimiterSystem extends BaseSystem {
     restoreState(data) { if(data) { this.active = data.active; this.limit = data.limit; } }
 }
 
-// 护甲重置
-class ArmorSystem extends BaseSystem {
-    constructor(controller) {
-        super(controller);
-        this.active = false;
-        this.armorValue = 1000;
-        this.timer = 0;
-
-        Instance.OnScriptInput("armorstart", () => { this.active = true; });
-        Instance.OnScriptInput("armorstop", () => { this.active = false; });
-    }
-
-    update(dt, validPlayers) {
-        if (!this.active) return;
-        this.timer += dt;
-        if (this.timer < 3.0) return; // 检查间隔
-        this.timer = 0;
-
-        for (const p of validPlayers) {
-            if (p.pawn.GetTeamNumber() === 2) {
-                p.pawn.SetArmor(this.armorValue);
-            }
-        }
-    }
-    
-    saveState() { return { active: this.active, armorValue: this.armorValue }; }
-    restoreState(data) { if(data) { this.active = data.active; this.armorValue = data.armorValue; } }
-}
-
 // 主控
 class GameSystemController {
     constructor() {
@@ -1645,7 +1614,6 @@ class GameSystemController {
         this.subsystems.set("boss_hp", new BossHpSystem(this));
         this.subsystems.set("language", new LanguageManager(this));
         this.subsystems.set("hp_limiter", new HpLimiterSystem(this));
-        this.subsystems.set("armor", new ArmorSystem(this));
     }
 
     registerGlobalCommands() {
