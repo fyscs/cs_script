@@ -488,11 +488,14 @@ const Inputs = [
     ["Admin_SamosborTime_Add1", "OnPressed", "-60", ChangeSamosborTime, 0.00],
     ["Admin_SamosborDamage_Sub1", "OnPressed", "1", ChangeSamosborDamage, 0.00],
     ["Admin_SamosborDamage_Add1", "OnPressed", "-1", ChangeSamosborDamage, 0.00],
+    ["Admin_ElevatorHumansCheck_Disable", "OnPressed", "0", ChangeElevatorHumansCheck, 0.00],
+    ["Admin_ElevatorHumansCheck_Enable", "OnPressed", "1", ChangeElevatorHumansCheck, 0.00],
 ]
 
 const SKINS_LIST = [
     { number: 1, path: "agents/models/waffel/rurune_bunny/rurune.vmdl" },
-    { number: 2, path: "agents/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" }
+    { number: 2, path: "agents/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" },
+    { number: 3, path: "agents/models/waffel/kipfel/kipfel_cherry/kipfel_cherry.vmdl" }
 ]
 
 const MUSIC_LIST_MAIN = [
@@ -557,8 +560,8 @@ let DEAD_END_CHANCE = [
 ]
 
 let FAKE_EXIT_CHANCE = [
-    { value: 0, weight: 90 },       // FALSE
-    { value: 1, weight: 10 },       // TRUE
+    { value: 0, weight: 100 },       // FALSE
+    { value: 1, weight: 0 },         // TRUE
 ]
 
 let BOTTLE_CHANCE = [
@@ -636,6 +639,8 @@ let pre_isChunksShuffle = true;
 let isChunksShuffle = true;
 let pre_isSamosborTimer = false;
 let isSamosborTimer = false;
+let pre_isElevatorHumansCheck = true;
+let isElevatorHumansCheck = true;
 let isSamosborTimerStop = false;
 let isSamosborHurt = true;
 
@@ -721,6 +726,8 @@ class Player {
         this.Vip = false;
         this.Leader = false;
         this.Sponsor = false;
+        this.SetSponsorSkin = false;
+        this.Lastims = false;
         this.Skin = "";
         this.BodyGroup = "";
         this.Glowsticks = 0;
@@ -748,6 +755,10 @@ class Player {
     SetSponsor()
     {
         this.Sponsor = true;
+    }
+    SetLastims()
+    {
+        this.Lastims = true;
     }
     AddGlowstick()
     {
@@ -807,6 +818,20 @@ Instance.OnScriptInput("SetSponsor", ({caller, activator}) => {
         if(inst && !inst.Sponsor) 
         {
             inst.SetSponsor();
+        }
+    }
+});
+
+Instance.OnScriptInput("SetLastims", ({caller, activator}) => {
+    if(activator)
+    {
+        const player = activator;
+        const player_controller = player?.GetPlayerController();
+        const player_slot = player_controller?.GetPlayerSlot();
+        const inst = PlayerInstancesMap.get(player_slot);
+        if(inst && !inst.Lastims) 
+        {
+            inst.SetLastims();
         }
     }
 });
@@ -884,6 +909,10 @@ Instance.OnPlayerReset((event) => {
         Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti4", input: "TestActivator", activator: player, delay: 0.10 });
         Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti5", input: "TestActivator", activator: player, delay: 0.10 });
         Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti6", input: "TestActivator", activator: player, delay: 0.10 });
+        Instance.EntFireAtName({ name: "SteamID_Sponsor_FilterMulti7", input: "TestActivator", activator: player, delay: 0.10 });
+        // Lastims
+        Instance.EntFireAtName({ name: "SteamID_Sponsor8_Filter", input: "TestActivator", activator: player, delay: 0.10 });
+        //
         if(PlayerInstancesMap.has(player_slot))
         {
             const inst = PlayerInstancesMap.get(player_slot);
@@ -1091,9 +1120,30 @@ Instance.OnScriptInput("SetSponsorSkin", ({ caller, activator }) => {
     const player_controller = player?.GetPlayerController();
     const player_slot = player_controller?.GetPlayerSlot();
     const inst = PlayerInstancesMap.get(player_slot);
-    if(inst.Sponsor || inst.Mapper || inst.Vip && inst.player.GetTeamNumber() === 3)
+    if((inst.Sponsor || inst.Mapper || inst.Vip) && inst.player.GetTeamNumber() === 3 && !inst.SetSponsorSkin)
     {
+        inst.SetSponsorSkin = true;
         Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" });
+        Instance.EntFireAtTarget({ target: inst.player, input: "RemoveContext", value: "isSponsorSkin" });
+        Instance.EntFireAtTarget({ target: inst.player, input: "RemoveContext", value: "isSponsorSkin2" });
+    }
+})
+
+Instance.OnScriptInput("SetSponsorSkin2", ({ caller, activator }) => {
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if((inst.Sponsor || inst.Mapper || inst.Vip) && inst.player.GetTeamNumber() === 3 && !inst.SetSponsorSkin)
+    {
+        inst.SetSponsorSkin = true;
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/waffel/kipfel/kipfel_cherry/kipfel_cherry.vmdl" });
+        Instance.EntFireAtTarget({ target: inst.player, input: "RemoveContext", value: "isSponsorSkin" });
+        Instance.EntFireAtTarget({ target: inst.player, input: "RemoveContext", value: "isSponsorSkin2" });
+    }
+    if(inst.Lastims && inst.player.GetTeamNumber() === 3)
+    {
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,3", delay: 0.02 });
     }
 })
 
@@ -1372,14 +1422,21 @@ Instance.OnScriptInput("CountPlayersInElevator", ({ caller, activator }) => {
         let players_needed = (players_human.length/100) * 60;
         let players_total = players_human.length;
         players_needed = Math.ceil(players_needed);
-        if(players_in_elevator >= players_needed || players_total <= 20)
+        if(isElevatorHumansCheck)
         {
-            Instance.EntFireAtName({ name: "Map_Elevator_Warning", input: "HideHudHint", value: "", delay: 0.00, activator: activator });
-            Instance.EntFireAtName({ name: "Elevator_Branch*", input: "Toggle", value: "", delay: 0.00 });
+            if(players_in_elevator >= players_needed || players_total <= 20)
+            {
+                Instance.EntFireAtName({ name: "Map_Elevator_Warning", input: "HideHudHint", value: "", delay: 0.00, activator: activator });
+                Instance.EntFireAtName({ name: "Elevator_Branch*", input: "Toggle", value: "", delay: 0.00 });
+            }
+            if(players_in_elevator <= players_needed && players_total > 20)
+            {
+                Instance.EntFireAtName({ name: "Map_Elevator_Warning", input: "ShowHudHint", value: "", delay: 0.00, activator: activator });
+            }
         }
-        if(players_in_elevator <= players_needed && players_total > 20)
+        else
         {
-            Instance.EntFireAtName({ name: "Map_Elevator_Warning", input: "ShowHudHint", value: "", delay: 0.00, activator: activator });
+            Instance.EntFireAtName({ name: "Elevator_Branch*", input: "Toggle", value: "", delay: 0.00 });
         }
     }
 });
@@ -2259,6 +2316,21 @@ function ChangeSamosborDamage(arg)
     Instance.EntFireAtName({ name: "Admin_SamosborDamage_Value", input: "SetMessage", value: pre_samosbordamage, delay: 0.00 })
 }
 
+function ChangeElevatorHumansCheck(arg)
+{
+    if(arg == "1")
+    {
+        pre_isElevatorHumansCheck = true;
+        Instance.EntFireAtName({ name: "Admin_ElevatorHumansCheck_Bool", input: "SetMessage", value: "ENABLED", delay: 0.00 })
+
+    }
+    if(arg == "0")
+    {
+        pre_isElevatorHumansCheck = false;
+        Instance.EntFireAtName({ name: "Admin_ElevatorHumansCheck_Bool", input: "SetMessage", value: "DISABLED", delay: 0.00 })
+    }
+}
+
 //               _           __             _      
 //   /\/\   __ _(_)_ __     / /  ___   __ _(_) ___ 
 //  /    \ / _` | | '_ \   / /  / _ \ / _` | |/ __|
@@ -2270,8 +2342,8 @@ Instance.OnScriptInput("SpawnFloor", () => {
     ResetFloor();
     if(floor == 0)
     {
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "Unlock" })
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "Unlock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "Lock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "Lock" })
         UpdateVariables();
     }
     // MINI BOSS FIGHT
@@ -2364,9 +2436,13 @@ Instance.OnScriptInput("SpawnFloor", () => {
                     //Instance.Msg("ENABLE CHUNKS 2")
                     Instance.EntFireAtName({ name: "Map_Chunk_Case_Even", input: "AddOutput", value: "OnCase02>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_04>0>-1" })
                     Instance.EntFireAtName({ name: "Map_Chunk_Case_Even", input: "AddOutput", value: "OnCase04>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_08>0>-1" })
+                    Instance.EntFireAtName({ name: "Map_Chunk_Case_Even", input: "AddOutput", value: "OnCase13>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_26>0>-1" })
+                    Instance.EntFireAtName({ name: "Map_Chunk_Case_Odd", input: "AddOutput", value: "OnCase14>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_27>0>-1" })
 
                     Instance.EntFireAtName({ name: "Map_Chunk_CaseNotShuffle2", input: "AddOutput", value: "OnCase04>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_04>0>-1" })
                     Instance.EntFireAtName({ name: "Map_Chunk_CaseNotShuffle2", input: "AddOutput", value: "OnCase08>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_08>0>-1" })
+                    Instance.EntFireAtName({ name: "Map_Chunk_CaseNotShuffle2", input: "AddOutput", value: "OnCase26>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_26>0>-1" })
+                    Instance.EntFireAtName({ name: "Map_Chunk_CaseNotShuffle2", input: "AddOutput", value: "OnCase27>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_27>0>-1" })
                     enable_chunks2 = true;
                 }
             }
@@ -2374,7 +2450,7 @@ Instance.OnScriptInput("SpawnFloor", () => {
             {
                 if(!enable_chunks3)
                 {
-                    //Instance.Msg("ENABLE CHUNKS 3")
+                    //Instance.Msg("ENABLE CHUNKS 4")
                     Instance.EntFireAtName({ name: "Map_Chunk_Case_Odd", input: "AddOutput", value: "OnCase06>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_11>0>-1" })
 
                     Instance.EntFireAtName({ name: "Map_Chunk_CaseNotShuffle2", input: "AddOutput", value: "OnCase11>Preset_Maker_M*>KeyValue>EntityTemplate Temp_Chunk_11>0>-1" })
@@ -3043,10 +3119,11 @@ function ResetVariables()
         pre_isVipMode = false;
         pre_isChunksShuffle = true;
         pre_isSamosborTimer = false;
+        pre_isElevatorHumansCheck = true;
 
         // CHANCES
-        FAKE_EXIT_CHANCE[0].weight = 90;
-        FAKE_EXIT_CHANCE[1].weight = 10;
+        FAKE_EXIT_CHANCE[0].weight = 100;
+        FAKE_EXIT_CHANCE[1].weight = 0;
         FLOOR_TYPE_CHANCE[0].weight = 80;
         FLOOR_TYPE_CHANCE[1].weight = 9;
         FLOOR_TYPE_CHANCE[2].weight = 9;
@@ -3074,6 +3151,7 @@ function ResetVariables()
         pre_isVipMode = false;
         pre_isChunksShuffle = true;
         pre_isSamosborTimer = true;
+        pre_isElevatorHumansCheck = true;
 
         // CHANCES
         FAKE_EXIT_CHANCE[0].weight = 0;
@@ -3162,6 +3240,10 @@ function ResetScript()
             {
                 inst.SetNotVotedExtreme();
             }
+            if(inst.SetSponsorSkin)
+            {
+                inst.SetSponsorSkin = false;
+            }
         }
     }
 
@@ -3196,6 +3278,7 @@ function UpdateVariables()
     isVipMode = pre_isVipMode;
     isChunksShuffle = pre_isChunksShuffle;
     isSamosborTimer = pre_isSamosborTimer;
+    isElevatorHumansCheck = pre_isElevatorHumansCheck;
     Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "SetMinChunks", delay: 0.00 });
     if(isFallDamage)
     {
@@ -3300,6 +3383,14 @@ function ResetAdminWorldText()
     if(!isSamosborTimer)
     {
         Instance.EntFireAtName({ name: "Admin_SamosborTimer_Bool", input: "SetMessage", value: "DISABLED", delay: 0.00 })
+    }
+    if(isElevatorHumansCheck)
+    {
+        Instance.EntFireAtName({ name: "Admin_ElevatorHumansCheck_Bool", input: "SetMessage", value: "ENABLED", delay: 0.00 })
+    }
+    if(!isElevatorHumansCheck)
+    {
+        Instance.EntFireAtName({ name: "Admin_ElevatorHumansCheck_Bool", input: "SetMessage", value: "DISABLED", delay: 0.00 })
     }
     Instance.EntFireAtName({ name: "Admin_MaxMiniBosses_Value", input: "SetMessage", value: miniboss_max, delay: 0.00 })
     Instance.EntFireAtName({ name: "Admin_MaxFloors_Value", input: "SetMessage", value: floors_max - 1, delay: 0.00 })
