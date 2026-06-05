@@ -11,6 +11,7 @@ class Player {
         this.slot = slot;
         this.Luffaren = false;
         this.Patron = false;
+        this.Trail = false;
     }
     SetLuffaren()
     {
@@ -82,6 +83,14 @@ Instance.OnPlayerReset((event) => {
             inst.player = player;
             inst.controller = player_controller;
             inst.name = player_name;
+            inst.Trail = false;
+            if(inst.Luffaren)
+            {
+                let sprite = Instance.FindEntityByName("luffaren_sprite");
+                let pos = inst.player.GetAbsOrigin();
+                sprite.Teleport({ position: { x: pos.x, y: pos.y, z: pos.z + 80 } });
+                sprite?.SetParent(inst.player);
+            }
         } 
         else 
         {
@@ -128,7 +137,7 @@ Instance.SetThink(function () {
 
     // Because I don't want to fix all func_doors and func_movelinears
     ITEMS_LIST.forEach((item, id) => {
-        if(item.parent.GetClassName().includes("weapon_"))
+        if(item.parent && item.parent?.IsValid() && item.parent.GetClassName().includes("weapon_"))
         {
             const owner = item.parent.GetOwner();
             if(owner && owner != undefined)
@@ -142,6 +151,17 @@ Instance.SetThink(function () {
             }
         }
     })
+
+    PatronTrail_List.forEach((trail) => {
+        if(!trail.GetParent().IsValid() || !trail.GetParent().IsAlive() || trail.GetParent().GetTeamNumber() != 3)
+        {
+            let index = PatronTrail_List.indexOf(trail);
+            PatronTrail_List.splice(index, 1);
+            trail.Remove();
+        }
+    })
+
+    // Instance.Msg(PatronTrail_List[0])
 });
 
 Instance.SetNextThink(Instance.GetGameTime() + 0.1);
@@ -150,6 +170,9 @@ let ITEMS_LIST = [];
 
 const SCRIPT = "EternalGrove_Script"
 const SCRIPT_FOG = "FogController_Script"
+
+let Temp_PatronTrail = undefined;
+let PatronTrail_List = [];
 
 let WARMUP = true;
 let event = 0;
@@ -772,7 +795,8 @@ Instance.OnScriptInput("TeleportItemsGoToBoss", () => {
     Instance.EntFireAtName({ name: "item_holder_2", input: "SetAbsOrigin", value: "8490 -12170 13350" });
     Instance.EntFireAtName({ name: "item_holder_1", input: "SetAbsOrigin", value: "8645 -11900 13350" });
 });
-
+//// Remove DICK SKINS
+//
 //Instance.OnScriptInput("SkinJarJarBinks", ({ caller, activator }) => {
 //    const player = activator;
 //    const player_controller = player?.GetPlayerController();
@@ -785,30 +809,31 @@ Instance.OnScriptInput("TeleportItemsGoToBoss", () => {
 //    }
 //});
 
-//Instance.OnScriptInput("SkinPizzaPlayer", ({ caller, activator }) => {
-//    const player = activator;
-//    const player_controller = player?.GetPlayerController();
-//    const player_slot = player_controller?.GetPlayerSlot();
-//    const inst = PlayerInstancesMap.get(player_slot);
-//    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
-//    {
-//        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/pizzaplayer.vmdl" });
-//        player.SetModel("agents/models/luffaren/pizzaplayer.vmdl");
-//    }
-//});
+Instance.OnScriptInput("SkinPizzaPlayer", ({ caller, activator }) => {
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
+    {
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/pizzaplayer.vmdl" });
+        player.SetModel("agents/models/luffaren/pizzaplayer.vmdl");
+    }
+});
 
-//Instance.OnScriptInput("SkinSanta", ({ caller, activator }) => {
-//    const player = activator;
-//    const player_controller = player?.GetPlayerController();
-//    const player_slot = player_controller?.GetPlayerSlot();
-//    const inst = PlayerInstancesMap.get(player_slot);
-//    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
-//    {
-//        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/santa.vmdl" });
-//        player.SetModel("agents/models/luffaren/santa.vmdl");
-//    }
-//});
-
+Instance.OnScriptInput("SkinSanta", ({ caller, activator }) => {
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
+    {
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/santa.vmdl" });
+        player.SetModel("agents/models/luffaren/santa.vmdl");
+    }
+});
+//Remove Muscle Man
+//
 //Instance.OnScriptInput("SkinMisterMuscle", ({ caller, activator }) => {
 //    const player = activator;
 //    const player_controller = player?.GetPlayerController();
@@ -820,6 +845,28 @@ Instance.OnScriptInput("TeleportItemsGoToBoss", () => {
 //        player.SetModel("agents/models/luffaren/mister_muscle.vmdl");
 //    }
 //});
+
+Instance.OnScriptInput("GiveTrail", ({ caller, activator }) => {
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3 && !inst.Trail)
+    {
+        Temp_PatronTrail = Instance.FindEntityByName("patron_trailspawner");
+        let patron_pos = inst.player.GetAbsOrigin();
+        let trail_temp = Temp_PatronTrail.ForceSpawn({ x: patron_pos.x, y: patron_pos.y, z: patron_pos.z + 5 });
+        const particle = (trail_temp ?? []).filter(ent => ent?.IsValid() && ent.GetClassName() === "info_particle_system")[0];
+        particle.SetParent(inst.player);
+        PatronTrail_List.push(particle);
+        inst.Trail = true;
+        Instance.EntFireAtName({ name: "fade_yes_patreon", input: "Fade", activator: activator });
+    }
+    else
+    {
+        Instance.EntFireAtName({ name: "fade_no_patreon", input: "Fade", activator: activator });
+    }
+});
 
 Instance.OnRoundStart(() => {
     ResetScript();
@@ -839,6 +886,7 @@ Instance.OnRoundEnd(() => {
 function ResetScript()
 {
     ITEMS_LIST = [];
+    PatronTrail_List = [];
     event = 0;
     rain_active = false;
     currentrain = 1;
