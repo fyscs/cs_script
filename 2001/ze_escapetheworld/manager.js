@@ -21,6 +21,17 @@ Instance.OnScriptInput ("addhealth_rtv",() => {
             }
         }
 });
+Instance.OnScriptInput ("addhealth_rtv2",() => {
+   let players = Instance.FindEntitiesByClass("player");
+            for (let i = 0; i < players.length; i++) {
+            let player = players[i];
+            
+            if (player.GetTeamNumber() === 3) { 
+                player.SetHealth(200);
+                player.SetMaxHealth(1);
+            }
+        }
+});
 
 
 function add_hhealth(value){
@@ -55,4 +66,7 @@ Instance.OnScriptInput("lv4", () => {
 });
 Instance.OnScriptInput("lv5", () => {
   level = 5;
+});
+Instance.OnScriptInput("lv6", () => {
+  level = 6;
 });
