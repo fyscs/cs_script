@@ -5,7 +5,7 @@ import { CSPlayerPawn, Instance } from "cs_script/point_script";
  * 已针对风云社更改为随机挑选玩家成为Tank
  * 已针对风云社修复Tank伤害无效问题
  * 此脚本由皮皮猫233编写
- * 2026/5/16
+ * 2026/5/23
  */
 
 // let enableTank = false;
@@ -54,8 +54,8 @@ Instance.OnScriptInput("Hit", () => {
     if (currentTank && currentTank.IsValid()) {
         const velocity = currentTank.GetAbsVelocity();
         const speed = Math.hypot(velocity.x, velocity.y);
-        if (speed >= 100) {
-            currentTank.Teleport({ velocity: LimitHorizontalMagnitude(velocity, Math.max((speed - 20), 100))});
+        if (speed >= 160) {
+            currentTank.Teleport({ velocity: LimitHorizontalMagnitude(velocity, Math.max((speed - 20), 160))});
         }
     }
 });
