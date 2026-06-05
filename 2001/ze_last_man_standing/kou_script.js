@@ -200,7 +200,7 @@ const stagecoords = {
 const LangData = {
     CHS: { 
         cmd: {
-            welcome: "当前语言: 中文 / 脚本: 红. / 版本: v4.1",
+            welcome: "当前语言: 中文 / 脚本: 红. / 版本: v4.2",
             mapInfo1: "++ 地图制作: HANNIBAL[SPA] / Rafuron ++",
             mapInfo2: "++ 特别感谢: George / Sgt.zuff ++",
             mapinfo3: "++ CS2移植: Source2 ZE / 魔改&脚本: kou. ++",
@@ -706,7 +706,7 @@ const LangData = {
     },
     ENG: { 
         cmd: {
-            welcome: "Current language: English / Script v4.1 by kou.",
+            welcome: "Current language: English / Script v4.2 by kou.",
             mapInfo1: "++ Map by HANNIBAL[SPA] / Rafuron ++",
             mapInfo2: "++ Special thanks George / Sgt.zuff ++",
             mapinfo3: "++ CS2 port by Source2 ZE / Modify and script by kou. ++",
@@ -1410,6 +1410,19 @@ class BossHpSystem extends BaseSystem {
         Instance.OnScriptInput("StartBossHp", () => this.start());
         Instance.OnScriptInput("SubtractBossHp", () => this.subtract());
         Instance.OnScriptInput("GetBossHPPercent", () => this.display());
+        Instance.OnRoundStart(() => this.resetOnRoundStart());
+    }
+
+    resetOnRoundStart() {
+        if (this.active) 
+        this.hp = 0;
+        this.maxHp = 0;
+        this.active = false;
+        this.lastPhaseIndex = 0;
+        this.lastDisplayPercent = 100;
+        this.checkTimer = 0; 
+        this.bossFound = false; 
+        this.timeoutTimer = 0;
     }
 
     start() {
@@ -1496,7 +1509,6 @@ class BossHpSystem extends BaseSystem {
             } else {
                 this.timeoutTimer += 1.0; 
                 if (this.timeoutTimer >= 10.0) {
-                    utils.printl("BossHpSystem: Boss实体长时间未找到，强制结束。");
                     this.triggerDeath();
                 }
             }
@@ -1583,35 +1595,6 @@ class HpLimiterSystem extends BaseSystem {
     restoreState(data) { if(data) { this.active = data.active; this.limit = data.limit; } }
 }
 
-// 护甲重置
-class ArmorSystem extends BaseSystem {
-    constructor(controller) {
-        super(controller);
-        this.active = false;
-        this.armorValue = 1000;
-        this.timer = 0;
-
-        Instance.OnScriptInput("armorstart", () => { this.active = true; });
-        Instance.OnScriptInput("armorstop", () => { this.active = false; });
-    }
-
-    update(dt, validPlayers) {
-        if (!this.active) return;
-        this.timer += dt;
-        if (this.timer < 3.0) return; // 检查间隔
-        this.timer = 0;
-
-        for (const p of validPlayers) {
-            if (p.pawn.GetTeamNumber() === 2) {
-                p.pawn.SetArmor(this.armorValue);
-            }
-        }
-    }
-    
-    saveState() { return { active: this.active, armorValue: this.armorValue }; }
-    restoreState(data) { if(data) { this.active = data.active; this.armorValue = data.armorValue; } }
-}
-
 // 主控
 class GameSystemController {
     constructor() {
@@ -1631,7 +1614,6 @@ class GameSystemController {
         this.subsystems.set("boss_hp", new BossHpSystem(this));
         this.subsystems.set("language", new LanguageManager(this));
         this.subsystems.set("hp_limiter", new HpLimiterSystem(this));
-        this.subsystems.set("armor", new ArmorSystem(this));
     }
 
     registerGlobalCommands() {
