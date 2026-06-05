@@ -1,7 +1,7 @@
 import { Instance, Entity, CSPlayerPawn, CSGearSlot, PointTemplate } from "cs_script/point_script";
 /**
  * 此脚本由皮皮猫233移植
- * 2026/5/7
+ * 2026/6/2
  */
 // let item_arc_lightning_pos1 = null;
 Instance.OnScriptInput("item_arc_lightning_pos1 <- null;", () => item_arc_lightning_pos1 = Vector(0, 0, 0));
@@ -1116,18 +1116,15 @@ function SpawnArcLightning(flag, activator) {
 		// item_arc_lightning_pos1 = activator.GetOrigin();
 		item_arc_lightning_pos1 = activator.GetAbsOrigin();
 		item_arc_lightning_pos1 = ModifyOriginZ(item_arc_lightning_pos1, 48);
-		for (let i = 0; i < ITEM_ARC_LIGHTNING_MAXCOUNT; i++) {
-			// EntFire("functions", "RunScriptCode", "SpawnArcLightning(1)", i.tofloat() / 4);
-			EntFire("functions", "RunScriptInput", "SpawnArcLightning(1)", i / 4);
-			if (i == ITEM_ARC_LIGHTNING_MAXCOUNT - 1) {
-				// EntFire("functions", "RunScriptCode", "item_arc_lightning_pos1 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT.tofloat() / 4);
-				// EntFire("functions", "RunScriptCode", "item_arc_lightning_pos2 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT.tofloat() / 4);
-				// EntFire("functions", "RunScriptCode", "item_arc_lightning_target.clear();", ITEM_ARC_LIGHTNING_MAXCOUNT.tofloat() / 4);
-				EntFire("functions", "RunScriptInput", "item_arc_lightning_pos1 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT / 4);
-				EntFire("functions", "RunScriptInput", "item_arc_lightning_pos2 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT / 4);
-				EntFire("functions", "RunScriptInput", "item_arc_lightning_target.clear();", ITEM_ARC_LIGHTNING_MAXCOUNT / 4);
-			}
-		}
+		EntFire("functions", "RunScriptInput", "SpawnArcLightning(1)", 0.02);
+		// for (let i = 0; i < ITEM_ARC_LIGHTNING_MAXCOUNT; i++) {
+		// 	EntFire("functions", "RunScriptCode", "SpawnArcLightning(1)", i.tofloat() / 4);
+		// 	if (i == ITEM_ARC_LIGHTNING_MAXCOUNT - 1) {
+		// 		EntFire("functions", "RunScriptCode", "item_arc_lightning_pos1 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT.tofloat() / 4);
+		// 		EntFire("functions", "RunScriptCode", "item_arc_lightning_pos2 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT.tofloat() / 4);
+		// 		EntFire("functions", "RunScriptCode", "item_arc_lightning_target.clear();", ITEM_ARC_LIGHTNING_MAXCOUNT.tofloat() / 4);
+		// 	}
+		// }
 	} else {
 		let lightning1 = Entities.FindByName(null, "item_arc_lightning_1");
 		let lightning2 = Entities.FindByName(null, "item_arc_lightning_2");
@@ -1141,11 +1138,12 @@ function SpawnArcLightning(flag, activator) {
 		// 		}
 		// 	}
 		if (targets && targets.length !== 0) {
+			if (targets.length > ITEM_ARC_LIGHTNING_MAXCOUNT) targets.length = ITEM_ARC_LIGHTNING_MAXCOUNT;
 			// if (!isFind) {
 			for (let i = 0; i < targets.length; i++) {
 				const target = targets[i];
 				// if (target.GetTeam() == 2) {
-				Delay(i * 0.1, () => {
+				Delay(i * 0.25, () => {
 					if (target.GetTeamNumber() === 2) {
 						// item_arc_lightning_target.push(target);
 						// item_arc_lightning_pos2 = target.GetOrigin();
@@ -1185,6 +1183,8 @@ function SpawnArcLightning(flag, activator) {
 					}
 				});
 			}
+			EntFire("functions", "RunScriptInput", "item_arc_lightning_pos1 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT / 4);
+			EntFire("functions", "RunScriptInput", "item_arc_lightning_pos2 <- null;", ITEM_ARC_LIGHTNING_MAXCOUNT / 4);
 		}
 	}
 }
