@@ -158,18 +158,9 @@ Instance.OnScriptInput("NextTP", () => teleportManager.nextTP());
 Instance.OnScriptInput("PrevTP", () => teleportManager.prevTP());
 Instance.OnScriptInput("ResetTP", () => teleportManager.resetTeleportPoint());
 
-Instance.OnRoundStart(() => {
-    teleportManager.resetTeleportPoint();
-});
-
-Instance.OnRoundEnd(() => {
-    teleportManager.resetTeleportPoint();
-});
-
 // ===================================================================================================
 
 Instance.OnActivate(() => {
-    Instance.Msg("Custom Essential Script Activated");
     actManager = new ActManager(0);
     teleportManager = new TeleportManager(actManager, 0);
 });
