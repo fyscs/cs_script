@@ -4,7 +4,7 @@ import { Instance, Entity, CSPlayerPawn, CSWeaponType, CSGearSlot, CSWeaponAttac
  * 可拾取道具系统
  * 该脚本用于还原求生之路中的可拾取道具（例如油桶等）
  * 此脚本由皮皮猫233编写
- * 2026/2/10
+ * 2026/6/14
  */
 
 const playerState = new Map();
@@ -120,6 +120,7 @@ function Pickup(player, phy) {
     else return;
 
     Instance.EntFireAtTarget({ target: phy, input: "SetDamageFilter", value: "god" });
+    Instance.EntFireAtTarget({ target: phy, input: "AddContext", value: "item_picking:1" });
     Instance.EntFireAtTarget({ target: phy, input: "DisableMotion" });
 
     // 初始化当前玩家状态
@@ -138,6 +139,7 @@ function Pickup(player, phy) {
  */
 function Drop(player, phy) {
     Instance.EntFireAtTarget({ target: phy, input: "SetDamageFilter", value: "", delay: 0.5 });
+    Instance.EntFireAtTarget({ target: phy, input: "RemoveContext", value: "item_picking" });
     Instance.EntFireAtTarget({ target: phy, input: "EnableMotion" });
 
     // 清理玩家状态
