@@ -70,6 +70,13 @@ Instance.OnRoundStart(() => {
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
         }
     }
+    preInfected.forEach((value, player) => {
+        if (player && player.IsValid()) {
+            Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
+            Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
+            Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
+        }
+    });
     currentInfecteds.clear();
     enableInfected = false;
     infectedList.clear();
@@ -80,7 +87,7 @@ Instance.OnRoundStart(() => {
 
 Instance.OnPlayerReset((event) => {
     if (event.player.IsValid() && event.player.GetTeamNumber() === 3) {
-        Instance.EntFireAtTarget({ target: event.player, input: "SetDamageFilter", value: "no_special_infected_filter" });
+        Instance.EntFireAtTarget({ target: event.player, input: "SetDamageFilter", value: "no_special_infected_filter", delay: 1 });
     }
 });
 
