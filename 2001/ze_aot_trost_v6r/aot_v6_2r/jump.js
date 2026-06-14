@@ -3,13 +3,13 @@ import { Instance } from "cs_script/point_script";
 /**
  * 高跳脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/9
+ * 2026/6/14
  */
 
 Instance.OnScriptInput("Jump", (inputData) => {
     const player = inputData.activator;
     if (!player || !player.IsValid()) return;
     const velocity = player.GetAbsVelocity();
-    velocity.z = 680;
+    velocity.z = 650;
     player.Teleport({ velocity });
 });
