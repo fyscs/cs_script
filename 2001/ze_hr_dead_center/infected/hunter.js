@@ -3,18 +3,21 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Hunter脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/13
+ * 2026/6/16
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
 
 const CONFIG = {
     pushSpeed: 800,         // 单次飞扑速度
-    maxPounceTimes: 3,      // 一次性最多可飞扑的次数
+    maxPounceTimes: 4,      // 一次性最多可飞扑的次数
     maxClimbDuration: 1,    // 最大扒墙时间
     minDuckDuration: 1,     // 可触发飞扑的最短时间
     wallDetectDelay: 0.2,   // 扒墙检测延迟
-    pounceDamage: 20        // 飞扑伤害（每秒）
+    pounceDamage: 20,       // 飞扑伤害（每秒）
+    perPounceCD: 1,         // 每次飞扑累计的CD
+    pouncePushedCD: 10,     // 被推开后的CD惩罚
+    maxAbsPounceTimes: 8    // 一次性最多可飞扑的实际次数（不包含落地刷新次数）
 }
 
 const state = {
@@ -25,7 +28,10 @@ const state = {
     pouncingDuration: 0,
     pounceTimes: 0,
     isAttacking: false,
-    attackDuration: 0
+    attackDuration: 0,
+    pounceCD: 0,
+    pouncePushedCD: 0,
+    absPounceTimes: 0
 }
 
 let hunter = /** @type {CSPlayerPawn|undefined} */ (undefined);
@@ -41,25 +47,55 @@ Instance.OnScriptInput("BecomeHunter", (inputData) => {
     Instance.SetNextThink(Instance.GetGameTime());
 });
 
+Instance.OnScriptInput("Attack", (inputData) => {
+    const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
+    if (!player || !player.IsValid() || !hunter || !hunter.IsValid()) return;
+    // 命中玩家时将其扑倒
+    CancelPounceAndResetAbsTimes();
+    state.isAttacking = true;
+    pounced = player;
+    hunter.Teleport({ position: pounced.GetAbsOrigin(), velocity: { x: 0, y: 0, z: 0 } });
+    pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
+    Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Melee_Pounce" });
+    Instance.EntFireAtName({ name: "hunter_particle_" + suffix, input: "Start" });
+    Instance.EntFireAtName({ name: "hunter_attack_sound_timer_" + suffix, input: "Enable" });
+    Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 0" });
+    Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 0" });
+    Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: hunter });
+    Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: pounced, delay: 0.1 });
+    Instance.ServerCommand(`say **${pounced.GetPlayerController()?.GetPlayerName()}被Hunter扑倒了，使用匕首重击来解救你的队友**`);
+});
+
 Instance.OnRoundStart(() => {
+    if (pounced && pounced.IsValid()) {
+        Instance.EntFireAtTarget({ target: pounced, input: "RemoveContext", value: "player_controlled" });
+        Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 2" });
+    }
+    if (hunter && hunter.IsValid()) {
+        Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 2" });
+    }
     Instance.EntFireAtName({ name: "hunter_script_" + suffix, input: "Kill" });
 });
 
 Instance.OnPlayerKill((event) => {
     if (event.player === hunter) {
         if (pounced && pounced.IsValid()) {
+            Instance.EntFireAtTarget({ target: pounced, input: "RemoveContext", value: "player_controlled" });
             Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 2" });
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: pounced });
         }
-        Instance.EntFireAtName({ name: "hunter_script_" + suffix, input: "Kill" });
+        Instance.EntFireAtName({ name: "hunter_kill_relay_" + suffix, input: "Trigger" });
     }
 });
 
 Instance.OnKnifeAttack((event) => {
-    if (event.attackType === CSWeaponAttackType.SECONDARY) {
+
+    // 处于攻击状态时检查是否解除
+    if (state.isAttacking && event.attackType === CSWeaponAttackType.SECONDARY) {
         const player = event.weapon.GetOwner();
 
-        // 人类靠近Hunter重击时解除控制
+        // 人类靠近Hunter重击时判定解除
         if (hunter && hunter.IsValid() && pounced && pounced.IsValid() && player && player.IsValid() && player !== pounced && player.GetTeamNumber() === 3) {
             const hunterPosition = hunter.GetEyePosition();
             const humanPositon = player.GetEyePosition();
@@ -73,10 +109,11 @@ Instance.OnKnifeAttack((event) => {
                     ignorePlayers: true
                 });
 
-                // 人类与Hunter之间无遮挡时才解除
+                // 人类与Hunter之间无遮挡时才判定解除
                 if (!result.didHit) {
                     Instance.ServerCommand(`say **${player.GetPlayerController()?.GetPlayerName()}解救了${pounced.GetPlayerController()?.GetPlayerName()}**`);
-                    CancleAttack(pounced, hunter);
+                    CancelAttack(pounced, hunter);
+                    state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
             }
         }
@@ -85,191 +122,225 @@ Instance.OnKnifeAttack((event) => {
 
 Instance.SetThink(() => {
     if (!hunter || !hunter.IsValid()) return;
-    const isDuck = hunter.IsInputPressed(CSInputs.DUCK);
-    const isAttack = hunter.IsInputPressed(CSInputs.ATTACK);
+    UpdateState(hunter);
 
+    Instance.SetNextThink(Instance.GetGameTime() + timeDelta);
+});
+
+/**
+ * 更新状态
+ * @param {CSPlayerPawn} player 
+ */
+function UpdateState(player) {
+
+    // 检查是否处于攻击状态
     if (state.isAttacking) {
-        if (pounced && pounced.IsValid()) {
-            if (pounced.GetTeamNumber() === 3) {
-                state.attackDuration += timeDelta;
-                if (state.attackDuration >= 1) {
-                    state.attackDuration = 0;
-                    const currentHealth = pounced.GetHealth();
-                    if (currentHealth < CONFIG.pounceDamage) {
-                        pounced.Kill();
-                        CancleAttack(pounced, hunter);
-                    }
-                    else pounced.SetHealth(currentHealth - CONFIG.pounceDamage);
-                }
-            } else {
 
-                // 被感染立刻解除
-                CancleAttack(pounced, hunter);
+        // 被感染立刻解除
+        if (!pounced || !pounced.IsValid() || pounced.GetTeamNumber() !== 3) {
+            CancelAttack(undefined, player);
+            return;
+        }
+
+        state.attackDuration += timeDelta;
+        if (state.attackDuration >= 1) {
+            state.attackDuration = 0;
+            const currentHealth = pounced.GetHealth();
+            if (currentHealth < CONFIG.pounceDamage) {
+                pounced.Kill();
+                CancelAttack(pounced, player);
+            } else pounced.SetHealth(currentHealth - CONFIG.pounceDamage);
+        }
+        return;
+    }
+
+    // CD检查
+    if (state.pouncePushedCD > 0 || state.pounceCD > 0) {
+        let text = "";
+        if (state.pounceCD > 0) {
+            text = "冷却：" + state.pounceCD.toFixed(2);
+            state.pounceCD -= timeDelta;
+            if (state.pouncePushedCD <= 0 && state.pounceCD <= 0) {
+                text = "准备就绪";
+            }
+        }
+        if (state.pouncePushedCD > 0) {
+            text = "冷却惩罚：" + state.pouncePushedCD.toFixed(2);
+            state.pouncePushedCD -= timeDelta;
+            if (state.pouncePushedCD <= 0 && state.pounceCD <= 0) {
+                text = "准备就绪";
+            }
+        }
+        Instance.EntFireAtName({ name: "hunter_hudhint_" + suffix, input: "SetMessage", value: text });
+        Instance.EntFireAtName({ name: "hunter_hudhint_" + suffix, input: "ShowHudHint", activator: player });
+        return;
+    }
+
+    const isDuck = player.IsInputPressed(CSInputs.DUCK);
+    const isAttack = player.IsInputPressed(CSInputs.ATTACK);
+
+    if (!state.isPouncing) {
+
+        // 按蹲开始蓄力
+        if (isDuck) {
+
+            // 检查是否在地面
+            const entity = player.GetGroundEntity();
+            if (entity && entity.IsValid()) {
+                ShowHudHint(player);
+                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Idle_Crouching_01" });
+                Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 0" });
+
+                // 判断蹲伏时间是否足够，若足够且按下左键则起跳
+                if (state.duckDuration >= CONFIG.minDuckDuration) {
+                    if (isAttack) {
+                        state.isPouncing = true;
+                        state.pouncingDuration = 0;
+                        Pounce(player);
+                    }
+                } else {
+                    state.duckDuration += timeDelta;
+                }
             }
         } else {
-            CancleAttack(undefined, hunter);
+
+            // 清理蹲伏状态避免重复无用操作
+            if (state.duckDuration > 0) {
+                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
+                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
+                Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
+                CancelPounceAndResetAbsTimes();
+            }
         }
     } else {
 
-        // 连续飞扑上墙检测
-        if (state.isPouncing) {
+        // 飞扑状态下松蹲立刻停止飞扑
+        if (!isDuck) {
+            Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
+            Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
+            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
+            CancelPounceAndResetAbsTimes();
+        } else if (state.isClimbing) {
 
-            // 松蹲立刻停止飞扑
-            if (isDuck) {
-
-                if (state.isClimbing) {
-
-                    // 扒墙时左键触发连续飞扑
-                    if (isAttack) {
-                        state.climbDuration = 0;
-                        state.isClimbing = false;
-                        state.pouncingDuration = 0;
-                        Pounce(hunter);
-                    } else {
-
-                        // 否则检测扒墙时长是否超时
-                        state.climbDuration += timeDelta;
-                        if (state.climbDuration > CONFIG.maxClimbDuration) {
-                            Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 2" });
-                            CanclePounce();
-                        }
-                    }
-                } else {
-
-                    // 起跳后延迟检测是否上墙
-                    if (state.pouncingDuration >= CONFIG.wallDetectDelay) {
-                        const zombies = GetAllZombies();
-                        const start = hunter.GetAbsOrigin();
-                        const end = { ...start };
-                        end.z += 49;
-                        start.z += 10;
-                        const result = Instance.TraceSphere({
-                            start,
-                            end,
-                            radius: 20,
-                            ignoreEntity: zombies
-                        });
-                        if (result.didHit && result.hitEntity && result.hitEntity.IsValid()) {
-
-                            // 命中玩家时将其扑倒
-                            if (result.hitEntity.GetClassName() === "player") {
-                                CanclePounce();
-                                state.isAttacking = true;
-                                pounced = /** @type {CSPlayerPawn} */ (result.hitEntity);
-                                hunter.Teleport({ position: pounced.GetAbsOrigin(), velocity: { x: 0, y: 0, z: 0 } });
-                                pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
-                                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Melee_Pounce" });
-                                Instance.EntFireAtName({ name: "hunter_particle_" + suffix, input: "Start" });
-                                Instance.EntFireAtName({ name: "hunter_attack_timer_" + suffix, input: "Enable" });
-                                Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 0" });
-                                Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 0" });
-                                Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: hunter });
-                                Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: pounced, delay: 0.1 });
-                                Instance.ServerCommand(`say **${pounced.GetPlayerController()?.GetPlayerName()}被Hunter扑倒了，使用匕首重击来解救你的队友**`);
-                            } else {
-
-                                // 接触面小于45度时重置飞扑状态
-                                if (result.normal.z >= 0.5) {
-                                    CanclePounce();
-                                    state.duckDuration = CONFIG.minDuckDuration;
-                                    ShowHudHint(hunter);
-                                } else {
-
-                                    // 判断连续飞扑次数，超出次数重置飞扑状态
-                                    if (state.pounceTimes >= CONFIG.maxPounceTimes) {
-                                        CanclePounce();
-                                        state.duckDuration = CONFIG.minDuckDuration;
-                                    } else {
-                                        state.isClimbing = true;
-                                        ShowHudHint(hunter);
-                                        hunter.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
-                                        Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Idle_Crouching_01" });
-                                        Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 1" });
-                                    }
-                                }
-                            }
-                        }
-                    } else state.pouncingDuration += timeDelta;
-                }
+            // 扒墙时左键触发连续飞扑
+            if (isAttack) {
+                state.climbDuration = 0;
+                state.isClimbing = false;
+                state.pouncingDuration = 0;
+                Pounce(player);
             } else {
-                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
-                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
-                Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 2" });
-                CanclePounce();
+
+                // 否则检测扒墙时长是否超时
+                state.climbDuration += timeDelta;
+                if (state.climbDuration > CONFIG.maxClimbDuration) {
+                    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
+                    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
+                    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
+                    CancelPounceAndResetAbsTimes();
+                }
             }
         } else {
 
-            // 未处于飞扑状态则判断是否按蹲
-            if (isDuck) {
-
-                // 判断是否处于地面
-                const entity = hunter.GetGroundEntity();
-                if (entity && entity.IsValid()) {
-                    ShowHudHint(hunter);
-                    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Idle_Crouching_01" });
-                    Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 0" });
-
-                    // 判断蹲伏时间是否够长
-                    if (state.duckDuration >= CONFIG.minDuckDuration) {
-
-                        // 判断是否按下左键
-                        if (isAttack) {
-                            state.isPouncing = true;
-                            state.pouncingDuration = 0;
-                            Pounce(hunter);
-                        }
-                    } else state.duckDuration += timeDelta;
-                }
+            // 起跳后延迟检测是否上墙
+            if (state.pouncingDuration < CONFIG.wallDetectDelay) {
+                state.pouncingDuration += timeDelta;
             } else {
+                const start = player.GetAbsOrigin();
+                const end = { ...start };
+                end.z += 49;
+                start.z += 10;
+                const result = Instance.TraceSphere({
+                    start,
+                    end,
+                    radius: 20,
+                    ignorePlayers: true
+                });
+                if (result.didHit && result.hitEntity && result.hitEntity.IsValid()) {
+                    if (state.absPounceTimes < CONFIG.maxAbsPounceTimes) {
 
-                // 判断蹲伏时间避免重复无用的操作
-                if (state.duckDuration > 0) {
-                    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
-                    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
-                    Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 2" });
-                    CanclePounce();
+                        // 接触面小于45度时重置飞扑状态
+                        if (result.normal.z >= 0.5) {
+                            CancelPounce();
+                            state.duckDuration = CONFIG.minDuckDuration;
+                            state.pounceCD = 0;
+                            ShowHudHint(player);
+                        } else {
+
+                            // 次数未耗尽时才可扒墙
+                            if (state.pounceTimes < CONFIG.maxPounceTimes) {
+                                state.isClimbing = true;
+                                ShowHudHint(player);
+                                player.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
+                                Instance.EntFireAtName({ name: "hunter_attack_trigger_" + suffix, input: "Disable" });
+                                Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Idle_Crouching_01" });
+                                Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 1" });
+                            }
+                        }
+                    }
+
+                    // 判断飞扑次数，超出则重置状态并进入CD
+                    if (state.absPounceTimes >= CONFIG.maxAbsPounceTimes || state.pounceTimes >= CONFIG.maxPounceTimes) {
+                        CancelPounceAndResetAbsTimes();
+                        Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
+                        Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
+                    }
                 }
             }
         }
     }
-
-    Instance.SetNextThink(Instance.GetGameTime() + timeDelta);
-});
+}
 
 /**
  * 使用HudHint显示重要参数
  * @param {CSPlayerPawn} player 
  */
 function ShowHudHint(player) {
-    let duckDurationText = "";
-    if (state.duckDuration < CONFIG.minDuckDuration) duckDurationText = GetProgressBar(state.duckDuration, CONFIG.minDuckDuration, 30, "-");
-    else {
-        if (state.pounceTimes <= 0 || state.isClimbing) duckDurationText = "||||||||||||||||||||||||||||||||||||||||";
-        else duckDurationText = "------------------------------";
+    let text = "";
+    if (state.pouncePushedCD > 0) {
+        text = "冷却惩罚：" + state.pouncePushedCD.toFixed(2) + "s";
+    } else if (state.pounceCD > 0) {
+        text = "冷却：" + state.pounceCD.toFixed(2) + "s";
+    } else {
+        let duckDurationText = "";
+        if (state.duckDuration < CONFIG.minDuckDuration) duckDurationText = GetProgressBar(state.duckDuration, CONFIG.minDuckDuration, 30, "-");
+        else {
+            if (state.pounceTimes <= 0 || state.isClimbing) duckDurationText = "||||||||||||||||||||||||||||||||||||||||";
+            else duckDurationText = "------------------------------";
+        }
+        
+        const readyNum = CONFIG.maxPounceTimes - state.pounceTimes;
+        const remainAbsPounceNum = CONFIG.maxAbsPounceTimes - state.absPounceTimes;
+        if (remainAbsPounceNum > readyNum) {
+            const pounceTimesText = "■".repeat(readyNum) + '□'.repeat(remainAbsPounceNum - readyNum);
+            text = `${pounceTimesText}\n[${duckDurationText}]`;
+        } else {
+            const pounceTimesText = "■".repeat(remainAbsPounceNum);
+            text = `${pounceTimesText}\n[${duckDurationText}]`;
+        }
     }
-    const pounceTimesText = GetProgressBar(CONFIG.maxPounceTimes - state.pounceTimes, CONFIG.maxPounceTimes, CONFIG.maxPounceTimes, "■", '□');
-    const text = `${pounceTimesText}\n[${duckDurationText}]`;
+    
     Instance.EntFireAtName({ name: "hunter_hudhint_" + suffix, input: "SetMessage", value: text });
     Instance.EntFireAtName({ name: "hunter_hudhint_" + suffix, input: "ShowHudHint", activator: player });
 }
 
 /**
  * 取消攻击状态
- * @param {CSPlayerPawn|undefined} player 
+ * @param {CSPlayerPawn|undefined} pounced 
  * @param {CSPlayerPawn} hunter 
  */
-function CancleAttack(player = undefined, hunter) {
+function CancelAttack(pounced, hunter) {
     state.isAttacking = false;
     state.attackDuration = 0;
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
     Instance.EntFireAtName({ name: "hunter_particle_" + suffix, input: "Stop" });
-    Instance.EntFireAtName({ name: "hunter_attack_timer_" + suffix, input: "Disable" });
+    Instance.EntFireAtName({ name: "hunter_attack_sound_timer_" + suffix, input: "Disable" });
     Instance.EntFireAtTarget({ target: hunter, input: "KeyValue", value: "movetype 2" });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: hunter });
-    if (player) {
-        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
-        Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: player, delay: 0.1 });
+    if (pounced && pounced.IsValid()) {
+        Instance.EntFireAtTarget({ target: pounced, input: "RemoveContext", value: "player_controlled" });
+        Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 2" });
+        Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: pounced, delay: 0.1 });
     }
     pounced = undefined;
 }
@@ -279,11 +350,13 @@ function CancleAttack(player = undefined, hunter) {
  * @param {CSPlayerPawn} player 
  */
 function Pounce(player) {
+    state.absPounceTimes++;
     state.pounceTimes++;
     ShowHudHint(player);
+    Instance.EntFireAtName({ name: "hunter_attack_trigger_" + suffix, input: "Enable" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationNoResetNotLooping", value: "pounce_idle_low" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationNotLooping", value: "pounce_idle_low" });
-    Instance.EntFireAtName({ name: "hunter_pounce_sound_" + suffix, input: "StartSound" });
+    Instance.EntFireAtName({ name: "hunter_pounce_sound_relay_" + suffix, input: "Trigger" });
     Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
     const forward = AnglesToVector(player.GetEyeAngles());
     player.Teleport({ velocity: VectorScale(forward, CONFIG.pushSpeed) });
@@ -292,25 +365,23 @@ function Pounce(player) {
 /**
  * 取消飞扑并重置各状态
  */
-function CanclePounce() {
+function CancelPounce() {
+    state.pounceCD = state.absPounceTimes * CONFIG.perPounceCD;
     state.climbDuration = 0;
     state.isPouncing = false;
     state.isClimbing = false;
     state.pounceTimes = 0;
     state.pouncingDuration = 0;
     state.duckDuration = 0;
+    Instance.EntFireAtName({ name: "hunter_attack_trigger_" + suffix, input: "Disable" });
 }
 
 /**
- * 获取全部僵尸
+ * 取消飞扑并重置实际飞扑次数
  */
-function GetAllZombies() {
-    const players = Instance.FindEntitiesByClass("player");
-    let zombies = [];
-    for (const player of players) {
-        if (player.IsValid() && player.GetTeamNumber() === 2) zombies.push(player);
-    }
-    return zombies;
+function CancelPounceAndResetAbsTimes() {
+    CancelPounce();
+    state.absPounceTimes = 0;
 }
 
 /**

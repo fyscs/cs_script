@@ -3,7 +3,7 @@ import { Instance, PointTemplate, Entity } from "cs_script/point_script";
 /**
  * 油桶收集脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/14
+ * 2026/6/16
  */
 
 let gasNumber = 0;
@@ -55,7 +55,6 @@ Instance.OnScriptInput("Add", (inputData) => {
             }
         } else if (gasBgm === 2) {
             if (gasNumber >= 11) {
-                Instance.EntFireAtName({ name: "bgm_tank", input: "StartSound" });
                 Instance.EntFireAtName({ name: "infected_pick_script", input: "RunScriptInput", value: "PickTank" });
                 gasBgm = 3;
             }

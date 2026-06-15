@@ -3,10 +3,10 @@ import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/po
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/12
+ * 2026/6/16
  */
 
-const infectedTypes = ["Hunter"];
+const infectedTypes = ["Hunter", "Jockey"];
 const currentInfecteds = new Set();
 
 let enableTank = false;
@@ -18,7 +18,7 @@ const preInfected = new Map();
 
 Instance.OnScriptInput("EnableTank", () => {
     enableTank = true;
-    // Instance.ServerCommand('say **在聊天框中输入"!tank"有概率成为本关Tank**');
+    Instance.ServerCommand('say **在聊天框中输入"!tank"有概率成为本关Tank**');
 });
 
 Instance.OnScriptInput("EnableInfected", () => {
@@ -53,6 +53,7 @@ Instance.OnKnifeAttack((event) => {
     if (event.attackType === CSWeaponAttackType.SECONDARY) {
         const player = event.weapon.GetOwner();
         if (player && player.IsValid() && preInfected.has(player) && CheckSpawn(player)) {
+            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
             Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
             Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_infected:1" });
@@ -72,6 +73,7 @@ Instance.OnRoundStart(() => {
     }
     preInfected.forEach((value, player) => {
         if (player && player.IsValid()) {
+            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
             Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
             Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
@@ -95,34 +97,36 @@ Instance.OnPlayerKill((event) => {
     const player = event.player;
     if (currentInfecteds.has(player)) {
         currentInfecteds.delete(player);
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
+        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_controlled" });
     }
 });
 
-// Instance.OnPlayerChat((event) => {
-//     if (enableTank) {
-//         if (event.text === "!tank") {
-//             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
-//                 const pawn = event.player.GetPlayerPawn();
-//                 if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
-//                     tankList.add(pawn);
-//                 }
-//             }
-//         }
-//     }
-//     if (enableInfected) {
-//         if (event.text === "!infected") {
-//             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
-//                 const pawn = event.player.GetPlayerPawn();
-//                 if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
-//                     infectedList.add(pawn);
-//                 }
-//             }
-//         }
-//     }
-// });
+Instance.OnPlayerChat((event) => {
+    if (enableTank) {
+        if (event.text === "!tank") {
+            if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
+                const pawn = event.player.GetPlayerPawn();
+                if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
+                    tankList.add(pawn);
+                }
+            }
+        }
+    }
+    if (enableInfected) {
+        if (event.text === "!infected") {
+            if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
+                const pawn = event.player.GetPlayerPawn();
+                if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
+                    infectedList.add(pawn);
+                }
+            }
+        }
+    }
+});
 
 /**
  * 成为预复活特感
@@ -131,6 +135,7 @@ Instance.OnPlayerKill((event) => {
  */
 function BecomePreInfected(player, type) {
     currentInfecteds.add(player);
+    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1.5" });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_pre_infected:1" });
@@ -189,7 +194,7 @@ function BecomeInfected(player, type) {
 function RemoveHumansAndInfeted(players) {
     let newPlayers = [];
     for (const player of players) {
-        if (player && player.IsValid() && player.IsAlive() && player.GetTeamNumber() === 2 && !currentInfecteds.has(player)) newPlayers.push(player);
+        if (player && player.IsValid() && player.IsAlive() && player.GetTeamNumber() === 2 && !currentInfecteds.has(player) && !preInfected.has(player)) newPlayers.push(player);
     }
     return newPlayers;
 }
