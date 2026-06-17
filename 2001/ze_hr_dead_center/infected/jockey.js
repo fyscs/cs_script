@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/16
+ * 2026/6/17
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -15,8 +15,6 @@ const CONFIG = {
     jockeyAccelerate: 1920 * timeDelta,     // jockey的移动加速度
     pouncePushedCD: 10,                     // 被推开后的CD惩罚
     damage: 5,                              // 伤害（每秒）
-    grvity: 20 * timeDelta,                 // 重力加速度（用于模拟z轴速度）
-    minVelocityZ: -1000                     // 最小Z轴速度
 }
 
 const state = {
@@ -49,6 +47,7 @@ Instance.OnScriptInput("Attack", (inputData) => {
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: jockey, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "StartGlowing" });
     Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "SetAnimationLooping", value: "a_jockey_ride_idle" });
     Instance.EntFireAtName({ name: "jockey_attack_sound_" + suffix, input: "StartSound" });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: jockey });
@@ -69,10 +68,7 @@ Instance.OnRoundStart(() => {
 
 Instance.OnPlayerKill((event) => {
     if (event.player === jockey) {
-        if (pounced && pounced.IsValid()) {
-            Instance.EntFireAtTarget({ target: pounced, input: "RemoveContext", value: "player_controlled" });
-            Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: pounced });
-        }
+        CancelAttack(pounced, jockey);
         Instance.EntFireAtName({ name: "jockey_kill_relay_" + suffix, input: "Trigger" });
     }
 });
@@ -100,6 +96,7 @@ Instance.OnKnifeAttack((event) => {
                 // 人类与jockey之间无遮挡时才判定解除
                 if (!result.didHit) {
                     Instance.ServerCommand(`say **${player.GetPlayerController()?.GetPlayerName()}解救了${pounced.GetPlayerController()?.GetPlayerName()}**`);
+                    player.GetPlayerController()?.AddMoneySpendableNow(5000);
                     CancelAttack(pounced, jockey);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
@@ -127,7 +124,16 @@ function UpdateState(player) {
             CancelAttack(pounced, player);
             return;
         }
+        const velocity = pounced.GetAbsVelocity();
+        const jockeyKeyDirection = GetAbsKeyDirection(player);
+        const pouncedKeyDirection = GetAbsKeyDirection(pounced);
+        const accelerate = VectorAdd(VectorScale(jockeyKeyDirection, CONFIG.jockeyAccelerate), VectorScale(pouncedKeyDirection, CONFIG.pouncedAccelerate));
+        const newVelocity = VectorAdd(VectorScale(velocity, 0.9), accelerate);
+        LimitHorizontalMagnitude(newVelocity, 250);
+        pounced.Teleport({ velocity: newVelocity });
+        player.Teleport({ position: pounced.GetAbsOrigin() });
 
+        // 伤害判定
         state.attackDuration += timeDelta;
         if (state.attackDuration >= 1) {
             state.attackDuration = 0;
@@ -137,27 +143,6 @@ function UpdateState(player) {
                 CancelAttack(pounced, player);
             } else pounced.SetHealth(currentHealth - CONFIG.damage);
         }
-        
-        const velocity = pounced.GetAbsVelocity();
-        const jockeyKeyDirection = GetAbsKeyDirection(player);
-        const pouncedKeyDirection = GetAbsKeyDirection(pounced);
-        const accelerate = VectorAdd(VectorScale(jockeyKeyDirection, CONFIG.jockeyAccelerate), VectorScale(pouncedKeyDirection, CONFIG.pouncedAccelerate));
-        const newVelocity = VectorAdd(VectorScale(velocity, 0.9), accelerate);
-        newVelocity.z = 0;
-        ClampVectorLength(newVelocity, 250);
-
-        // 检查是否处于地面并模拟重力
-        const groundEntity = pounced.GetGroundEntity();
-        if (!groundEntity || !groundEntity.IsValid()) {
-            state.airDuration += timeDelta;
-            newVelocity.z = Math.max(CONFIG.grvity * state.airDuration, CONFIG.minVelocityZ);
-        } else {
-            if (state.airDuration > 0) {
-                state.airDuration = 0;
-            }
-        }
-        pounced.Teleport({ velocity: newVelocity });
-        player.Teleport({ position: pounced.GetAbsOrigin() });
         return;
     }
 
@@ -201,8 +186,10 @@ function UpdateState(player) {
  */
 function CancelAttack(pounced, jockey) {
     state.isAttacking = false;
+    state.attackDuration = 0;
     state.pounceCD = CONFIG.pounceCD;
     Instance.EntFireAtTarget({ target: jockey, input: "KeyValue", value: "movetype 2" });
+    Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "StopGlowing" });
     Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
     Instance.EntFireAtName({ name: "jockey_attack_sound_" + suffix, input: "StopSound" });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: jockey });
@@ -292,32 +279,22 @@ function VectorAdd(vec1, vec2) {
 }
 
 /**
- * 限制向量的长度（模长），使其不超过 maxLength。
- * @param {import("cs_script/point_script").Vector} vector 原始向量
- * @param {number} maxLength 允许的最大长度（必须 > 0）
- * @returns {import("cs_script/point_script").Vector} 新向量，长度 ≤ maxLength
+ * 限制三维向量的水平分量（X和Y）的模长，若超过 maxMagnitude 则等比例缩放，保持方向不变；垂直分量 Z 保持不变。
+ * @param {import("cs_script/point_script").Vector} v - 输入向量
+ * @param {number} maxMagnitude - 允许的最大水平模长（非负数）
+ * @returns {import("cs_script/point_script").Vector} 限制后的新向量
  */
-function ClampVectorLength(vector, maxLength) {
-    if (maxLength <= 0) {
-        // 最大长度非正，返回零向量
-        return { x: 0, y: 0, z: 0 };
+function LimitHorizontalMagnitude(v, maxMagnitude) {
+    const { x, y, z } = v;
+    const horizMag = Math.hypot(x, y);
+    if (horizMag <= maxMagnitude) {
+        return { x, y, z };
     }
-
-    const { x, y, z } = vector;
-    const lenSq = x * x + y * y + z * z;
-    const len = Math.sqrt(lenSq);
-
-    // 零向量或长度已经不超过 maxLength 的情况
-    if (len === 0 || len <= maxLength) {
-        return { x, y, z }; // 返回原向量的浅拷贝
-    }
-
-    // 需要缩放
-    const factor = maxLength / len;
+    const scale = maxMagnitude / horizMag;
     return {
-        x: x * factor,
-        y: y * factor,
-        z: z * factor,
+        x: x * scale,
+        y: y * scale,
+        z: z
     };
 }
 

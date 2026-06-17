@@ -3,7 +3,7 @@ import { Instance, Entity } from "cs_script/point_script";
 /**
  * 第三人称脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/10
+ * 2026/6/17
  */
 
 const cameraEntities = new Map();
@@ -60,6 +60,7 @@ Instance.OnScriptInput("FirstPerson", (inputData) => {
                 }
                 Instance.EntFireAtTarget({ target: entity, input: "Kill", delay: 1 });
             }
+            player.SetEntityName("");
             cameraEntities.delete(player);
         }
     }

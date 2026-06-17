@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Hunter脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/16
+ * 2026/6/17
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -57,6 +57,7 @@ Instance.OnScriptInput("Attack", (inputData) => {
     hunter.Teleport({ position: pounced.GetAbsOrigin(), velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "StartGlowing" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Melee_Pounce" });
     Instance.EntFireAtName({ name: "hunter_particle_" + suffix, input: "Start" });
     Instance.EntFireAtName({ name: "hunter_attack_sound_timer_" + suffix, input: "Enable" });
@@ -80,11 +81,7 @@ Instance.OnRoundStart(() => {
 
 Instance.OnPlayerKill((event) => {
     if (event.player === hunter) {
-        if (pounced && pounced.IsValid()) {
-            Instance.EntFireAtTarget({ target: pounced, input: "RemoveContext", value: "player_controlled" });
-            Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 2" });
-            Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: pounced });
-        }
+        CancelAttack(pounced, hunter);
         Instance.EntFireAtName({ name: "hunter_kill_relay_" + suffix, input: "Trigger" });
     }
 });
@@ -112,6 +109,7 @@ Instance.OnKnifeAttack((event) => {
                 // 人类与Hunter之间无遮挡时才判定解除
                 if (!result.didHit) {
                     Instance.ServerCommand(`say **${player.GetPlayerController()?.GetPlayerName()}解救了${pounced.GetPlayerController()?.GetPlayerName()}**`);
+                    player.GetPlayerController()?.AddMoneySpendableNow(5000);
                     CancelAttack(pounced, hunter);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
@@ -296,27 +294,21 @@ function UpdateState(player) {
  */
 function ShowHudHint(player) {
     let text = "";
-    if (state.pouncePushedCD > 0) {
-        text = "冷却惩罚：" + state.pouncePushedCD.toFixed(2) + "s";
-    } else if (state.pounceCD > 0) {
-        text = "冷却：" + state.pounceCD.toFixed(2) + "s";
+    let duckDurationText = "";
+    if (state.duckDuration < CONFIG.minDuckDuration) duckDurationText = GetProgressBar(state.duckDuration, CONFIG.minDuckDuration, 30, "-");
+    else {
+        if (state.pounceTimes <= 0 || state.isClimbing) duckDurationText = "||||||||||||||||||||||||||||||||||||||||";
+        else duckDurationText = "------------------------------";
+    }
+    
+    const readyNum = CONFIG.maxPounceTimes - state.pounceTimes;
+    const remainAbsPounceNum = CONFIG.maxAbsPounceTimes - state.absPounceTimes;
+    if (remainAbsPounceNum > readyNum) {
+        const pounceTimesText = "■".repeat(readyNum) + '□'.repeat(remainAbsPounceNum - readyNum);
+        text = `${pounceTimesText}\n[${duckDurationText}]`;
     } else {
-        let duckDurationText = "";
-        if (state.duckDuration < CONFIG.minDuckDuration) duckDurationText = GetProgressBar(state.duckDuration, CONFIG.minDuckDuration, 30, "-");
-        else {
-            if (state.pounceTimes <= 0 || state.isClimbing) duckDurationText = "||||||||||||||||||||||||||||||||||||||||";
-            else duckDurationText = "------------------------------";
-        }
-        
-        const readyNum = CONFIG.maxPounceTimes - state.pounceTimes;
-        const remainAbsPounceNum = CONFIG.maxAbsPounceTimes - state.absPounceTimes;
-        if (remainAbsPounceNum > readyNum) {
-            const pounceTimesText = "■".repeat(readyNum) + '□'.repeat(remainAbsPounceNum - readyNum);
-            text = `${pounceTimesText}\n[${duckDurationText}]`;
-        } else {
-            const pounceTimesText = "■".repeat(remainAbsPounceNum);
-            text = `${pounceTimesText}\n[${duckDurationText}]`;
-        }
+        const pounceTimesText = "■".repeat(remainAbsPounceNum);
+        text = `${pounceTimesText}\n[${duckDurationText}]`;
     }
     
     Instance.EntFireAtName({ name: "hunter_hudhint_" + suffix, input: "SetMessage", value: text });
@@ -331,6 +323,7 @@ function ShowHudHint(player) {
 function CancelAttack(pounced, hunter) {
     state.isAttacking = false;
     state.attackDuration = 0;
+    Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "StopGlowing" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetIdleAnimationLooping", value: "a_RunN_fix" });
     Instance.EntFireAtName({ name: "hunter_particle_" + suffix, input: "Stop" });

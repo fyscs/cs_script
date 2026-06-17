@@ -3,10 +3,10 @@ import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/po
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/16
+ * 2026/6/17
  */
 
-const infectedTypes = ["Hunter", "Jockey"];
+const infectedTypes = ["Hunter", "Jockey", "Charger"];
 const currentInfecteds = new Set();
 
 let enableTank = false;
@@ -18,7 +18,7 @@ const preInfected = new Map();
 
 Instance.OnScriptInput("EnableTank", () => {
     enableTank = true;
-    Instance.ServerCommand('say **在聊天框中输入"!tank"有概率成为本关Tank**');
+    // Instance.ServerCommand('say **在聊天框中输入"!tank"有概率成为本关Tank**');
 });
 
 Instance.OnScriptInput("EnableInfected", () => {
@@ -105,28 +105,28 @@ Instance.OnPlayerKill((event) => {
     }
 });
 
-Instance.OnPlayerChat((event) => {
-    if (enableTank) {
-        if (event.text === "!tank") {
-            if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
-                const pawn = event.player.GetPlayerPawn();
-                if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
-                    tankList.add(pawn);
-                }
-            }
-        }
-    }
-    if (enableInfected) {
-        if (event.text === "!infected") {
-            if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
-                const pawn = event.player.GetPlayerPawn();
-                if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
-                    infectedList.add(pawn);
-                }
-            }
-        }
-    }
-});
+// Instance.OnPlayerChat((event) => {
+//     if (enableTank) {
+//         if (event.text === "!tank") {
+//             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
+//                 const pawn = event.player.GetPlayerPawn();
+//                 if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
+//                     tankList.add(pawn);
+//                 }
+//             }
+//         }
+//     }
+//     if (enableInfected) {
+//         if (event.text === "!infected") {
+//             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
+//                 const pawn = event.player.GetPlayerPawn();
+//                 if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
+//                     infectedList.add(pawn);
+//                 }
+//             }
+//         }
+//     }
+// });
 
 /**
  * 成为预复活特感
