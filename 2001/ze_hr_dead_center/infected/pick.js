@@ -101,7 +101,13 @@ Instance.OnPlayerKill((event) => {
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
-        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_controlled" });
+    }
+    if (preInfected.has(player)) {
+        currentInfecteds.delete(player);
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
+        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
+        Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
+        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
     }
 });
 

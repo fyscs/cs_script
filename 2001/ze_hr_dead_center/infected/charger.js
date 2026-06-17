@@ -58,11 +58,12 @@ Instance.OnScriptInput("Push", (inputData) => {
 Instance.OnRoundStart(() => {
     if (charger && charger.IsValid()) {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
+        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "movetype 2" });
-        Instance.EntFireAtTarget({ target: charger, input: "RemoveContext", value: "player_controlled" });
     }
     if (caught && caught.IsValid()) {
         Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
+        Instance.EntFireAtTarget({ target: caught, input: "RemoveContext", value: "player_controlled" });
     }
     Instance.EntFireAtName({ name: "charger_script_" + suffix, input: "Kill" });
 });
@@ -70,6 +71,7 @@ Instance.OnRoundStart(() => {
 Instance.OnPlayerKill((event) => {
     if (event.player === charger) {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
+        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
         CancelAttack(caught, charger);
         if (caught && caught.IsValid() && event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
             // @ts-ignore
@@ -105,11 +107,12 @@ function UpdateState(charger) {
 
         // 障碍物检测
         const start = charger.GetEyePosition();
+        start.z -= 20;
         const end = VectorAdd(start, VectorScale(AnglesToVector(state.chargeAngles), 50));
         const result = Instance.TraceSphere({
             start,
             end,
-            radius: 30,
+            radius: 20,
             ignorePlayers: true
         });
         if (result.didHit) {
@@ -118,7 +121,10 @@ function UpdateState(charger) {
         }
 
         state.chargeDuration += timeDelta;
-        charger.Teleport({ velocity: LimitHorizontalMagnitude(VectorScale(AnglesToVector(state.chargeAngles), CONFIG.chargeAccelerate * state.chargeDuration), CONFIG.maxChargeSpeed) });
+        const velocity = charger.GetAbsVelocity();
+        const newVelocity = LimitHorizontalMagnitude(VectorScale(AnglesToVector(state.chargeAngles), CONFIG.chargeAccelerate * state.chargeDuration), CONFIG.maxChargeSpeed);
+        newVelocity.z = velocity.z;
+        charger.Teleport({ velocity: newVelocity });
         if (caught && caught.IsValid()) {
             const handTarget = Instance.FindEntityByName("charger_hand_target_move_" + suffix);
             if (handTarget && handTarget.IsValid()) {
