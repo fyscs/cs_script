@@ -938,6 +938,10 @@ Instance.OnPlayerReset((event) => {
                     Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,5" });
                 }
             }
+            if(inst.Sponsor)
+            {
+                inst.SetSponsorSkin = false;
+            }
         } 
         else 
         {
@@ -1143,7 +1147,7 @@ Instance.OnScriptInput("SetSponsorSkin2", ({ caller, activator }) => {
     }
     if(inst.Lastims && inst.player.GetTeamNumber() === 3)
     {
-        Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,3", delay: 0.02 });
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetBodyGroup", value: "first_or_third_person,3", delay: 0.05 });
     }
 })
 
@@ -1221,7 +1225,7 @@ Instance.OnScriptInput("ShowSamosborTimer", ({ caller, activator }) => {
                 seconds = "0" + seconds
             }
         }
-        Instance.EntFireAtName({ name: "Map_Samosbor_Hudhint", input: "SetMessage", value: `[SAMOSBOR WARNING]\n00:0${minutes}:${seconds}` })
+        Instance.EntFireAtName({ name: "Map_Samosbor_Hudhint", input: "SetMessage", value: `[SAMOSBOR 警告]\n00:0${minutes}:${seconds}` })
         for(let i = 0; i < players.length; i++)
         {
             let player = players[i]
@@ -1994,8 +1998,8 @@ Instance.OnScriptInput("CheckVipPlayer", ({ caller, activator }) => {
     {
         isVipDead = true;
         VIP_PLAYER = null;
-        Instance.ServerCommand(`say >> The Prisoner is dead.. <<`);
-        Instance.Msg(`say >> The Prisoner is dead.. <<`)
+        Instance.ServerCommand(`say >> VIP玩家 ${player_name} 死了... <<`);
+        Instance.Msg(`say >> VIP玩家 ${player_name} 死了... <<`)
         player_text?.Remove()
         let players_human = GetValidPlayersCT();
         for(let i = 0; i < players_human.length; i++)
@@ -2342,8 +2346,8 @@ Instance.OnScriptInput("SpawnFloor", () => {
     ResetFloor();
     if(floor == 0)
     {
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "Lock" })
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "Lock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "UnLock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "UnLock" })
         UpdateVariables();
     }
     // MINI BOSS FIGHT
@@ -2514,7 +2518,7 @@ Instance.OnScriptInput("SpawnFloor", () => {
             player_text?.SetParent(VIP_PLAYER)
             let player_controller = VIP_PLAYER?.GetPlayerController();
             let player_name = player_controller.GetPlayerName();
-            Instance.EntFireAtName({ name: "cmd", input: "Command", value: `say >> The Prisoner is... ${player_name}! Protect them at the all cost! <<`, delay: 15.00 });
+            Instance.EntFireAtName({ name: "cmd", input: "Command", value: `say >> 本轮游戏的VIP玩家是-- ${player_name}!千万别把这个人卖了! <<`, delay: 15.00 });
             Instance.EntFireAtTarget({ target: VIP_PLAYER, input: "KeyValue", value: "speed 0.8" });
             Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "CheckVipPlayer" });
         }
