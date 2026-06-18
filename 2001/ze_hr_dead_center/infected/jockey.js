@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/17
+ * 2026/6/18
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -138,7 +138,7 @@ function UpdateState(player) {
         if (state.attackDuration >= 1) {
             state.attackDuration = 0;
             const currentHealth = pounced.GetHealth();
-            if (currentHealth < CONFIG.damage) {
+            if (currentHealth <= CONFIG.damage) {
                 pounced.Kill();
                 CancelAttack(pounced, player);
             } else pounced.SetHealth(currentHealth - CONFIG.damage);

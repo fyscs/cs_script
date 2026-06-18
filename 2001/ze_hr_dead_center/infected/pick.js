@@ -3,11 +3,12 @@ import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/po
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/17
+ * 2026/6/18
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
 const currentInfecteds = new Set();
+let pickInterval = 30;
 
 let enableTank = false;
 const tankList = new Set();
@@ -15,6 +16,7 @@ const tankList = new Set();
 let enableInfected = false;
 const infectedList = new Set();
 const preInfected = new Map();
+const motherZombies = new Set();
 
 Instance.OnScriptInput("EnableTank", () => {
     enableTank = true;
@@ -25,28 +27,45 @@ Instance.OnScriptInput("EnableInfected", () => {
     enableInfected = true;
 });
 
-Instance.OnScriptInput("PickInfected", () => {
-    const newInfectedList = RemoveHumansAndInfeted(infectedList);
-    if (newInfectedList.length !== 0) {
-        BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
-    } else {
-        const newInfectedList = RemoveHumansAndInfeted(Instance.FindEntitiesByClass("player"));
-        if (newInfectedList.length !== 0) {
-            BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
-        }
+Instance.OnScriptInput("PushMotherZombies", () => {
+    const players = Instance.FindEntitiesByClass("player");
+    for (const player of players) {
+        if (player.IsValid() && player.GetTeamNumber() === 2) motherZombies.add(player);
     }
 });
 
+Instance.OnScriptInput("PickInfected", () => {
+    // const newInfectedList = RemoveHumansAndInfetedAndNotMotherZombie(infectedList);
+    // if (newInfectedList.length !== 0) {
+    //     BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
+    // } else {
+    //     const newInfectedList = RemoveHumansAndInfeted(infectedList);
+    //     if (newInfectedList.length !== 0) {
+    //         BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
+    //     } else {
+            const newInfectedList = RemoveHumansAndInfeted(Instance.FindEntitiesByClass("player"));
+            if (newInfectedList.length !== 0) {
+                BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
+            }
+    //     }
+    // }
+});
+
 Instance.OnScriptInput("PickTank", () => {
-    const newTankList = RemoveHumansAndInfeted(tankList);
-    if (newTankList.length !== 0) {
-        BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
-    } else {
-        const newTankList = RemoveHumansAndInfeted(Instance.FindEntitiesByClass("player"));
-        if (newTankList.length !== 0) {
-            BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
-        }
-    }
+    // const newTankList = RemoveHumansAndInfetedAndNotMotherZombie(tankList);
+    // if (newTankList.length !== 0) {
+    //     BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
+    // } else {
+    //     const newTankList = RemoveHumansAndInfeted(tankList);
+    //     if (newTankList.length !== 0) {
+    //         BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
+    //     } else {
+            const newTankList = RemoveHumansAndInfeted(Instance.FindEntitiesByClass("player"));
+            if (newTankList.length !== 0) {
+                BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
+            }
+    //     }
+    // }
 });
 
 Instance.OnKnifeAttack((event) => {
@@ -79,12 +98,23 @@ Instance.OnRoundStart(() => {
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
         }
     });
+    motherZombies.clear();
     currentInfecteds.clear();
     enableInfected = false;
     infectedList.clear();
     enableTank = false;
     tankList.clear();
     preInfected.clear();
+    Instance.EntFireAtName({ name: "infected_pick_text", input: "SetIntMessage", value: pickInterval });
+    Instance.EntFireAtName({ name: "infected_pick_timer", input: "RefireTime", value: pickInterval });
+});
+
+Instance.OnRoundEnd((event) => {
+    if (event.winningTeam === 2) {
+        pickInterval = Math.min(pickInterval + 3, 40);
+    } else if (event.winningTeam === 3) {
+        pickInterval = Math.max(pickInterval - 5, 20);
+    }
 });
 
 Instance.OnPlayerReset((event) => {
@@ -194,7 +224,19 @@ function BecomeInfected(player, type) {
 }
 
 /**
- * 去除人类玩家
+ * 去除人类、特感以及非母体玩家
+ * @param {Set<Entity>|Entity[]} players 
+ */
+function RemoveHumansAndInfetedAndNotMotherZombie(players) {
+    let newPlayers = [];
+    for (const player of players) {
+        if (player && player.IsValid() && player.IsAlive() && player.GetTeamNumber() === 2 && !currentInfecteds.has(player) && !preInfected.has(player) && motherZombies.has(player)) newPlayers.push(player);
+    }
+    return newPlayers;
+}
+
+/**
+ * 去除人类玩家与特感玩家
  * @param {Set<Entity>|Entity[]} players 
  */
 function RemoveHumansAndInfeted(players) {

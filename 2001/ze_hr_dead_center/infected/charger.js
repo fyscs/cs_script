@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/17
+ * 2026/6/18
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -73,11 +73,14 @@ Instance.OnPlayerKill((event) => {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
         CancelAttack(caught, charger);
-        if (caught && caught.IsValid() && event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
-            // @ts-ignore
-            Instance.ServerCommand(`say **${event.attacker.GetPlayerController()?.GetPlayerName()}解救了${caught.GetPlayerController()?.GetPlayerName()}**`);
-            // @ts-ignore
-            event.attacker.GetPlayerController()?.AddMoneySpendableNow(5000);
+        if (caught && caught.IsValid()) {
+            Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
+            if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
+                // @ts-ignore
+                Instance.ServerCommand(`say **${event.attacker.GetPlayerController()?.GetPlayerName()}解救了${caught.GetPlayerController()?.GetPlayerName()}**`);
+                // @ts-ignore
+                event.attacker.GetPlayerController()?.AddMoneySpendableNow(5000);
+            }
         }
         Instance.EntFireAtName({ name: "charger_kill_relay_" + suffix, input: "Trigger" });
     }
@@ -161,7 +164,7 @@ function UpdateState(charger) {
         if (state.attackDuration >= 1.67) {
             state.attackDuration = 0;
             const currentHealth = caught.GetHealth();
-            if (currentHealth < CONFIG.damage) {
+            if (currentHealth <= CONFIG.damage) {
                 caught.Kill();
                 CancelAttack(caught, charger);
             } else {
