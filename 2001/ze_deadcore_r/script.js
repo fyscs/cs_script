@@ -15,7 +15,7 @@ function _cmd(context,num){EntFire("server","server","say "+context.toString(),N
 
 //-------------------------------------------------------------- Japanese --------------------------------------------------------------
 
-Instance.PublicMethod("lyric_JP",/*none*/() => {_lyric_JP()})
+Instance.OnScriptInput("lyric_JP", _lyric_JP);
 function _lyric_JP(){
     EntFire("lyric_relay","Enable","",28.8);
     EntFire("lyric_hud","addoutput","OnUser2>!self>SetMessage>\u5FA1\u4F3D\u8A71\u0028\u30D5\u30A7\u30A2\u30EA\u30FC\u30C6\u30A4\u30EB\u0029\u306F\nFeariiteiru wa>0.0>-1",0);
@@ -47,7 +47,7 @@ function _lyric_JP(){
 
 //-------------------------------------------------------------- English --------------------------------------------------------------
 
-Instance.PublicMethod("lyric_EN",/*none*/() => {_lyric_EN()})
+Instance.OnScriptInput("lyric_EN", _lyric_EN);
 function _lyric_EN(){
     EntFire("lyric_relay","Enable","",28.8);
     EntFire("lyric_hud","addoutput","OnUser2>!self>SetMessage>A dying fairy tale>0.0>-1",0);
