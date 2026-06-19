@@ -752,7 +752,7 @@ const LARGE_PLATFORMS = ["s_builder_bridgelong", "s_builder_outerplatform", "s_b
 
 const ALIGN_SNAP_SIZE = 16;
 const ALIGN_TOLERANCE = 4;
-const ALIGN_ROT_TOLERANCE = 15;
+const ALIGN_ROT_TOLERANCE = 5;
 
 function NormalizeRotation(rot) {
     let ry = rot.y % 360;
@@ -798,7 +798,7 @@ function IsDecoPositionOccupied(pos, rot) {
 
 function IsNearDecoDuplicate(pos, rot) {
 
-    const maxDist = ALIGN_SNAP_SIZE * 1.5;
+    const maxDist = 96;
     for (const deco of used_deco_positions) {
         if (deco.pending !== undefined) {
             continue;
@@ -1528,7 +1528,6 @@ function GenerateDecorationsForNode(n) {
         }
     } else if (n.type === "s_builder_left" || n.type === "s_builder_right") {
         if (Rand(SPAWNRATIO_bladetrap)) {
-            Instance.Msg("");
             const bladePos = GetBladeTrapPosition(n);
             if (bladePos.found) {
                 const bsEnt = Instance.FindEntityByName("builder_script");
@@ -1702,6 +1701,7 @@ function BuildBuffer() {
         hit_t_randomize = false;
         if (RandomInt(0, 1) === 1) {
             turning++;
+            if (turning > 2) turning = 2;
             let ee = buffer.exits[0];
             let ry = Crot.y + ee.rot.y;
             let pp = VectorAdd(VectorAdd(VectorAdd(Cpos, VectorMul(fw, ee.pos.x)), VectorMul(lf, -ee.pos.y)), VectorMul(up, ee.pos.z));
@@ -1714,6 +1714,7 @@ function BuildBuffer() {
             next_list.push(new Exit(buffer.name, pp, Vector(0, ry, 0)));
         } else {
             turning--;
+            if (turning < -2) turning = -2;
             let ee = buffer.exits[1];
             let ry = Crot.y + ee.rot.y;
             let pp = VectorAdd(VectorAdd(VectorAdd(Cpos, VectorMul(fw, ee.pos.x)), VectorMul(lf, -ee.pos.y)), VectorMul(up, ee.pos.z));
@@ -1861,7 +1862,7 @@ function Tick() {
         if (IsPositionOccupied(n.pos)) skipThis = true;
 
         if (!skipThis) {
-            const maxDist = ALIGN_SNAP_SIZE * 0.25;
+            const maxDist = 16;
             for (const b of buildlist) {
                 const dist = GetDistanceXY(n.pos, b.pos);
                 if (dist < maxDist && RotationsMatch(n.rot, b.rot)) {
@@ -1874,7 +1875,7 @@ function Tick() {
         if (!skipThis) {
             for (const deco of used_deco_positions) {
                 const dist = GetDistanceXY(n.pos, deco.pos);
-                if (dist < ALIGN_SNAP_SIZE * 2) {
+                if (dist < 128) {
                     skipThis = true;
                     break;
                 }
@@ -1979,6 +1980,7 @@ function Tick() {
                 const bladePos = GetBladeTrapPosition(n);
                 if (bladePos.found) {
 
+
                     const bsEnt = Instance.FindEntityByName("builder_script");
                     if (bsEnt) bsEnt.Teleport({ position: bladePos.pos, angles: bladePos.rot });
                     Build(new B_BLADETRAP(), bladePos.pos, bladePos.rot);
@@ -2029,7 +2031,6 @@ function Tick() {
                 if (bsEnt) bsEnt.Teleport({ position: n.pos, angles: n.rot });
                 BuildDecoration(new B_VINEWALL(), n.pos, n.rot);
             }
-
             const rrr = RandomInt(0, 100);
             let vinePos = VectorAdd(n.pos, VectorMul(n.fw, 128));
             let vineRot = Vector(0, RandomInt(0, 360), 0);
@@ -2261,10 +2262,8 @@ function Tick() {
             }
         } else if (n.type === "s_builder_tjunc") {
             if (Rand(SPAWNRATIO_bladetrap)) {
-                Instance.Msg("");
                 const bladePos = GetBladeTrapPosition(n);
                 if (bladePos.found) {
-                    Instance.Msg("");
                     const bsEnt = Instance.FindEntityByName("builder_script");
                     if (bsEnt) bsEnt.Teleport({ position: bladePos.pos, angles: bladePos.rot });
                     Build(new B_BLADETRAP(), bladePos.pos, bladePos.rot);
@@ -2281,6 +2280,13 @@ function Tick() {
                 const bsEnt = Instance.FindEntityByName("builder_script");
                 if (bsEnt) bsEnt.Teleport({ position: ssp, angles: ssr });
                 BuildDecoration(new B_PILLARFALLEN(), ssp, ssr);
+            }
+            if (Rand(SPAWNRATIO_rooftower) && n.mainpath) {
+                let ssp = VectorAdd(VectorAdd(n.pos, VectorMul(n.fw, 128)), VectorMul(n.up, 288));
+                let ssr = Vector(0, RandomInt(0, 360), 0);
+                const bsEnt = Instance.FindEntityByName("builder_script");
+                if (bsEnt) bsEnt.Teleport({ position: ssp, angles: ssr });
+                BuildDecoration(new B_ROOFTOWER(), ssp, ssr);
             }
             if (Rand(SPAWNRATIO_mine)) {
                 let ssp = VectorAdd(VectorAdd(n.pos, VectorMul(n.fw, RandomInt(64, 128))), VectorMul(n.lf, RandomInt(-96, 96)));
@@ -2819,7 +2825,7 @@ function CheckWinnerContinue(caller) {
 
             if (caller) {
                 Instance.EntFireAtTarget({ target: caller, input: "Enable" });
-                Instance.SetNextThink(Instance.GetGameTime() + 0.10);
+                Instance.SetNextThink(Instance.GetGameTime() + 0.1);
                 Instance.SetThink(() => {
                     if (caller) Instance.EntFireAtTarget({ target: caller, input: "Disable" });
                 });
@@ -3081,36 +3087,36 @@ function SlotmachinePressed(heart, inputData) {
             const act = Rands([50.00, 30.00, 20.00]);
             if (act === 1) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: `health ${activator.GetHealth() + 100}`, delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 增益 --- ${playerName} 血量 +100 **`, delay: 0.90 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** BUFF --- ${playerName} health +100 **`, delay: 0.90 });
             } else if (act === 2) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "speed 1.50", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 增益 --- ${playerName} 加速 (1.50) **`, delay: 0.90 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** BUFF --- ${playerName} speed up (1.50) **`, delay: 0.90 });
             } else if (act === 3) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "gravity 0.40", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 增益 --- ${playerName} 低重力 (0.40) **`, delay: 0.90 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** BUFF --- ${playerName} gravity low (0.40) **`, delay: 0.90 });
             }
         } else if (res === 2) {
             if (boundModel) Instance.EntFireAtTarget({ target: boundModel, input: "FireUser2", delay: 1.00 });
             const act = Rands([50.00, 30.00, 20.00]);
             if (act === 1) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "health 1", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 减益 --- ${playerName} 血量 1 **`, delay: 1.00 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEBUFF --- ${playerName} health 1 **`, delay: 1.00 });
             } else if (act === 2) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "speed 0.50", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 减益 --- ${playerName} 减速 (0.50) **`, delay: 1.00 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEBUFF --- ${playerName} speed down (0.50) **`, delay: 1.00 });
             } else if (act === 3) {
                 Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "gravity 1.50", delay: 1.00 });
-                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 减益 --- ${playerName} 高重力 (1.50) **`, delay: 1.00 });
+                Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEBUFF --- ${playerName} gravity high (1.50) **`, delay: 1.00 });
             }
         } else if (res === 3) {
             if (boundModel) Instance.EntFireAtTarget({ target: boundModel, input: "FireUser3", delay: 1.05 });
-            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 奖励 --- ${playerName} 血量 +300, 速度 2.00, 重力 0.30 **`, delay: 1.05 });
+            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** REWARD --- ${playerName} health +300, speed 2.00, gravity 0.30 **`, delay: 1.05 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: `health ${activator.GetHealth() + 300}`, delay: 1.00 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "speed 2.00", delay: 1.00 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: "gravity 0.30", delay: 1.00 });
         } else if (res === 4) {
             if (boundModel) Instance.EntFireAtTarget({ target: boundModel, input: "FireUser4", delay: 1.10 });
-            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** 惩罚--- ${playerName} 血量 ${Math.floor(activator.GetHealth() / 2)}, 燃烧 **`, delay: 1.10 });
+            Instance.EntFireAtTarget({ target: Instance.FindEntityByName("server"), input: "Command", value: `say ** DEATH --- ${playerName} health ${Math.floor(activator.GetHealth() / 2)}, ignited **`, delay: 1.10 });
             Instance.EntFireAtTarget({ target: activator, input: "KeyValue", value: `health ${Math.floor(activator.GetHealth() / 2)}`, delay: 1.00 });
             Instance.EntFireAtTarget({ target: activator, input: "IgniteLifetime", value: "100", delay: 1.00 });
         }
@@ -3684,4 +3690,3 @@ function OnEventFiredEVENT_PLAYER_CONNECT(callback) {
 
 function OnEventFiredEVENT_DOOR_MOVING(callback) {
 }
-

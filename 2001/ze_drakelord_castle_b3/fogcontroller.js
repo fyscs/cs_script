@@ -14,10 +14,15 @@ let ds = 500.00;
 let tds = 500.00;
 let de = 20000.00;
 let tde = 20000.00;
-let speed = 1.0;
-let speed_dist = 20.0;
-let speed_z = 20.0;
+let speed = 0.25;
+let speed_dist = 5.0;
+let speed_z = 5.0;
 let ticking = false;
+const FOG_TICK_INTERVAL = 0.10;
+
+function HasPendingFogTransition() {
+    return r !== tr || g !== tg || b !== tb || z !== tz || ds !== tds || de !== tde;
+}
 
 Instance.OnScriptInput("Initialize", () => {
     SCRIPT_FOG = Instance.FindEntityByName("FogController_Script");
@@ -33,11 +38,11 @@ Instance.OnScriptInput("Initialize", () => {
 	tds = 500.00;
 	de = 20000.00;
 	tde = 20000.00;
-    speed = 1.0;
-    speed_dist = 20.0;
-    speed_z = 20.0;
+	speed = 0.25;
+	speed_dist = 5.0;
+	speed_z = 5.0;
 	ticking = false;
-	Instance.EntFireAtTarget({ target: SCRIPT_FOG, input: "RunScriptInput", value: "StartTick", delay: 0.02 });
+	Instance.EntFireAtTarget({ target: SCRIPT_FOG, input: "RunScriptInput", value: "StartTick", delay: FOG_TICK_INTERVAL });
 });
 
 Instance.OnScriptInput("StartTick", () => {
@@ -131,9 +136,13 @@ Instance.OnScriptInput("Tick", () => {
     Instance.EntFireAtName({ name: "fog", input: "SetFogEndDistance", value: `${Math.trunc(de)}` });
     Instance.EntFireAtName({ name: "fog", input: "SetFarZ", value: `${Math.trunc(z)}` });
     Instance.EntFireAtName({ name: "fog", input: "SetFogColor", value: `${Math.trunc(r)} ${Math.trunc(g)} ${Math.trunc(b)}` });
-    Instance.EntFireAtTarget({ target: SCRIPT_FOG, input: "RunScriptInput", value: "Tick", delay: 0.1 });
-
     Instance.EntFireAtName({ name: "sky_color", input: "Color", value: `${Math.trunc(r)} ${Math.trunc(g)} ${Math.trunc(b)}` });
+
+    if (HasPendingFogTransition()) {
+        Instance.EntFireAtTarget({ target: SCRIPT_FOG, input: "RunScriptInput", value: "Tick", delay: FOG_TICK_INTERVAL });
+    } else {
+        ticking = false;
+    }
 });
 
 Instance.OnRoundStart(() => {
@@ -159,9 +168,9 @@ function ResetScript()
     tds = 500.00;
     de = 20000.00;
     tde = 20000.00;
-    speed = 1.0;
-    speed_dist = 20.0;
-    speed_z = 20.0;
+    speed = 0.25;
+    speed_dist = 5.0;
+    speed_z = 5.0;
     ticking = false;
 }
 
