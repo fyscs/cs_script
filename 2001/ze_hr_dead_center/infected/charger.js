@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/18
+ * 2026/6/20
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -72,16 +72,15 @@ Instance.OnPlayerKill((event) => {
     if (event.player === charger) {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
-        CancelAttack(caught, charger);
-        if (caught && caught.IsValid()) {
-            Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
-            if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
-                // @ts-ignore
-                Instance.ServerCommand(`say **${event.attacker.GetPlayerController()?.GetPlayerName()}解救了${caught.GetPlayerController()?.GetPlayerName()}**`);
-                // @ts-ignore
-                event.attacker.GetPlayerController()?.AddMoneySpendableNow(5000);
+        if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
+            // @ts-ignore
+            const attackerController = event.attacker.GetPlayerController();
+            if (attackerController && attackerController.IsValid()) {
+                Instance.ServerCommand(`say **${attackerController.GetPlayerName()}解救了${caught?.GetPlayerController()?.GetPlayerName()}**`);
+                attackerController.AddMoneySpendableNow(5000);
             }
         }
+        CancelAttack(caught, charger);
         Instance.EntFireAtName({ name: "charger_kill_relay_" + suffix, input: "Trigger" });
     }
 });
@@ -160,9 +159,8 @@ function UpdateState(charger) {
 
         // 伤害判定
         state.attackDuration += timeDelta;
-        if (state.attackDuration === 1) Instance.EntFireAtName({ name: "charger_smash_sound_" + suffix, input: "StartSound" });
-        if (state.attackDuration >= 1.67) {
-            state.attackDuration = 0;
+        if (state.attackDuration === 1) {
+            Instance.EntFireAtName({ name: "charger_smash_sound_" + suffix, input: "StartSound" });
             const currentHealth = caught.GetHealth();
             if (currentHealth <= CONFIG.damage) {
                 caught.Kill();
@@ -170,6 +168,9 @@ function UpdateState(charger) {
             } else {
                 caught.SetHealth(currentHealth - CONFIG.damage);
             }
+        }
+        if (state.attackDuration >= 1.67) {
+            state.attackDuration = 0;
         }
         return;
     }
@@ -245,7 +246,8 @@ function CancelAttack(player, charger) {
         const angles = player.GetAbsAngles();
         angles.pitch = 0;
         angles.roll = 0;
-        player.Teleport({ position: charger.GetAbsOrigin(), angles });
+        player.Teleport({ position: charger.GetAbsOrigin(), angles, velocity: { x: 0, y: 0, z: 0 } });
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_controlled" });
         Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: player, delay: 0.1 });
     }

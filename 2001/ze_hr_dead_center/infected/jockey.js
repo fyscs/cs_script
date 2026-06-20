@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/18
+ * 2026/6/20
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -129,6 +129,7 @@ function UpdateState(player) {
         const pouncedKeyDirection = GetAbsKeyDirection(pounced);
         const accelerate = VectorAdd(VectorScale(jockeyKeyDirection, CONFIG.jockeyAccelerate), VectorScale(pouncedKeyDirection, CONFIG.pouncedAccelerate));
         const newVelocity = VectorAdd(VectorScale(velocity, 0.9), accelerate);
+        newVelocity.z = velocity.z;
         LimitHorizontalMagnitude(newVelocity, 250);
         pounced.Teleport({ velocity: newVelocity });
         player.Teleport({ position: pounced.GetAbsOrigin() });
