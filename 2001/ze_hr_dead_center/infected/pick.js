@@ -3,7 +3,7 @@ import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/po
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/18
+ * 2026/6/20
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
@@ -127,6 +127,7 @@ Instance.OnPlayerKill((event) => {
     const player = event.player;
     if (currentInfecteds.has(player)) {
         currentInfecteds.delete(player);
+        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
@@ -134,6 +135,7 @@ Instance.OnPlayerKill((event) => {
     }
     if (preInfected.has(player)) {
         currentInfecteds.delete(player);
+        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
@@ -171,6 +173,7 @@ Instance.OnPlayerKill((event) => {
  */
 function BecomePreInfected(player, type) {
     currentInfecteds.add(player);
+    Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "PushInfected", activator: player });
     Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1.5" });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
