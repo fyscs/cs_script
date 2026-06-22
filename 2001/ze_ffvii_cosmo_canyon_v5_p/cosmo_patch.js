@@ -1088,7 +1088,7 @@ Instance.OnScriptInput("ItemConfuse", (data) => {
 });
 // KOEN EDIT:
 // CHANGE RELAYS TO BUTTONS THEN FIRE PRESS INPUT INSTEAD OF TRIGGER
-const relay_names = {
+const button_name_array = {
     "Weapon_Heal": "Item_Heal_Button",
     "Weapon_Fire": "Item_Fire_Button",
     "Weapon_Electro": "Item_Electro_Button",
@@ -1109,20 +1109,20 @@ Instance.OnScriptInput("ItemTick", (data) => {
     if (parent !== undefined && parent instanceof CSPlayerPawn) {
         const item_name = data.caller.GetEntityName();
         if (parent.WasInputJustPressed(CSInputs.USE)) {
-            const relay_name = relay_names[item_name];
+            const button_name = button_name_array[item_name];
             if (parent.GetTeamNumber() === Team.CT) {
-                if (relay_name === "Item_Relay_Ultima" && shinra_tp) {
+                if (button_name === "Item_Ultima_Button" && shinra_tp) {
                     return;
                 }
                 if (!gi_nattak_silence) {
-                    EntFire(relay_name, "Press");
+                    EntFire(button_name, "Press");
                 }
             }
             if (parent.GetTeamNumber() === Team.T) {
-                if (relay_name === "Item_Z_Ice_Relay" && shinra_elevator) {
+                if (button_name === "Item_Z_Ice_Button" && shinra_elevator) {
                     return;
                 }
-                EntFire(relay_name, "Press");
+                EntFire(button_name, "Press");
             }
         }
         if (item_name === "Weapon_Z_Ice" || item_name === "Weapon_Z_Fire") {
