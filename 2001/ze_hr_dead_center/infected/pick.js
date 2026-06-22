@@ -3,7 +3,7 @@ import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/po
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/20
+ * 2026/6/22
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
@@ -25,6 +25,20 @@ Instance.OnScriptInput("EnableTank", () => {
 
 Instance.OnScriptInput("EnableInfected", () => {
     enableInfected = true;
+});
+
+Instance.OnScriptInput("CheckPreInfected", (inputData) => {
+    const player = inputData.activator;
+    if (!player || !player.IsValid()) return;
+    if (preInfected.has(player)) {
+        preInfected.delete(player);
+        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
+        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
+        Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
+        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
+        player.Kill();
+    }
 });
 
 Instance.OnScriptInput("PushMotherZombies", () => {
@@ -85,6 +99,7 @@ Instance.OnKnifeAttack((event) => {
 Instance.OnRoundStart(() => {
     for (const player of currentInfecteds) {
         if (player && player.IsValid()) {
+            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
             Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
             Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
@@ -132,14 +147,13 @@ Instance.OnPlayerKill((event) => {
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
-    }
-    if (preInfected.has(player)) {
-        currentInfecteds.delete(player);
+    } else if (preInfected.has(player)) {
+        preInfected.delete(player);
         Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
-        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
+        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
     }
 });
 
@@ -174,6 +188,7 @@ Instance.OnPlayerKill((event) => {
 function BecomePreInfected(player, type) {
     currentInfecteds.add(player);
     Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "PushInfected", activator: player });
+    Instance.EntFireAtName({ name: "infected_pick_script", input: "RunScriptInput", value: "CheckPreInfected", activator: player, delay: 20 });
     Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1.5" });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
