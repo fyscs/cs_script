@@ -1098,10 +1098,10 @@ const relay_names = {
     "Weapon_Earth": "Item_Earth_Button",
     "Weapon_Ultima": "Item_Ultima_Button",
     "Weapon_Sleep": "Item_Sleep_Button",
-    "Weapon_Potion": "Item_Relay_Potion",
+    "Weapon_Potion": "Potion_Button",
     "Weapon_Z_Ice": "Item_Z_Ice_Button",
     "Weapon_Z_Fire": "Item_Z_Fire_Button",
-    "Weapon_Z_Poison": "Potion_Button",
+    "Weapon_Z_Poison": "Item_Z_Poison_Button",
     "Item_Z_Confuse": "Item_Z_Confuse_button"
 };
 Instance.OnScriptInput("ItemTick", (data) => {
