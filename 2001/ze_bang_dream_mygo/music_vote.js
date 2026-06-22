@@ -5,10 +5,10 @@ import { Instance, Entity } from "cs_script/point_script";
  * 此脚本由皮皮猫233编写
  * 仅供MyGO地图使用
  * 交流学习请联系作者
- * 2026/1/29
+ * 2026/6/7
  */
 
-const voteState = [0, 0, 0, 0, 0, 0];
+const voteState = [0, 0, 0, 0, 0, 0, 0];
 let voteEnd = false;
 
 Instance.OnScriptInput("Add", (inputData) => {
