@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/20
+ * 2026/6/26
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -15,6 +15,7 @@ const CONFIG = {
     jockeyAccelerate: 1920 * timeDelta,     // jockey的移动加速度
     pouncePushedCD: 10,                     // 被推开后的CD惩罚
     damage: 5,                              // 伤害（每秒）
+    maxHealth: 10000                        // 最大血量值
 }
 
 const state = {
@@ -22,7 +23,8 @@ const state = {
     pouncePushedCD: 0,
     isAttacking: false,
     airDuration: 0,
-    attackDuration: 0
+    attackDuration: 0,
+    healthInterval: 0
 }
 
 let jockey = /** @type {CSPlayerPawn|undefined} */ (undefined);
@@ -146,6 +148,13 @@ function UpdateState(player) {
         }
         return;
     }
+
+    // 回血检查
+    if (state.healthInterval >= 1) {
+        state.healthInterval = 0;
+        const currentHealth = player.GetHealth();
+        if (currentHealth < CONFIG.maxHealth) player.SetHealth(Math.min(currentHealth + 1000, CONFIG.maxHealth));
+    } else state.healthInterval += timeDelta;
 
     // CD检查
     if (state.pouncePushedCD > 0 || state.pounceCD > 0) {

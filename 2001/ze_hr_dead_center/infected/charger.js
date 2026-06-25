@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/20
+ * 2026/6/26
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -12,9 +12,10 @@ const CONFIG = {
     damage: 30,                 // 攻击伤害（每次）
     chargeCD: 10,               // 冲刺CD
     maxChargeDuration: 2,       // 最大冲刺时间
-    chargeAccelerate: 1000,     // 冲刺加速度
+    chargeAccelerate: 2000,     // 冲刺加速度
     maxChargeSpeed: 1000,       // 最大冲刺速度
     pushSpeed: 600,             // 推力
+    maxHealth: 10000            // 最大生命值
 }
 
 const state = {
@@ -23,7 +24,8 @@ const state = {
     chargeDuration: 0,
     attackDuration: 0,
     chargeCD: 0,
-    chargeAngles: { pitch: 0, yaw: 0, roll: 0 }
+    chargeAngles: { pitch: 0, yaw: 0, roll: 0 },
+    healthInterval: 0
 }
 
 let charger = /** @type {CSPlayerPawn|undefined} */ (undefined);
@@ -174,6 +176,13 @@ function UpdateState(charger) {
         }
         return;
     }
+
+    // 回血检查
+    if (state.healthInterval >= 1) {
+        state.healthInterval = 0;
+        const currentHealth = charger.GetHealth();
+        if (currentHealth < CONFIG.maxHealth) charger.SetHealth(Math.min(currentHealth + 1000, CONFIG.maxHealth));
+    } else state.healthInterval += timeDelta;
 
     // CD检查
     if (state.chargeCD > 0) {

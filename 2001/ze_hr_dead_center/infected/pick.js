@@ -3,7 +3,7 @@ import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/po
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/22
+ * 2026/6/26
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
@@ -193,7 +193,9 @@ function BecomePreInfected(player, type) {
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_pre_infected:1" });
-    Instance.EntFireAtName({ name: "become_pre_" + type.toLowerCase() + "_hudhint", input: "ShowHudHint", activator: player });
+    for (let i = 0; i < 10; i++) {
+        Instance.EntFireAtName({ name: "become_pre_" + type.toLowerCase() + "_filter", input: "TestActivator", activator: player, delay: i });
+    }
     preInfected.set(player, type);
 }
 

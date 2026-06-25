@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Hunter脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/18
+ * 2026/6/26
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -17,7 +17,8 @@ const CONFIG = {
     pounceDamage: 20,       // 飞扑伤害（每秒）
     perPounceCD: 1,         // 每次飞扑累计的CD
     pouncePushedCD: 10,     // 被推开后的CD惩罚
-    maxAbsPounceTimes: 8    // 一次性最多可飞扑的实际次数（不包含落地刷新次数）
+    maxAbsPounceTimes: 8,   // 一次性最多可飞扑的实际次数（不包含落地刷新次数）
+    maxHealth: 10000        // 最大生命值
 }
 
 const state = {
@@ -31,7 +32,8 @@ const state = {
     attackDuration: 0,
     pounceCD: 0,
     pouncePushedCD: 0,
-    absPounceTimes: 0
+    absPounceTimes: 0,
+    healthInterval: 0,
 }
 
 let hunter = /** @type {CSPlayerPawn|undefined} */ (undefined);
@@ -152,6 +154,13 @@ function UpdateState(player) {
         return;
     }
 
+    // 回血检查
+    if (state.healthInterval >= 1) {
+        state.healthInterval = 0;
+        const currentHealth = player.GetHealth();
+        if (currentHealth < CONFIG.maxHealth) player.SetHealth(Math.min(currentHealth + 1000, CONFIG.maxHealth));
+    } else state.healthInterval += timeDelta;
+
     // CD检查
     if (state.pouncePushedCD > 0 || state.pounceCD > 0) {
         let text = "";
@@ -245,7 +254,7 @@ function UpdateState(player) {
             } else {
                 const start = player.GetAbsOrigin();
                 const end = { ...start };
-                end.z += 49;
+                end.z += 30;
                 start.z += 10;
                 const result = Instance.TraceSphere({
                     start,
