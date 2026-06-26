@@ -77,9 +77,10 @@ Instance.OnPlayerKill((event) => {
         if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
             // @ts-ignore
             const attackerController = event.attacker.GetPlayerController();
+            const caughtController = caught?.GetPlayerController();
             if (attackerController && attackerController.IsValid()) {
-                Instance.ServerCommand(`say **${attackerController.GetPlayerName()}解救了${caught?.GetPlayerController()?.GetPlayerName()}**`);
                 attackerController.AddMoneySpendableNow(5000);
+                if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **${Sanitize(attackerController.GetPlayerName())}解救了${Sanitize(caughtController.GetPlayerName())}**`);
             }
         }
         CancelAttack(caught, charger);
@@ -317,4 +318,13 @@ function LimitHorizontalMagnitude(v, maxMagnitude) {
         y: y * scale,
         z: z
     };
+}
+
+/**
+ * 移除常见危险字符防止注入
+ * @param {string} str 
+ * @returns 
+ */
+function Sanitize(str) {
+    return str.replace(/[";`$\\\n\r]/g, ""); // 
 }

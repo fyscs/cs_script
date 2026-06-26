@@ -67,7 +67,8 @@ Instance.OnScriptInput("Attack", (inputData) => {
     Instance.EntFireAtTarget({ target: pounced, input: "KeyValue", value: "movetype 0" });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: hunter });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: pounced, delay: 0.1 });
-    Instance.ServerCommand(`say **${pounced.GetPlayerController()?.GetPlayerName()}被Hunter扑倒了，使用匕首重击来解救你的队友**`);
+    const pouncedController = pounced.GetPlayerController();
+    if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **${Sanitize(pouncedController.GetPlayerName())}被Hunter扑倒了，使用匕首重击来解救你的队友**`);
 });
 
 Instance.OnRoundStart(() => {
@@ -110,8 +111,12 @@ Instance.OnKnifeAttack((event) => {
 
                 // 人类与Hunter之间无遮挡时才判定解除
                 if (!result.didHit) {
-                    Instance.ServerCommand(`say **${player.GetPlayerController()?.GetPlayerName()}解救了${pounced.GetPlayerController()?.GetPlayerName()}**`);
-                    player.GetPlayerController()?.AddMoneySpendableNow(5000);
+                    const playerController = player.GetPlayerController();
+                    const pouncedController = pounced.GetPlayerController();
+                    if (playerController && playerController.IsValid()) {
+                        playerController.AddMoneySpendableNow(5000);
+                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **${Sanitize(playerController.GetPlayerName())}解救了${Sanitize(pouncedController.GetPlayerName())}**`);
+                    }
                     CancelAttack(pounced, hunter);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
@@ -489,4 +494,13 @@ function GetProgressBar(value, max, totalBars, fillChar, emptyChar = undefined) 
     } else {
         return fillChar.repeat(filled);
     }
+}
+
+/**
+ * 移除常见危险字符防止注入
+ * @param {string} str 
+ * @returns 
+ */
+function Sanitize(str) {
+    return str.replace(/[";`$\\\n\r]/g, ""); // 
 }

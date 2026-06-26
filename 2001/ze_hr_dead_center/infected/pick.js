@@ -240,7 +240,8 @@ function BecomeInfected(player, type) {
             break;
         }
     }
-    Instance.ServerCommand("say >> " + player.GetPlayerController()?.GetPlayerName() + " << 成为了" + type + "!!!");
+    const playerController = player.GetPlayerController();
+    if (playerController && playerController.IsValid()) Instance.ServerCommand("say >> " + Sanitize(playerController.GetPlayerName()) + " << 成为了" + type + "!!!");
 }
 
 /**
@@ -292,4 +293,13 @@ function IsPointInSphere(point, center, radius) {
     const dz = point.z - center.z;
     const distSq = dx * dx + dy * dy + dz * dz;
     return distSq <= radius * radius;
+}
+
+/**
+ * 移除常见危险字符防止注入
+ * @param {string} str 
+ * @returns 
+ */
+function Sanitize(str) {
+    return str.replace(/[";`$\\\n\r]/g, ""); // 
 }
