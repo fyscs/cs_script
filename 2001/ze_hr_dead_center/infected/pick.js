@@ -1,14 +1,13 @@
-import { CSPlayerPawn, CSWeaponAttackType, Entity, Instance } from "cs_script/point_script";
+import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/point_script";
 
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/26
+ * 2026/7/1
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
 const currentInfecteds = new Set();
-let pickInterval = 30;
 
 let enableTank = false;
 const tankList = new Set();
@@ -42,6 +41,7 @@ Instance.OnScriptInput("CheckPreInfected", (inputData) => {
 });
 
 Instance.OnScriptInput("PushMotherZombies", () => {
+    motherZombies.clear();
     const players = Instance.FindEntitiesByClass("player");
     for (const player of players) {
         if (player.IsValid() && player.GetTeamNumber() === 2) motherZombies.add(player);
@@ -82,20 +82,6 @@ Instance.OnScriptInput("PickTank", () => {
     // }
 });
 
-Instance.OnKnifeAttack((event) => {
-    if (event.attackType === CSWeaponAttackType.SECONDARY) {
-        const player = event.weapon.GetOwner();
-        if (player && player.IsValid() && preInfected.has(player) && CheckSpawn(player)) {
-            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
-            Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
-            Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
-            Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_infected:1" });
-            BecomeInfected(player, preInfected.get(player));
-            preInfected.delete(player);
-        }
-    }
-});
-
 Instance.OnRoundStart(() => {
     for (const player of currentInfecteds) {
         if (player && player.IsValid()) {
@@ -113,23 +99,12 @@ Instance.OnRoundStart(() => {
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
         }
     });
-    motherZombies.clear();
     currentInfecteds.clear();
     enableInfected = false;
     infectedList.clear();
     enableTank = false;
     tankList.clear();
     preInfected.clear();
-    Instance.EntFireAtName({ name: "infected_pick_text", input: "SetIntMessage", value: pickInterval });
-    Instance.EntFireAtName({ name: "infected_pick_timer", input: "RefireTime", value: pickInterval });
-});
-
-Instance.OnRoundEnd((event) => {
-    if (event.winningTeam === 2) {
-        pickInterval = Math.min(pickInterval + 3, 40);
-    } else if (event.winningTeam === 3) {
-        pickInterval = Math.max(pickInterval - 5, 20);
-    }
 });
 
 Instance.OnPlayerReset((event) => {
@@ -180,6 +155,22 @@ Instance.OnPlayerKill((event) => {
 //     }
 // });
 
+Instance.SetThink(() => {
+    const players = Instance.FindEntitiesByClass("player");
+    for (const player of players) {
+        if (player.IsValid() && player.GetTeamNumber() === 3) Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "no_special_infected_filter" });
+    }
+    preInfected.forEach((value, player) => {
+        if (player.IsValid() && player.IsInputPressed(CSInputs.ATTACK2) && CheckSpawn(player)) {
+            BecomeInfected(player, preInfected.get(player));
+            preInfected.delete(player);
+        }
+    });
+    Instance.SetNextThink(Instance.GetGameTime() + 1 / 8);
+});
+
+Instance.SetNextThink(Instance.GetGameTime());
+
 /**
  * 成为预复活特感
  * @param {CSPlayerPawn} player 
@@ -196,6 +187,8 @@ function BecomePreInfected(player, type) {
     for (let i = 0; i < 10; i++) {
         Instance.EntFireAtName({ name: "become_pre_" + type.toLowerCase() + "_filter", input: "TestActivator", activator: player, delay: i });
     }
+    const knife = player.FindWeaponBySlot(CSGearSlot.KNIFE);
+    if (knife && knife.IsValid()) player.DestroyWeapon(knife);
     preInfected.set(player, type);
 }
 
@@ -230,6 +223,11 @@ function CheckSpawn(player) {
  */
 function BecomeInfected(player, type) {
     player.Teleport({ velocity: { x: 0, y: 0, z: 0 }});
+    player.GiveNamedItem("weapon_knife", true);
+    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
+    Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
+    Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
+    Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_infected:1" });
     const typeLow = type.toLowerCase();
     // @ts-ignore
     const entities = Instance.FindEntityByName(typeLow + "_temp").ForceSpawn(player.GetAbsOrigin(), player.GetAbsAngles());

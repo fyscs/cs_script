@@ -182,7 +182,7 @@ function UpdateState(charger) {
     if (state.healthInterval >= 1) {
         state.healthInterval = 0;
         const currentHealth = charger.GetHealth();
-        if (currentHealth < CONFIG.maxHealth) charger.SetHealth(Math.min(currentHealth + 1000, CONFIG.maxHealth));
+        if (currentHealth < CONFIG.maxHealth) charger.SetHealth(Math.min(currentHealth + 500, CONFIG.maxHealth));
     } else state.healthInterval += timeDelta;
 
     // CD检查

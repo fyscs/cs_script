@@ -158,7 +158,7 @@ function UpdateState(player) {
     if (state.healthInterval >= 1) {
         state.healthInterval = 0;
         const currentHealth = player.GetHealth();
-        if (currentHealth < CONFIG.maxHealth) player.SetHealth(Math.min(currentHealth + 1000, CONFIG.maxHealth));
+        if (currentHealth < CONFIG.maxHealth) player.SetHealth(Math.min(currentHealth + 500, CONFIG.maxHealth));
     } else state.healthInterval += timeDelta;
 
     // CD检查
