@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/18
+ * 2026/6/26
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -12,9 +12,10 @@ const CONFIG = {
     damage: 30,                 // 攻击伤害（每次）
     chargeCD: 10,               // 冲刺CD
     maxChargeDuration: 2,       // 最大冲刺时间
-    chargeAccelerate: 1000,     // 冲刺加速度
+    chargeAccelerate: 2000,     // 冲刺加速度
     maxChargeSpeed: 1000,       // 最大冲刺速度
     pushSpeed: 600,             // 推力
+    maxHealth: 10000            // 最大生命值
 }
 
 const state = {
@@ -23,7 +24,8 @@ const state = {
     chargeDuration: 0,
     attackDuration: 0,
     chargeCD: 0,
-    chargeAngles: { pitch: 0, yaw: 0, roll: 0 }
+    chargeAngles: { pitch: 0, yaw: 0, roll: 0 },
+    healthInterval: 0
 }
 
 let charger = /** @type {CSPlayerPawn|undefined} */ (undefined);
@@ -72,16 +74,16 @@ Instance.OnPlayerKill((event) => {
     if (event.player === charger) {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
-        CancelAttack(caught, charger);
-        if (caught && caught.IsValid()) {
-            Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
-            if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
-                // @ts-ignore
-                Instance.ServerCommand(`say **${event.attacker.GetPlayerController()?.GetPlayerName()}解救了${caught.GetPlayerController()?.GetPlayerName()}**`);
-                // @ts-ignore
-                event.attacker.GetPlayerController()?.AddMoneySpendableNow(5000);
+        if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
+            // @ts-ignore
+            const attackerController = event.attacker.GetPlayerController();
+            const caughtController = caught?.GetPlayerController();
+            if (attackerController && attackerController.IsValid()) {
+                attackerController.AddMoneySpendableNow(5000);
+                if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **${Sanitize(attackerController.GetPlayerName())}解救了${Sanitize(caughtController.GetPlayerName())}**`);
             }
         }
+        CancelAttack(caught, charger);
         Instance.EntFireAtName({ name: "charger_kill_relay_" + suffix, input: "Trigger" });
     }
 });
@@ -160,9 +162,8 @@ function UpdateState(charger) {
 
         // 伤害判定
         state.attackDuration += timeDelta;
-        if (state.attackDuration === 1) Instance.EntFireAtName({ name: "charger_smash_sound_" + suffix, input: "StartSound" });
-        if (state.attackDuration >= 1.67) {
-            state.attackDuration = 0;
+        if (state.attackDuration === 1) {
+            Instance.EntFireAtName({ name: "charger_smash_sound_" + suffix, input: "StartSound" });
             const currentHealth = caught.GetHealth();
             if (currentHealth <= CONFIG.damage) {
                 caught.Kill();
@@ -171,8 +172,18 @@ function UpdateState(charger) {
                 caught.SetHealth(currentHealth - CONFIG.damage);
             }
         }
+        if (state.attackDuration >= 1.67) {
+            state.attackDuration = 0;
+        }
         return;
     }
+
+    // 回血检查
+    if (state.healthInterval >= 1) {
+        state.healthInterval = 0;
+        const currentHealth = charger.GetHealth();
+        if (currentHealth < CONFIG.maxHealth) charger.SetHealth(Math.min(currentHealth + 500, CONFIG.maxHealth));
+    } else state.healthInterval += timeDelta;
 
     // CD检查
     if (state.chargeCD > 0) {
@@ -245,7 +256,8 @@ function CancelAttack(player, charger) {
         const angles = player.GetAbsAngles();
         angles.pitch = 0;
         angles.roll = 0;
-        player.Teleport({ position: charger.GetAbsOrigin(), angles });
+        player.Teleport({ position: charger.GetAbsOrigin(), angles, velocity: { x: 0, y: 0, z: 0 } });
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "movetype 2" });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_controlled" });
         Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: player, delay: 0.1 });
     }
@@ -306,4 +318,13 @@ function LimitHorizontalMagnitude(v, maxMagnitude) {
         y: y * scale,
         z: z
     };
+}
+
+/**
+ * 移除常见危险字符防止注入
+ * @param {string} str 
+ * @returns 
+ */
+function Sanitize(str) {
+    return str.replace(/[";`$\\\n\r]/g, ""); // 
 }
