@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/26
+ * 2026/7/3
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -43,12 +43,17 @@ Instance.OnScriptInput("BecomeJockey", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !jockey || !jockey.IsValid()) return;
+    const playerEyePostion = player.GetEyePosition();
+    const playerPostion = player.GetAbsOrigin();
+    const jockeyEyePostion = jockey.GetEyePosition();
+    if (IsBlocked(playerEyePostion, jockeyEyePostion) && IsBlocked(playerPostion, jockeyEyePostion)) return;
     state.isAttacking = true;
     pounced = player;
-    jockey.Teleport({ position: pounced.GetAbsOrigin(), velocity: { x: 0, y: 0, z: 0 } });
+    jockey.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: jockey, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "jockey_attack_trigger_" + suffix, input: "Disable" });
     Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "StartGlowing" });
     Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "SetAnimationLooping", value: "a_jockey_ride_idle" });
     Instance.EntFireAtName({ name: "jockey_attack_sound_" + suffix, input: "StartSound" });
@@ -56,7 +61,7 @@ Instance.OnScriptInput("Attack", (inputData) => {
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: pounced, delay: 0.1 });
     Instance.EntFireAtName({ name: "controlled_by_jockey_hudhint", input: "ShowHudHint", activator: pounced });
     const pouncedController = pounced.GetPlayerController();
-    if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **${Sanitize(pouncedController.GetPlayerName())}被Jockey抓住了，使用匕首重击来解救你的队友**`);
+    if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(pouncedController.GetPlayerName())} <<被Jockey抓住了，使用匕首重击来解救你的队友**`);
 });
 
 Instance.OnRoundStart(() => {
@@ -102,7 +107,7 @@ Instance.OnKnifeAttack((event) => {
                     const pouncedController = pounced.GetPlayerController();
                     if (playerController && playerController.IsValid()) {
                         playerController.AddMoneySpendableNow(5000);
-                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **${Sanitize(playerController.GetPlayerName())}解救了${Sanitize(pouncedController.GetPlayerName())}**`);
+                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(playerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
                     }
                     CancelAttack(pounced, jockey);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
@@ -258,6 +263,20 @@ function GetAbsKeyDirection(player) {
 }
 
 /**
+ * 判断两点之间是否被阻挡
+ * @param {import("cs_script/point_script").Vector} vec1 
+ * @param {import("cs_script/point_script").Vector} vec2 
+ */
+function IsBlocked(vec1, vec2, ignorePlayers = true, ignoreEntity = undefined) {
+    return Instance.TraceLine({
+        start: vec1,
+        end: vec2,
+        ignorePlayers,
+        ignoreEntity
+    }).didHit;
+}
+
+/**
  * 将欧拉角转换为三维方向向量
  * @param {import("cs_script/point_script").QAngle} angles
  * @returns {import("cs_script/point_script").Vector}
@@ -339,7 +358,7 @@ function IsPointInSphere(point, center, radius) {
 function IsPointInViewCone(eyePos, eyeAng, point, fovDeg) {
     // 1. 将欧拉角转换为视线方向向量（Source 引擎坐标系：X 前，Y 左，Z 上）
     const pitch = eyeAng.pitch * (Math.PI / 180);
-    const yaw = eyeAng.yaw * (Math.PI / 180);
+    const yaw   = eyeAng.yaw   * (Math.PI / 180);
 
     const forwardX = Math.cos(pitch) * Math.cos(yaw);
     const forwardY = Math.cos(pitch) * Math.sin(yaw);

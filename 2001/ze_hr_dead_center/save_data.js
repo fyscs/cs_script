@@ -4,8 +4,12 @@ import { CSPlayerPawn, Instance, CSGearSlot } from "cs_script/point_script";
  * 数据存读取脚本
  * 此脚本用于实现回合结算后仍能恢复连关数据
  * 此脚本由皮皮猫233编写
- * 2026/7/1
+ * 2026/7/3
  */
+
+const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL];
+const weaponNames = ["weapon_taser"];
+const itemNames = ["weapon_healthshot", "weapon_molotov", "weapon_flashbang", "weapon_incgrenade", "weapon_hegrenade", "weapon_smokegrenade", "weapon_decoy"];
 
 let continuousSwitch = false;
 const playerData = new Map();
@@ -27,7 +31,14 @@ Instance.OnScriptInput("SaveData", () => {
         if (health <= 0) continue;
         const armor = player.GetArmor();
         const weapons = FindWeapons(player);
-        playerData.set(player, { armor: armor, health: health, weapons: weapons, helmet: player.HasHelmet(), money: player.GetPlayerController()?.GetMoneySpendableNow() });
+        playerData.set(player, { 
+            armor: armor, 
+            health: health, 
+            weapons: weapons, 
+            items: FindItems(player), 
+            helmet: player.HasHelmet(), 
+            money: player.GetPlayerController()?.GetMoneySpendableNow() 
+        });
     }
 });
 
@@ -54,7 +65,7 @@ Instance.OnScriptInput("ReadData", () => {
                 const properties = playerData.get(player);
                 player.SetArmor(properties.armor);
                 player.SetHealth(properties.health);
-                GiveWeapons(player, properties.weapons);
+                GiveWeaponsAndItems(player, properties.weapons, properties.items);
                 player.SetHasHelmet(properties.helmet);
                 if (properties.money) {
                     const playerController = player.GetPlayerController();
@@ -113,13 +124,11 @@ Instance.OnRoundEnd((event) => {
  * @param {CSPlayerPawn} player 
  */
 function FindWeapons(player) {
-    const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL]
-    const weaponNames = ["weapon_healthshot", "weapon_molotov", "weapon_flashbang", "weapon_incgrenade", "weapon_hegrenade", "weapon_smokegrenade", "weapon_decoy", "weapon_taser"]
     const weapons = [];
     for (const weaponSlot of weaponSlots) {
         const weapon = player.FindWeaponBySlot(weaponSlot);
         if (!weapon || !weapon.IsValid()) continue;
-        const name = weapon.GetClassName();
+        const name = weapon.GetData().GetName();
         weapons.push(name);
     }
     for (const weaponName of weaponNames) {
@@ -131,15 +140,35 @@ function FindWeapons(player) {
 }
 
 /**
+ * 获取当前玩家的全部道具
+ * @param {CSPlayerPawn} player 
+ */
+function FindItems(player) {
+    const items = new Array(itemNames.length).fill(0);
+    for (let i = 0; i < itemNames.length; i++) {
+        const item = player.FindWeapon(itemNames[i]);
+        if (!item || !item.IsValid()) continue;
+        items[i] = item.GetReserveAmmo();
+    }
+    return items;
+}
+
+/**
  * 给予玩家多种武器
  * @param {CSPlayerPawn} player 
  * @param {string[]} weapons
+ * @param {number[]} items
  */
-function GiveWeapons(player, weapons) {
+function GiveWeaponsAndItems(player, weapons, items) {
     for (const weapon of weapons) {
         player.DestroyWeapons();
         Delay(1, () => {
             player.GiveNamedItem(weapon);
+            for (let i = 0; i < itemNames.length; i++) {
+                for (let number = 0; number < items[i]; number++) {
+                    player.GiveNamedItem(itemNames[i]);
+                }
+            }
         });
     }
 }

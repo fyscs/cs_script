@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Hunter脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/26
+ * 2026/7/3
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -52,13 +52,19 @@ Instance.OnScriptInput("BecomeHunter", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !hunter || !hunter.IsValid()) return;
+    const playerEyePostion = player.GetEyePosition();
+    const playerPostion = player.GetAbsOrigin();
+    const hunterEyePostion = hunter.GetEyePosition();
+    if (IsBlocked(playerEyePostion, hunterEyePostion) && IsBlocked(playerPostion, hunterEyePostion)) return;
+
     // 命中玩家时将其扑倒
     CancelPounceAndResetAbsTimes();
     state.isAttacking = true;
     pounced = player;
-    hunter.Teleport({ position: pounced.GetAbsOrigin(), velocity: { x: 0, y: 0, z: 0 } });
+    hunter.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "hunter_attack_trigger_" + suffix, input: "Disable" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "StartGlowing" });
     Instance.EntFireAtName({ name: "hunter_model_" + suffix, input: "SetAnimationLooping", value: "Melee_Pounce" });
     Instance.EntFireAtName({ name: "hunter_particle_" + suffix, input: "Start" });
@@ -68,7 +74,7 @@ Instance.OnScriptInput("Attack", (inputData) => {
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: hunter });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: pounced, delay: 0.1 });
     const pouncedController = pounced.GetPlayerController();
-    if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **${Sanitize(pouncedController.GetPlayerName())}被Hunter扑倒了，使用匕首重击来解救你的队友**`);
+    if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(pouncedController.GetPlayerName())} <<被Hunter扑倒了，使用匕首重击来解救你的队友**`);
 });
 
 Instance.OnRoundStart(() => {
@@ -115,7 +121,7 @@ Instance.OnKnifeAttack((event) => {
                     const pouncedController = pounced.GetPlayerController();
                     if (playerController && playerController.IsValid()) {
                         playerController.AddMoneySpendableNow(5000);
-                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **${Sanitize(playerController.GetPlayerName())}解救了${Sanitize(pouncedController.GetPlayerName())}**`);
+                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(playerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
                     }
                     CancelAttack(pounced, hunter);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
@@ -389,6 +395,20 @@ function CancelPounce() {
 function CancelPounceAndResetAbsTimes() {
     CancelPounce();
     state.absPounceTimes = 0;
+}
+
+/**
+ * 判断两点之间是否被阻挡
+ * @param {import("cs_script/point_script").Vector} vec1 
+ * @param {import("cs_script/point_script").Vector} vec2 
+ */
+function IsBlocked(vec1, vec2, ignorePlayers = true, ignoreEntity = undefined) {
+    return Instance.TraceLine({
+        start: vec1,
+        end: vec2,
+        ignorePlayers,
+        ignoreEntity
+    }).didHit;
 }
 
 /**

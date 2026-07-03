@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/26
+ * 2026/7/3
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -13,7 +13,7 @@ const CONFIG = {
     chargeCD: 10,               // 冲刺CD
     maxChargeDuration: 2,       // 最大冲刺时间
     chargeAccelerate: 2000,     // 冲刺加速度
-    maxChargeSpeed: 1000,       // 最大冲刺速度
+    maxChargeSpeed: 800,        // 最大冲刺速度
     pushSpeed: 600,             // 推力
     maxHealth: 10000            // 最大生命值
 }
@@ -43,10 +43,15 @@ Instance.OnScriptInput("BecomeCharger", (inputData) => {
 
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
-    if (!player || !player.IsValid()) return;
-    state.isAttacking = true;
+    if (!player || !player.IsValid() || !charger || !charger.IsValid()) return;
+    const playerEyePostion = player.GetEyePosition();
+    const playerPostion = player.GetAbsOrigin();
+    const chargerEyePostion = charger.GetEyePosition();
+    if (IsBlocked(playerEyePostion, chargerEyePostion) && IsBlocked(playerPostion, chargerEyePostion)) return;
     caught = player;
     Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 1" });
+    Instance.EntFireAtTarget({ target: caught, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "charger_attack_trigger_" + suffix, input: "Disable" });
 });
 
 Instance.OnScriptInput("Push", (inputData) => {
@@ -80,7 +85,7 @@ Instance.OnPlayerKill((event) => {
             const caughtController = caught?.GetPlayerController();
             if (attackerController && attackerController.IsValid()) {
                 attackerController.AddMoneySpendableNow(5000);
-                if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **${Sanitize(attackerController.GetPlayerName())}解救了${Sanitize(caughtController.GetPlayerName())}**`);
+                if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(caughtController.GetPlayerName())} <<**`);
             }
         }
         CancelAttack(caught, charger);
@@ -113,11 +118,11 @@ function UpdateState(charger) {
         // 障碍物检测
         const start = charger.GetEyePosition();
         start.z -= 20;
-        const end = VectorAdd(start, VectorScale(AnglesToVector(state.chargeAngles), 50));
+        const end = VectorAdd(start, VectorScale(AnglesToVector(state.chargeAngles), 30));
         const result = Instance.TraceSphere({
             start,
             end,
-            radius: 20,
+            radius: 10,
             ignorePlayers: true
         });
         if (result.didHit) {
@@ -219,15 +224,20 @@ function UpdateState(charger) {
  * @param {CSPlayerPawn} charger 
  */
 function CancelCharge(charger) {
-    if (caught && caught.IsValid() && caught.GetTeamNumber() === 3) {
-        state.isAttacking = true;
-        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "movetype 0" });
-        Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "StartGlowing" });
-        Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "SetAnimationLooping", value: "Charger_pound" });
-        Instance.EntFireAtTarget({ target: caught, input: "AddContext", value: "player_controlled:1" });
-        Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: charger });
-        Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: caught, delay: 0.1 });
-    } else {
+    if (caught && caught.IsValid()) {
+        if (caught.GetTeamNumber() === 3) {
+            state.isAttacking = true;
+            Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "movetype 0" });
+            Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "StartGlowing" });
+            Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "SetAnimationLooping", value: "Charger_pound" });
+            Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: charger });
+            Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: caught, delay: 0.1 });
+        } else {
+            Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
+            Instance.EntFireAtTarget({ target: caught, input: "RemoveContext", value: "player_controlled" });
+        }
+    } 
+    if (!state.isAttacking) {
         const model = Instance.FindEntityByName("charger_model_" + suffix);
         if (model && model.IsValid()) model.Teleport({ angles: charger.GetAbsAngles() });
         Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "SetAnimationLooping", value: "a_RunN_fix" });
@@ -262,6 +272,20 @@ function CancelAttack(player, charger) {
         Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: player, delay: 0.1 });
     }
     caught = undefined;
+}
+
+/**
+ * 判断两点之间是否被阻挡
+ * @param {import("cs_script/point_script").Vector} vec1 
+ * @param {import("cs_script/point_script").Vector} vec2 
+ */
+function IsBlocked(vec1, vec2, ignorePlayers = true, ignoreEntity = undefined) {
+    return Instance.TraceLine({
+        start: vec1,
+        end: vec2,
+        ignorePlayers,
+        ignoreEntity
+    }).didHit;
 }
 
 /**
