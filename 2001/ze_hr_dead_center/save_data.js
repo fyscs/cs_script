@@ -4,7 +4,7 @@ import { CSPlayerPawn, Instance, CSGearSlot } from "cs_script/point_script";
  * 数据存读取脚本
  * 此脚本用于实现回合结算后仍能恢复连关数据
  * 此脚本由皮皮猫233编写
- * 2026/7/3
+ * 2026/7/5
  */
 
 const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL];
@@ -53,8 +53,8 @@ Instance.OnScriptInput("ReadData", () => {
         Instance.ServerCommand("c_revive @t");
     });
 
-    // 延迟2秒后读取数据
-    Delay(2, () => {
+    // 延迟5秒后读取数据
+    Delay(5, () => {
         Instance.ServerCommand("say **正在读取连关数据**");
         const players = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
         for (const player of players) {
@@ -74,8 +74,17 @@ Instance.OnScriptInput("ReadData", () => {
                         playerController.AddMoneySpendableNow(properties.money - currentMoney);
                     }
                 }
-            } else if (player.GetTeamNumber() === 3) {
-                player.Kill();
+            } else {
+                const playerController = player.GetPlayerController();
+                if (playerController && playerController.IsValid()) {
+                    Instance.ServerCommand("c_infect #" + playerController.GetPlayerSlot());
+                    player.Teleport({ position: { x: 0, y: 0, z: -4560 } });
+
+                    // 延迟1秒后检测是否仍为人类防止部分社区禁止c_infect指令
+                    Delay(1, () => {
+                        if (player.IsValid() && player.GetTeamNumber() === 3) player.Kill();
+                    });
+                }
             }
         }
         playerData.clear();
