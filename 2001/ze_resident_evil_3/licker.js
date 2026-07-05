@@ -5,7 +5,7 @@ import { Instance, CSPlayerPawn, CSGearSlot, CSDamageTypes, CSInputs } from 'cs_
 let BLOCK_INFECTION = true; // Whether to block infection, licker can only use its abilities to kill
 // Lick Ability
 const LICK_COOLDOWN_MISS = 5;          // Cooldown of lick ability (+use) if it doesn't hit a CT
-const LICK_COOLDOWN = 35;              // Cooldown of lick ability (+use) if it hits a CT
+const LICK_COOLDOWN = 45;              // Cooldown of lick ability (+use) if it hits a CT
 const TONGUE_LENGTH = 1300;            // Max range of lick
 const TONGUE_SPEED = 2500;             // Speed of tongue going out
 const TONGUE_SPEED_RETRACT = 4000;     // Tongue missed, speed as it goes back
@@ -13,8 +13,11 @@ const TONGUE_SPEED_PULL = 75;          // Tongue HIT, speed as it pulls a CT
 const TONGUE_RADIUS = 8;               // Radius of the tongue
 const TONGUE_PHYSBOX_HP_BASE = 1000;   // Base HP of grabbed CT physbox
 const TONGUE_PHYSBOX_HP_PER_CT = 25;   // HP added per alive CT to grabbed physbox
+const TONGUE_PULL_DELAY = 2; 		   // Delay (in seconds) before licked CT starts getting pulled
+const TONGUE_DAMAGE = 2.5; 			   // Damage per TONGUE_DAMAGE_INTERVAL while being pulled
+const TONGUE_DAMAGE_INTERVAL = 0.5;    // Interval (in seconds) between damage ticks while being pulled (0 = every tick)
 // Jump Ability
-const JUMP_COOLDOWN = 8;               // Cooldown of jump ability (right click)
+const JUMP_COOLDOWN = 15;               // Cooldown of jump ability (right click)
 const JUMP_FORCE = {
     forward: 800, // Force applied forward
     right: 0, // Force applied right
@@ -23,8 +26,7 @@ const JUMP_FORCE = {
 // Swipe Attack
 const SWIPE_COOLDOWN = 10;             // Cooldown of swipe attack (left click)
 // Knockback options
-const KB_SCALE = 3;                    // Global knockback scale
-const LICKER_THINK_INTERVAL = 0.1;
+const KB_SCALE = 3.50;                    // Global knockback scale
 const ABILTY_KB_MODIFIER = {
     lick: 0, // Knockback scale during ability
     jump: 0.1,
@@ -206,6 +208,7 @@ const ANIMATIONS = {
 const JUMP_DELAY = 1.02;
 const SWIPE_DELAY = 1.18;
 const SWIPE_HIT_DONE = 1.27;
+const GLOW_ENT_RESET = { x: 4357, y: -6436, z: 30 };
 let ticking = false;
 let licker = {
     player: undefined,
@@ -232,6 +235,8 @@ let tongue = {
     capsule: { a: VEC0, b: VEC0, radius: TONGUE_RADIUS },
     particle: { name: "licker_tongue_particle", entity: undefined },
     target: { name: "licker_tongue_target", entity: undefined },
+    pullAt: -1,
+    damageAt: -1,
 };
 let targets = [];
 let pullTarget = {
@@ -240,6 +245,7 @@ let pullTarget = {
     relay: { name: "licker_target_glow_1", entity: undefined },
     pbox_template: { name: "licker_target_pbox_temp", entity: undefined },
     pbox: undefined,
+    position: VEC0,
 };
 let jump = {
     usableAt: -1,
@@ -277,6 +283,8 @@ Instance.OnRoundStart(() => {
     tongue.usableAt = -1;
     tongue.particle.entity = Instance.FindEntityByName(tongue.particle.name);
     tongue.target.entity = Instance.FindEntityByName(tongue.target.name);
+    tongue.pullAt = -1;
+    tongue.damageAt = -1;
     jump.usableAt = -1;
     jump.state = JumpState.CHILLING;
     if (jump.connection != undefined) {
@@ -290,17 +298,9 @@ Instance.OnRoundStart(() => {
         swipe.connection = undefined;
     }
     swipe.hurt.entity = Instance.FindEntityByName(swipe.hurt.name);
+    pullTarget.pawn = undefined;
     pullTarget.glow.entity = undefined;
     pullTarget.relay.entity = undefined;
-    /*
-        pullTarget.relay.entity = I.FindEntityByName(pullTarget.relay.name);
-        pullTarget.glow.entity = I.FindEntityByName(pullTarget.glow.name);
-        if (pullTarget.glow.entity)
-        {
-            pullTarget.glow.entity.SetColor(col(255,255,255,1));
-            if(pullTarget.glow.entity.IsGlowing())
-                pullTarget.glow.entity.Unglow();
-        }*/
     pullTarget.pbox_template.entity = Instance.FindEntityByName(pullTarget.pbox_template.name);
 });
 Instance.OnRoundEnd(() => {
@@ -349,6 +349,11 @@ function LickerDeath() {
         }
         if (pullTarget.glow.entity?.IsValid() && pullTarget.glow.entity.IsGlowing())
             pullTarget.glow.entity.Unglow();
+        if (pullTarget.relay.entity?.IsValid()) {
+            Instance.EntFireAtTarget({ target: pullTarget.relay.entity, input: "FollowEntity", value: "" });
+            pullTarget.relay.entity.SetParent(undefined);
+            pullTarget.relay.entity.Teleport({ position: GLOW_ENT_RESET });
+        }
         if (tongue.particle.entity?.IsValid()) {
             Instance.EntFireAtTarget({ target: tongue.particle.entity, input: "DestroyImmediately", delay: 0.1 });
         }
@@ -407,12 +412,12 @@ function SetLicker(controller, pawn) {
     licker.model.entity.Teleport({ position: vecAdd(licker.pawn?.GetAbsOrigin(), vecScale(fwd, -20)), angles: ang });
     licker.model.entity.SetParent(licker.pawn);
     ticking = true;
-    Instance.SetNextThink(Instance.GetGameTime() + LICKER_THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 }
 let lastTick = 0;
 Instance.SetThink(() => {
     if (ticking)
-        Instance.SetNextThink(Instance.GetGameTime() + LICKER_THINK_INTERVAL);
+        Instance.SetNextThink(Instance.GetGameTime() + 0.01);
     else
         return;
     if (!licker.player || !licker.player.IsValid() || !licker.pawn || !licker.pawn.IsValid() || lastTick == 0) {
@@ -456,7 +461,7 @@ Instance.SetThink(() => {
             LickRetract(delta);
         }
         else if (tongue.state == TongueState.PULLING) {
-            LickPull(delta);
+            LickPull(delta, now);
         }
     }
     else if (licker.state == LickerState.JUMPING) {
@@ -523,6 +528,13 @@ function LickCheckForTp() {
     let tpTr = Instance.TraceLine({ start: tongue.firedAtEyes, end: lickerEyes, ignorePlayers: true, ignoreEntity: licker.pbox.entity });
     if (tpTr.didHit || tpTr.fraction < 1.00)
         return true;
+    // Check if target tp'd as well
+    if (pullTarget.pawn?.IsValid() && tongue.state == TongueState.PULLING) {
+        let targetpos = pullTarget.pawn.GetAbsOrigin();
+        dist = vecLengthSquared(vecSubtract(targetpos, pullTarget.position));
+        if (dist > 1000)
+            return true;
+    }
     return false;
 }
 // Tongue going out
@@ -598,12 +610,15 @@ function LickRetract(delta) {
 function LickPullStart(player) {
     tongue.didHit = true;
     tongue.state = TongueState.PULLING;
+    tongue.pullAt = time() + TONGUE_PULL_DELAY;
+    tongue.damageAt = time() + TONGUE_DAMAGE_INTERVAL;
     tongue.tipPos = GetPlayerCenter(player);
     tongue.angles = vecAngles(vecSubtract(tongue.basePos, tongue.tipPos));
     tongue.target.entity?.Teleport({ angles: tongue.angles });
     tongue.forward = getForward(tongue.angles);
     tongue.velocity = vecScale(tongue.forward, TONGUE_SPEED_PULL);
     pullTarget.pawn = player;
+    pullTarget.position = player.GetAbsOrigin();
     // Physbox
     // SILLY GOOFY BUG RIGHT NOW >_<
     // TWO PHYSBOXES ARE IN THE TEMPLATE
@@ -628,6 +643,7 @@ function LickPullStart(player) {
         pullTarget.glow.entity = Instance.FindEntityByName(pullTarget.glow.name);
     pullTarget.relay.entity?.SetModel(model);
     pullTarget.glow.entity?.SetModel(model);
+    pullTarget.glow.entity?.SetColor(col(0, 0, 0, 1));
     Instance.EntFireAtTarget({ target: pullTarget.relay.entity, input: "FollowEntity", value: "!activator", activator: pullTarget.pawn });
     Instance.EntFireAtTarget({ target: pullTarget.glow.entity, input: "FollowEntity", value: "!activator", activator: pullTarget.relay.entity });
     // Trigger relay for other map stuff
@@ -637,10 +653,15 @@ function LickPullInterrupted() {
     tongue.state = TongueState.RETRACTING;
     tongue.velocity = vecScale(tongue.forward, TONGUE_SPEED_RETRACT);
     pullTarget.pawn = undefined;
-    if (pullTarget.glow.entity && pullTarget.glow.entity.IsGlowing())
+    if (pullTarget.glow.entity?.IsValid() && pullTarget.glow.entity.IsGlowing())
         pullTarget.glow.entity.Unglow();
+    if (pullTarget.relay.entity?.IsValid()) {
+        Instance.EntFireAtTarget({ target: pullTarget.relay.entity, input: "FollowEntity", value: "" });
+        pullTarget.relay.entity.SetParent(undefined);
+        pullTarget.relay.entity.Teleport({ position: GLOW_ENT_RESET });
+    }
 }
-function LickPull(delta) {
+function LickPull(delta, now) {
     if (!pullTarget.pawn || !pullTarget.pawn.IsValid() ||
         pullTarget.pawn.GetTeamNumber() != CS_TEAM_CT || !pullTarget.pawn.IsAlive()) {
         if (pullTarget.pbox && pullTarget.pbox.IsValid()) {
@@ -655,15 +676,30 @@ function LickPull(delta) {
         return;
     }
     licker.pawn.Teleport({ position: tongue.firedAt, velocity: VEC0, angularVelocity: VEC0 });
+    // Damage
+    if (now >= tongue.damageAt) {
+        //I.Msg("Dealing lick damage");
+        pullTarget.pawn.TakeDamage({ damage: TONGUE_DAMAGE, attacker: licker.pawn, damageTypes: CSDamageTypes.GENERIC });
+        tongue.damageAt = now + TONGUE_DAMAGE_INTERVAL;
+    }
+    // Force CT to have knife
+    let targetKnife = pullTarget.pawn.FindWeaponBySlot(CSGearSlot.KNIFE);
+    if (targetKnife != undefined) {
+        pullTarget.pawn.SwitchToWeapon(targetKnife);
+    }
+    // Glow
+    if (pullTarget.glow.entity?.IsValid() && !pullTarget.glow.entity.IsGlowing())
+        pullTarget.glow.entity.Glow(col(255, 0, 0));
+    // Freeze if not pulling yet
+    if (now < tongue.pullAt) {
+        pullTarget.pawn.Teleport({ position: pullTarget.position, velocity: VEC0 });
+        return;
+    }
     let move = vecScale(tongue.velocity, delta);
     let endpos = vecAdd(tongue.tipPos, move);
     let distance = vecLength(vecSubtract(endpos, tongue.tipPos));
     tongue.distanceTravelled -= distance;
     tongue.tipPos = endpos;
-    let targetKnife = pullTarget.pawn.FindWeaponBySlot(CSGearSlot.KNIFE);
-    if (targetKnife != undefined) {
-        pullTarget.pawn.SwitchToWeapon(targetKnife);
-    }
     let pos = pullTarget.pawn.GetEyePosition();
     let min = vec(-16, -16, -8);
     let max = vec(16, 16, 0);
@@ -680,11 +716,10 @@ function LickPull(delta) {
         let targetpos = vecSubtract(tongue.tipPos, vec(0, 0, 36));
         pullTarget.pawn.Teleport({ position: targetpos, velocity: VEC0 });
     }
+    pullTarget.position = pullTarget.pawn.GetAbsOrigin();
     let center = GetPlayerCenter(pullTarget.pawn);
     tongue.target.entity.Teleport({ position: center });
     pullTarget.pbox?.Teleport({ position: center });
-    if (pullTarget.glow.entity && pullTarget.glow.entity.IsValid() && !pullTarget.glow.entity.IsGlowing())
-        pullTarget.glow.entity.Glow(col(255, 0, 0));
     //I.DebugSphere({center:tongue.tipPos, radius:tongue.capsule.radius, duration:delta, color:col(255,128,0)});
     if (tongue.distanceTravelled <= 0) {
         // Teleport target to where the licker was so they won't be stuck
@@ -704,6 +739,11 @@ function LickFinish() {
     }
     if (pullTarget.glow.entity?.IsValid() && pullTarget.glow.entity.IsGlowing())
         pullTarget.glow.entity.Unglow();
+    if (pullTarget.relay.entity?.IsValid()) {
+        Instance.EntFireAtTarget({ target: pullTarget.relay.entity, input: "FollowEntity", value: "" });
+        pullTarget.relay.entity.SetParent(undefined);
+        pullTarget.relay.entity.Teleport({ position: GLOW_ENT_RESET });
+    }
     if (tongue.particle.entity?.IsValid()) {
         Instance.EntFireAtTarget({ target: tongue.particle.entity, input: "DestroyImmediately", delay: 0.1 });
     }
@@ -875,7 +915,7 @@ Instance.OnModifyPlayerDamage((event) => {
     if (!licker.pawn || !licker.pawn.IsValid())
         return;
     // Block licker infecting CTs
-    if (BLOCK_INFECTION && event.attacker && event.attacker === licker.pawn) {
+    if (BLOCK_INFECTION && event.attacker && event.attacker === licker.pawn && event.damageTypes != CSDamageTypes.GENERIC) {
         return { abort: true };
     }
     // Block CT damage to licker zombie

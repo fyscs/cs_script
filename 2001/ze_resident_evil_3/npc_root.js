@@ -444,9 +444,6 @@ class Euler {
 
 let idPool = 0;
 let tasks = [];
-const SCHEDULER_THINK_INTERVAL = 0.1;
-const NPC_TICK_INTERVAL = 0.1;
-const NPC_FADE_INTERVAL = 0.1;
 function setTimeout(callback, ms) {
 	const id = idPool++;
 	tasks.unshift({
@@ -496,10 +493,10 @@ function runSchedulerTick() {
 }
 Instance.SetThink(() => {
 	// This has to run every tick
-	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
+	Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
+Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 Instance.OnScriptReload({ after: (undefined$1) => {
 	CLEAR_ALL_INTERVAL = false;
 }});
@@ -697,7 +694,7 @@ class class_npc_zombie
 	fDistanceSetTarget_Min = 350;
 	fDistanceSetTarget_Max = 500
 
-	fLifeWithoutHead = 4.0
+	fLifeWithoutHead = 2.0
 	iHP_Base = 5;
 	iHP_Head = 2;
 	fSpeed = 250.0;
@@ -760,7 +757,7 @@ class class_npc_zombie
 				return;
 			}
 			this.Tick();
-		}, NPC_TICK_INTERVAL * 1000);
+		}, 0.02 * 1000);
 	}
 
 	PostSpawn()
@@ -1366,9 +1363,9 @@ class class_npc_zombie
 				this.KillBaseFull();
 				return;
 			}
-			iAlpha -= 6;
+			iAlpha -= 3;
 			Instance.EntFireAtTarget({target: this.lModel, input: "Alpha", value: "" + iAlpha})
-		}, NPC_FADE_INTERVAL * 1000);
+		}, 0.05 * 1000);
 
 		}, fDelay * 1000);
 	}

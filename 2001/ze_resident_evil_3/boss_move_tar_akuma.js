@@ -21,7 +21,7 @@ let ticking = false;
 
 let speed_turning = 350;
 let ang_rot_limit = 10;
-let b_MaxDistToPl = 32;
+let b_MaxDistToPl = 45;
 
 let lastTime = null;
 
@@ -60,6 +60,10 @@ Instance.OnScriptInput("SetSpeedX240", ({ caller, activator }) => {
     SPEED_FORWARD += 20;
 });
 
+Instance.OnScriptInput("SetSpeedX50", ({ caller, activator }) => {
+    SPEED_FORWARD = 70;
+});
+
 function SetEntities()
 {
 	if(ticking)
@@ -75,7 +79,7 @@ function SetEntities()
         }
         else
         {
-            //Instance.Msg("Can't Find: "+boss_model);
+            Instance.Msg("Can't Find: "+boss_model);
         }
     }
 	if(!bmphy?.IsValid() )
@@ -87,7 +91,7 @@ function SetEntities()
         }
         else
         {
-            //Instance.Msg("Can't Find: "+boss_move_physbox);
+            Instance.Msg("Can't Find: "+boss_move_physbox);
         }
     }
 }
@@ -98,7 +102,7 @@ Instance.OnScriptInput("Start", () => {
 		// AutoDetectEntities();
         SetEntities();
 	    ticking = true;
-		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: TICKRATE });
+		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: 0.00 });
 	}
 });
 
@@ -184,16 +188,16 @@ function SearchTarget()
 		{
 			let rnd_player = candidates[GetRandomInt(0, candidates.length - 1)]
 			p = rnd_player;
-			//Instance.Msg(`TARGET: ${p?.GetPlayerController()?.GetPlayerName()}`);
+			Instance.Msg(`TARGET: ${p?.GetPlayerController()?.GetPlayerName()}`);
             return;
         } 
 		else 
 		{
-            //Instance.Msg("No alive players found");
+            Instance.Msg("No alive players found");
 			return null;
         }
 	}
-	//Instance.Msg("Physbox not valid");
+	Instance.Msg("Physbox not valid");
 	return null;
 }
 
@@ -225,11 +229,6 @@ function SetGraduallyAng(ang_t, ent)
     else if(ang_dif < -add_gs)
     {
         ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y - add_gs), roll: ent.GetAbsAngles().roll} });
-    }
-    else
-    {
-        ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_t), roll: ent.GetAbsAngles().roll} });
-        return 0;
     }
     return ang_dif
 }
