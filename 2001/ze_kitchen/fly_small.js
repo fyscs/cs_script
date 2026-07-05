@@ -1,14 +1,22 @@
 import { Instance } from "cs_script/point_script";
 
-// ==========================================
-// Settings and variables for the small fly
-// ==========================================
+const BASE_TICK_INTERVAL = 0.01;
+const THINK_INTERVAL = 0.1;
+const MAX_MOTION_SCALE = 3;
+const MAX_TURN_SCALE = 2;
+const ROTATION_SPEED_MIN = 0.015; 
+const ROTATION_SPEED_MAX = 0.035; 
+const ROTATION_SPEED_ACCELERATION = 0.002; 
+const ROTATION_ERROR = 0.03;
+const SPEED_ACCELERATION = 0.06;
+const MAX_SPEED = 10;
+
 let myFly = null; 
 let target = null;
 let dead = false;
 let started = false;
 
-let retarget = 10;
+let retarget = 8;
 let speed = 5;
 let previousDistanceToTarget = -1;
 let currentDistanceToTarget = -1;
@@ -17,23 +25,9 @@ let rotationSpeed = 0.015;
 let currentHoverOffset = 0; 
 let randomPhase = 0; 
 let deathStyle = "spiral"; 
+let lastThinkTime = 0;
+let tickScale = 1;
 
-// --- BASIC FLIGHT MODE ---
-const ROTATION_SPEED_MIN = 0.015; 
-const ROTATION_SPEED_MAX = 0.035; 
-const ROTATION_SPEED_ACCELERATION = 0.001; 
-const ROTATION_ERROR = 0.03;
-const SPEED_ACCELERATION = 0.06;
-const MAX_SPEED = 10;
-const THINK_INTERVAL = 0.1;
-const LEGACY_THINK_INTERVAL = 0.01;
-const TICK_SCALE = THINK_INTERVAL / LEGACY_THINK_INTERVAL;
-const DROP_PITCH_BLEND = 1 - Math.pow(0.9, TICK_SCALE);
-const DROP_ROLL_DECAY = Math.pow(0.8, TICK_SCALE);
-
-// ==========================================
-// Helper functions and timing queue
-// ==========================================
 const thinkQueue = [];
 
 function QueueThink(time, callback) {
@@ -48,7 +42,26 @@ function RunThinkQueue() {
     }
 }
 
-// Vector math
+function UpdateTickScale() {
+    const now = Instance.GetGameTime();
+    if (lastThinkTime <= 0) {
+        lastThinkTime = now;
+        tickScale = THINK_INTERVAL / BASE_TICK_INTERVAL;
+        return;
+    }
+
+    tickScale = Math.max(1, Math.min((now - lastThinkTime) / BASE_TICK_INTERVAL, 20));
+    lastThinkTime = now;
+}
+
+function MotionScale() {
+    return Math.min(tickScale, MAX_MOTION_SCALE);
+}
+
+function TurnScale() {
+    return Math.min(tickScale, MAX_TURN_SCALE);
+}
+
 function vectorAdd(vec1, vec2) { return { x: vec1.x + vec2.x, y: vec1.y + vec2.y, z: vec1.z + vec2.z }; }
 function vectorSub(vec1, vec2) { return { x: vec1.x - vec2.x, y: vec1.y - vec2.y, z: vec1.z - vec2.z }; }
 function vectorScale(vec, scale) { return { x: vec.x * scale, y: vec.y * scale, z: vec.z * scale }; }
@@ -85,12 +98,12 @@ function Rotate2D(vector, angle) {
     };
 }
 
-// ==========================================
-// Player acquisition and visibility
-// ==========================================
-
 function IsValidPlayer(player) {
     return player !== null && player !== undefined && player.IsValid() && player.GetHealth() > 0;
+}
+
+function IsValidTarget(player) {
+    return IsValidPlayer(player) && player.GetTeamNumber() === 3;
 }
 
 function GetAllAlivePlayerPawns() {
@@ -128,12 +141,8 @@ function IsTargetInSight(flyPos, targetPos) {
     return !result.didHit || result.fraction >= 0.80 || hitPlayer;
 }
 
-// ==========================================
-// Behavior functions
-// ==========================================
-
 function ChasePlayer(flyPos) {
-    retarget -= THINK_INTERVAL;
+    retarget -= BASE_TICK_INTERVAL * tickScale;
     
     const playerPos = target.GetAbsOrigin();
     const dist2D = Math.sqrt(Math.pow(playerPos.x - flyPos.x, 2) + Math.pow(playerPos.y - flyPos.y, 2));
@@ -144,7 +153,6 @@ function ChasePlayer(flyPos) {
 
     const time = Instance.GetGameTime() + randomPhase;
 
-    // --- 1. GIANT ZIG-ZAG DODGING ---
     const dirToPlayer = vectorNormalize({ x: playerPos.x - flyPos.x, y: playerPos.y - flyPos.y, z: 0 });
     const rightVec = { x: dirToPlayer.y, y: -dirToPlayer.x, z: 0 };
     
@@ -152,25 +160,22 @@ function ChasePlayer(flyPos) {
     const zigZagOffset = vectorScale(rightVec, zigZagAmount);
     const aimPos = vectorAdd(playerPos, zigZagOffset);
 
-    // --- 2. ALTITUDE OSCILLATION ---
     const baseLift = 60 * hoverMultiplier; 
     const newHoverOffset = baseLift + (Math.sin(time * 1.5) * 60 + Math.cos(time * 0.8) * 30 + Math.sin(time * 0.3) * 45) * hoverMultiplier;
     const zDelta = newHoverOffset - currentHoverOffset; 
     currentHoverOffset = newHoverOffset;
     
-    // --- 3. FINAL TARGET APPLICATION POINT ---
     const targetPos = vectorAdd(aimPos, { x: 0, y: 0, z: 48 });
     const realPlayerPos = vectorAdd(playerPos, { x: 0, y: 0, z: 48 });
 
     currentDistanceToTarget = Math.abs(targetPos.x - flyPos.x) + Math.abs(targetPos.y - flyPos.y);
 
-    if (retarget <= 0.0 || !IsTargetInSight(flyPos, realPlayerPos)) {
+    if (retarget <= 0.0 || !IsTargetInSight(flyPos, realPlayerPos) || !IsValidTarget(target)) {
         target = null;
     } else {
         let currentMaxSpeed = MAX_SPEED;
         let currentMaxRot = ROTATION_SPEED_MAX;
         
-        // --- 4. FINAL ATTACK PHASE ("AGGRESSIVE SWOOP") ---
         if (dist2D < 220) {
             currentMaxSpeed = MAX_SPEED * 0.9; 
             currentMaxRot = 0.07; 
@@ -203,14 +208,14 @@ function ChasePlayer(flyPos) {
 }
 
 function GetNewTarget() {
-    if (!IsValidPlayer(target)) target = null;
+    if (!IsValidTarget(target)) target = null;
     
     const pawns = GetAllAlivePlayerPawns();
     const playerArr = [];
     if (!myFly) return null;
 
     for (const p of pawns) {
-        if (p.GetTeamNumber() >= 2) { 
+        if (p.GetTeamNumber() === 3) {
             const playerPos = vectorAdd(p.GetAbsOrigin(), { x: 0, y: 0, z: 48 });
             if (IsTargetInSight(myFly.GetAbsOrigin(), playerPos)) {
                 playerArr.push(p);
@@ -235,24 +240,19 @@ function MoveTowardsTarget(flyPos, targetPos, maxSpeed = MAX_SPEED, maxRot = ROT
     
     myFly.Teleport({ angles: vectorToAngles({ x: dir.x, y: dir.y, z: normTargetDir.z }) });
     
-    // Send a trace 50 units forward (safety bubble)
     MoveForward(0, 50); 
 }
 
-// --- OVERWRITTEN MoveForward FUNCTION (Strictly identical to large fly) ---
 function MoveForward(blocker1, blocker2) {
     if (!myFly) return;
 
     const forward = getForward(myFly.GetAbsAngles());
     const flyPos = myFly.GetAbsOrigin();
     
-    // Flat vector so the fly doesn't brake against the floor when looking down
     const flatForward = vectorNormalize({ x: forward.x, y: forward.y, z: 0 });
 
     const pos1 = vectorAdd(flyPos, vectorScale(flatForward, blocker1));
-    const moveStep = speed * TICK_SCALE;
-    const traceEnd = Math.max(blocker2, blocker1 + moveStep + 20);
-    const pos2 = vectorAdd(flyPos, vectorScale(flatForward, traceEnd));
+    const pos2 = vectorAdd(flyPos, vectorScale(flatForward, blocker2));
 
     const trace = Instance.TraceLine({ 
         start: pos1, 
@@ -262,25 +262,22 @@ function MoveForward(blocker1, blocker2) {
     });
     
     if (trace.didHit && trace.fraction < 0.99) {
-        // If a wall is detected ahead, decelerate smoothly.
-        // Natural rotation is handled by GetNewDir (same as the large fly).
         speed *= 0.5; 
     } else {
-        // Path is clear
-        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * TICK_SCALE));
+        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * MotionScale()));
         myFly.Teleport({ position: newPos });
     }
 }
 
 function MoveDir(dir) {
-    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * TICK_SCALE;
+    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
     if (speed > MAX_SPEED) speed = MAX_SPEED;
     if (!myFly) return;
 
     const currentForward = getForward(myFly.GetAbsAngles());
     myFly.Teleport({ angles: vectorToAngles({ x: currentForward.x, y: currentForward.y, z: 0 }) });
     
-    const newPos = vectorAdd(myFly.GetAbsOrigin(), vectorScale(dir, (speed / 4) * TICK_SCALE));
+    const newPos = vectorAdd(myFly.GetAbsOrigin(), vectorScale(dir, (speed / 4) * MotionScale()));
     myFly.Teleport({ position: newPos });
 }
 
@@ -288,30 +285,26 @@ function GetNewDir(targetDir, currentDir, maxSpeed, maxRot) {
     const rotDir = currentDir.x * targetDir.y - currentDir.y * targetDir.x;
     
     if (Math.abs(rotDir) > 0.7) {
-        if (speed > 0) speed -= 0.1 * SPEED_ACCELERATION * TICK_SCALE; 
-        if (rotationSpeed < maxRot) rotationSpeed += ROTATION_SPEED_ACCELERATION * TICK_SCALE;
+        if (speed > 0) speed -= 0.1 * SPEED_ACCELERATION * MotionScale(); 
+        if (rotationSpeed < maxRot) rotationSpeed += ROTATION_SPEED_ACCELERATION * TurnScale();
     } else {
-        if (speed < maxSpeed) speed += SPEED_ACCELERATION * TICK_SCALE;
-        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TICK_SCALE;
+        if (speed < maxSpeed) speed += SPEED_ACCELERATION * MotionScale();
+        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TurnScale();
     }
     
-    if (rotationSpeed > maxRot) rotationSpeed = maxRot;
-    if (rotationSpeed < ROTATION_SPEED_MIN) rotationSpeed = ROTATION_SPEED_MIN;
     if (speed < 0) speed = 0;
     if (speed > maxSpeed) speed = maxSpeed;
+    if (rotationSpeed < ROTATION_SPEED_MIN) rotationSpeed = ROTATION_SPEED_MIN;
+    if (rotationSpeed > maxRot) rotationSpeed = maxRot;
 
     if (rotDir > ROTATION_ERROR || (rotDir >= 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, rotationSpeed * TICK_SCALE);
+        return Rotate2D(currentDir, rotationSpeed * TurnScale());
     } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, -rotationSpeed * TICK_SCALE);
+        return Rotate2D(currentDir, -rotationSpeed * TurnScale());
     } else {
         return currentDir;
     }
 }
-
-// ==========================================
-// Inputs triggered from the map
-// ==========================================
 
 Instance.OnScriptInput("Start", (data) => {
     if (data && data.caller && data.caller.IsValid() && data.caller.GetClassName() !== "point_script") {
@@ -324,6 +317,8 @@ Instance.OnScriptInput("Start", (data) => {
 
     randomPhase = Math.random() * 1000;
     currentHoverOffset = 0; 
+    lastThinkTime = Instance.GetGameTime();
+    tickScale = 1;
 
     const currentForward = getForward(myFly.GetAbsAngles());
     myFly.Teleport({ 
@@ -359,17 +354,16 @@ Instance.OnScriptInput("Die", () => {
     }
 });
 
-// ==========================================
-// Main game loop (Tick)
-// ==========================================
-
 Instance.SetThink(() => {
+    UpdateTickScale();
     RunThinkQueue();
 
     if (started && myFly && myFly.IsValid()) {
         Tick();
     }
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    if (started || thinkQueue.length > 0) {
+        Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    }
 });
 
 function Tick() {
@@ -405,27 +399,28 @@ function Tick() {
             if (deathStyle === "spiral") {
                 const newAngles = { 
                     pitch: 45, 
-                    yaw: currentAngles.yaw + 5 * TICK_SCALE,   
-                    roll: currentAngles.roll + 2 * TICK_SCALE  
+                    yaw: currentAngles.yaw + 5 * TurnScale(),   
+                    roll: currentAngles.roll + 2 * TurnScale()  
                 };
                 const forward = getForward(newAngles);
-                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 8 * TICK_SCALE)); 
-                novaPozice.z -= 1.5 * TICK_SCALE; 
+                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 8 * MotionScale())); 
+                novaPozice.z -= 1.5 * MotionScale(); 
                 myFly.Teleport({ position: novaPozice, angles: newAngles });
             } else {
+                const smoothScale = 1 - Math.pow(0.9, MotionScale());
                 const newAngles = { 
-                    pitch: currentAngles.pitch + (20 - currentAngles.pitch) * DROP_PITCH_BLEND, 
-                    yaw: currentAngles.yaw + 0.5 * TICK_SCALE, 
-                    roll: currentAngles.roll * DROP_ROLL_DECAY 
+                    pitch: currentAngles.pitch + (20 - currentAngles.pitch) * smoothScale, 
+                    yaw: currentAngles.yaw + 0.5 * TurnScale(), 
+                    roll: currentAngles.roll * Math.pow(0.8, MotionScale()) 
                 };
                 const forward = getForward(newAngles);
-                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 3 * TICK_SCALE)); 
-                novaPozice.z -= 4 * TICK_SCALE; 
+                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 3 * MotionScale())); 
+                novaPozice.z -= 4 * MotionScale(); 
                 myFly.Teleport({ position: novaPozice, angles: newAngles });
             }
         }
     }
-    else if (IsValidPlayer(target)) {
+    else if (IsValidTarget(target)) {
         ChasePlayer(flyPos);
     } 
     else {
