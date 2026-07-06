@@ -253,7 +253,7 @@ function Start() {
     Instance.Msg("Started at: " + startedAt);
     lastTick = -1;
     ticking = true;
-    Instance.SetNextThink(Instance.GetGameTime());
+    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 }
 function CheckSolve() {
     if (pees[Hand.Second].stone != Stone.None && pees[Hand.Second].selected == pees[Hand.Second].stone) {
@@ -365,7 +365,7 @@ Instance.SetThink(() => {
     let now = Instance.GetGameTime();
     if (lastTick == -1) {
         lastTick = now;
-        Instance.SetNextThink(now);
+        Instance.SetNextThink(now + 0.1);
         return;
     }
     let delta = now - lastTick;
@@ -387,7 +387,7 @@ Instance.SetThink(() => {
     }
     lastTick = now;
     if (goagain)
-        Instance.SetNextThink(now);
+        Instance.SetNextThink(now + 0.1);
     else {
         ticking = false;
         Instance.Msg("Ended at: " + now);

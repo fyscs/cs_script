@@ -111,7 +111,7 @@ Instance.OnRoundEnd((stuff) => {
 });
 Instance.SetThink(() => {
 	// This has to run every tick ?
-	Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+	Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);

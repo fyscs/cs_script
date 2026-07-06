@@ -493,10 +493,10 @@ function runSchedulerTick() {
 }
 Instance.SetThink(() => {
 	// This has to run every tick
-	Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+	Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 Instance.OnScriptReload({ after: (undefined$1) => {
 	CLEAR_ALL_INTERVAL = false;
 }});
