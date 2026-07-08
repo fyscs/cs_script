@@ -156,10 +156,10 @@ Instance.OnPlayerKill((event) => {
 // });
 
 Instance.SetThink(() => {
-    const players = Instance.FindEntitiesByClass("player");
-    for (const player of players) {
-        if (player.IsValid() && player.GetTeamNumber() === 3) Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "no_special_infected_filter" });
-    }
+    // const players = Instance.FindEntitiesByClass("player");
+    // for (const player of players) {
+    //     if (player.IsValid() && player.GetTeamNumber() === 3) Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "no_special_infected_filter" });
+    // }
     preInfected.forEach((value, player) => {
         if (player.IsValid() && player.IsInputPressed(CSInputs.ATTACK2) && CheckSpawn(player)) {
             BecomeInfected(player, preInfected.get(player));
