@@ -412,12 +412,12 @@ function SetLicker(controller, pawn) {
     licker.model.entity.Teleport({ position: vecAdd(licker.pawn?.GetAbsOrigin(), vecScale(fwd, -20)), angles: ang });
     licker.model.entity.SetParent(licker.pawn);
     ticking = true;
-    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
 }
 let lastTick = 0;
 Instance.SetThink(() => {
     if (ticking)
-        Instance.SetNextThink(Instance.GetGameTime() + 0.01);
+        Instance.SetNextThink(Instance.GetGameTime() + 0.1);
     else
         return;
     if (!licker.player || !licker.player.IsValid() || !licker.pawn || !licker.pawn.IsValid() || lastTick == 0) {
