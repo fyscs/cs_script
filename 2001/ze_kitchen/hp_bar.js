@@ -10,7 +10,6 @@ const HP_PER_PLAYER = 200;        // HP added per player in the arena
 const BULLET_DAMAGE = 1;          // Standard weapon fire
 const BOSS_ATTACK_1_DAMAGE = 70;  // Damage from weaker mechanical boss attack
 const BOSS_ATTACK_2_DAMAGE = 80;  // Damage from stronger mechanical boss attack
-const THINK_INTERVAL = 0.1;
 
 let dead = false;              
 let started = false;           
@@ -108,7 +107,7 @@ Instance.OnScriptInput("Start", () => {
     started = true; 
     // Reveal correct text with starting HP immediately on start
     UpdateTextDisplay(); 
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.5);
 });
 
 Instance.OnScriptInput("AddHealth", () => {

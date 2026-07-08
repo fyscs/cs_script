@@ -3,6 +3,10 @@ import { Instance } from "cs_script/point_script";
 // ==========================================
 // Settings and variables
 // ==========================================
+const BASE_TICK_INTERVAL = 0.01;
+const THINK_INTERVAL = 0.1;
+const MAX_MOTION_SCALE = 3;
+const MAX_TURN_SCALE = 2;
 let myFly = null;
 
 const GRAB_RADIUS = 100;           
@@ -14,6 +18,8 @@ let end = false;
 let started = false; 
 let speed = 7;
 let rotationSpeed = 0.01;
+let lastThinkTime = 0;
+let tickScale = 1;
 
 const ROTATION_SPEED_MIN = 0.005;
 const ROTATION_SPEED_MAX = 0.02;
@@ -21,9 +27,6 @@ const ROTATION_SPEED_ACCELERATION = 0.0001;
 const ROTATION_ERROR = 0.03;
 const SPEED_ACCELERATION = 0.05;
 const MAX_SPEED = 15;
-const THINK_INTERVAL = 0.1;
-const LEGACY_THINK_INTERVAL = 0.01;
-const TICK_SCALE = THINK_INTERVAL / LEGACY_THINK_INTERVAL;
 
 let previousDistanceToTarget = -1;
 let currentDistanceToTarget = -1;
@@ -71,6 +74,26 @@ function Rotate2D(vector, angle) {
     };
 }
 
+function UpdateTickScale() {
+    const now = Instance.GetGameTime();
+    if (lastThinkTime <= 0) {
+        lastThinkTime = now;
+        tickScale = THINK_INTERVAL / BASE_TICK_INTERVAL;
+        return;
+    }
+
+    tickScale = Math.max(1, Math.min((now - lastThinkTime) / BASE_TICK_INTERVAL, 20));
+    lastThinkTime = now;
+}
+
+function MotionScale() {
+    return Math.min(tickScale, MAX_MOTION_SCALE);
+}
+
+function TurnScale() {
+    return Math.min(tickScale, MAX_TURN_SCALE);
+}
+
 function GetAllAlivePlayerPawns() {
     const pawns = [];
     for (let i = 0; i < 64; i++) {
@@ -114,16 +137,14 @@ function MoveForward(blocker1, blocker2) {
     const flatForward = vectorNormalize({ x: forward.x, y: forward.y, z: 0 });
 
     const pos1 = vectorAdd(flyPos, vectorScale(flatForward, blocker1));
-    const moveStep = speed * TICK_SCALE;
-    const traceEnd = Math.max(blocker2, blocker1 + moveStep + 20);
-    const pos2 = vectorAdd(flyPos, vectorScale(flatForward, traceEnd));
+    const pos2 = vectorAdd(flyPos, vectorScale(flatForward, blocker2));
 
     const trace = Instance.TraceLine({ start: pos1, end: pos2, ignoreEntity: myFly, ignorePlayers: true });
     
     if (trace.didHit && trace.fraction < 0.99) {
         speed *= 0.5; 
     } else {
-        const newPos = vectorAdd(flyPos, vectorScale(forward, moveStep));
+        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * MotionScale()));
         myFly.Teleport({ position: newPos });
     }
 }
@@ -132,22 +153,21 @@ function GetNewDir(targetDir, currentDir) {
     const rotDir = currentDir.x * targetDir.y - currentDir.y * targetDir.x;
     
     if (Math.abs(rotDir) > 0.3) {
-        if (speed > 0) speed -= 0.6 * SPEED_ACCELERATION * TICK_SCALE;
-        if (rotationSpeed < ROTATION_SPEED_MAX) rotationSpeed += ROTATION_SPEED_ACCELERATION * TICK_SCALE;
+        if (speed > 0) speed -= 0.6 * SPEED_ACCELERATION * MotionScale();
+        if (rotationSpeed < ROTATION_SPEED_MAX) rotationSpeed += ROTATION_SPEED_ACCELERATION * TurnScale();
     } else {
-        if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * TICK_SCALE;
-        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TICK_SCALE;
+        if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
+        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TurnScale();
     }
-
     if (speed < 0) speed = 0;
     if (speed > MAX_SPEED) speed = MAX_SPEED;
     if (rotationSpeed < ROTATION_SPEED_MIN) rotationSpeed = ROTATION_SPEED_MIN;
     if (rotationSpeed > ROTATION_SPEED_MAX) rotationSpeed = ROTATION_SPEED_MAX;
     
     if (rotDir > ROTATION_ERROR || (rotDir >= 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, rotationSpeed * TICK_SCALE);
+        return Rotate2D(currentDir, rotationSpeed * TurnScale());
     } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, -rotationSpeed * TICK_SCALE);
+        return Rotate2D(currentDir, -rotationSpeed * TurnScale());
     } else {
         return currentDir;
     }
@@ -179,6 +199,8 @@ function ResetState() {
     started = false;
     speed = 7;
     rotationSpeed = 0.01;
+    lastThinkTime = 0;
+    tickScale = 1;
     previousDistanceToTarget = -1;
     currentDistanceToTarget = -1;
     grabbedPlayers = [];
@@ -224,12 +246,14 @@ Instance.OnScriptInput("Start", () => {
     if (TARGET_NODES.length === 0) LoadNodesFromMap();
 
     started = true;
+    lastThinkTime = Instance.GetGameTime();
     Instance.EntFireAtTarget({ target: myFly, input: "SetAnimationLooping", value: "fly" });
     Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
 });
 
 Instance.SetThink(() => {
     if (!started || !myFly || !myFly.IsValid() || TARGET_NODES.length === 0) return; 
+    UpdateTickScale();
     
     const flyPos = myFly.GetAbsOrigin();
     const targetNode = TARGET_NODES[currentNode];
@@ -284,7 +308,7 @@ Instance.SetThink(() => {
     }
 
     if (!end && grabbedPlayers.length > 0) {
-        TeleportGrabbedPlayers(vectorAdd(myFly.GetAbsOrigin(), { x: 0, y: 0, z: -80 }));
+        TeleportGrabbedPlayers(vectorAdd(myFly.GetAbsOrigin(), { x: 0, y: 0, z: -40 }));
     }
 
     if (!end) Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);

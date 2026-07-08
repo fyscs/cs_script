@@ -2,6 +2,10 @@ import { Instance, PointTemplate } from "cs_script/point_script";
 
 const BASE_HEALTH = 1000;
 const HP_PER_PLAYER = 415;
+const BASE_TICK_INTERVAL = 0.01;
+const THINK_INTERVAL = 0.1;
+const MAX_MOTION_SCALE = 3;
+const MAX_TURN_SCALE = 2;
 
 let target = null;
 let dead = false;
@@ -23,18 +27,17 @@ let maxSpawnedEggs = 0;
 
 let speed = 7;
 let rotationSpeed = 0.01;
+let currentTripId = 0;
+let lastThinkTime = 0;
+let tickScale = 1;
 
-const ROTATION_SPEED_MIN = 0.005; 
-const ROTATION_SPEED_MAX = 0.02;       
+const ROTATION_SPEED_MIN = 0.006; 
+const ROTATION_SPEED_MAX = 0.025;       
 const ROTATION_SPEED_ACCELERATION = 0.0001; 
 const ROTATION_ERROR = 0.03;
-const SPEED_ACCELERATION = 0.05;
+const SPEED_ACCELERATION = 0.06;
 const MAX_SPEED = 15;
 const TOASTER_POSITION = { x: 7063, y: 2329, z: -360 };
-const THINK_INTERVAL = 0.1;
-const LEGACY_THINK_INTERVAL = 0.01;
-const TICK_SCALE = THINK_INTERVAL / LEGACY_THINK_INTERVAL;
-const EGG_SPAWN_ROLL = Math.max(1, Math.round(501 / TICK_SCALE));
 
 let initialPos = null;
 let initialAngles = null;
@@ -51,6 +54,26 @@ function RunThinkQueue() {
     while (thinkQueue.length > 0 && thinkQueue[0].time <= now) {
         thinkQueue.shift().callback();
     }
+}
+
+function UpdateTickScale() {
+    const now = Instance.GetGameTime();
+    if (lastThinkTime <= 0) {
+        lastThinkTime = now;
+        tickScale = THINK_INTERVAL / BASE_TICK_INTERVAL;
+        return;
+    }
+
+    tickScale = Math.max(1, Math.min((now - lastThinkTime) / BASE_TICK_INTERVAL, 20));
+    lastThinkTime = now;
+}
+
+function MotionScale() {
+    return Math.min(tickScale, MAX_MOTION_SCALE);
+}
+
+function TurnScale() {
+    return Math.min(tickScale, MAX_TURN_SCALE);
 }
 
 function vectorAdd(vec1, vec2) { return { x: vec1.x + vec2.x, y: vec1.y + vec2.y, z: vec1.z + vec2.z }; }
@@ -167,13 +190,13 @@ function IsValidTarget() {
 function TeleportGrabbedPlayers(position) {
     for (const p of grabbedPlayers) {
         if (IsValidPlayer(p) && p.GetTeamNumber() === 3) { 
-            p.Teleport({ position: position });
+            p.Teleport({ position: position, velocity: { x: 0, y: 0, z: 20 } });
         }
     }
 }
 
 function ChasePlayer(flyPos) {
-    retarget -= THINK_INTERVAL;
+    retarget -= BASE_TICK_INTERVAL * tickScale;
     const targetPos = vectorAdd(target.GetAbsOrigin(), { x: 0, y: 0, z: 48 });
     currentDistanceToTarget = Math.abs(targetPos.x - flyPos.x) + Math.abs(targetPos.y - flyPos.y);
 
@@ -241,13 +264,13 @@ function MoveForward(blocker1, blocker2) {
     if (trace.didHit && trace.fraction < 0.99) {
         speed = 0;
     } else {
-        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * TICK_SCALE));
+        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * MotionScale()));
         flyBoss.Teleport({ position: newPos });
     }
 }
 
 function MoveDir(dir) {
-    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * TICK_SCALE;
+    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
     if (speed > MAX_SPEED) speed = MAX_SPEED;
     const flyBoss = getFlyBoss();
     if (!flyBoss) return;
@@ -255,7 +278,7 @@ function MoveDir(dir) {
     const currentForward = getForward(flyBoss.GetAbsAngles());
     flyBoss.Teleport({ angles: vectorToAngles({ x: currentForward.x, y: currentForward.y, z: 0 }) });
     
-    const newPos = vectorAdd(flyBoss.GetAbsOrigin(), vectorScale(dir, (speed / 4) * TICK_SCALE));
+    const newPos = vectorAdd(flyBoss.GetAbsOrigin(), vectorScale(dir, (speed / 4) * MotionScale()));
     flyBoss.Teleport({ position: newPos });
 }
 
@@ -263,22 +286,21 @@ function GetNewDir(targetDir, currentDir) {
     const rotDir = currentDir.x * targetDir.y - currentDir.y * targetDir.x;
     
     if (Math.abs(rotDir) > 0.3) {
-        if (speed > 0) speed -= 0.6 * SPEED_ACCELERATION * TICK_SCALE;
-        if (rotationSpeed < ROTATION_SPEED_MAX) rotationSpeed += ROTATION_SPEED_ACCELERATION * TICK_SCALE;
+        if (speed > 0) speed -= 0.6 * SPEED_ACCELERATION * MotionScale();
+        if (rotationSpeed < ROTATION_SPEED_MAX) rotationSpeed += ROTATION_SPEED_ACCELERATION * TurnScale();
     } else {
-        if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * TICK_SCALE;
-        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TICK_SCALE;
+        if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
+        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TurnScale();
     }
-
     if (speed < 0) speed = 0;
     if (speed > MAX_SPEED) speed = MAX_SPEED;
     if (rotationSpeed < ROTATION_SPEED_MIN) rotationSpeed = ROTATION_SPEED_MIN;
     if (rotationSpeed > ROTATION_SPEED_MAX) rotationSpeed = ROTATION_SPEED_MAX;
     
     if (rotDir > ROTATION_ERROR || (rotDir >= 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, rotationSpeed * TICK_SCALE);
+        return Rotate2D(currentDir, rotationSpeed * TurnScale());
     } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, -rotationSpeed * TICK_SCALE);
+        return Rotate2D(currentDir, -rotationSpeed * TurnScale());
     } else {
         return currentDir;
     }
@@ -305,6 +327,9 @@ function ResetState() {
     maxSpawnedEggs = 0;
     speed = 7;
     rotationSpeed = 0.01;
+    currentTripId = 0;
+    lastThinkTime = 0;
+    tickScale = 1;
     thinkQueue.length = 0;
 
     const flyBoss = getFlyBoss();
@@ -345,6 +370,7 @@ Instance.OnScriptInput("Start", () => {
     maxSpawnedEggs = Math.max(1, Math.floor(playersInArena / 6));
 
     started = true;
+    lastThinkTime = Instance.GetGameTime();
     UpdateTextDisplay();
     Instance.EntFireAtName({ name: "fly_boss", input: "SetAnimationLooping", value: "fly" });
     Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
@@ -395,6 +421,7 @@ Instance.OnScriptInput("Hit", () => {
 });
 
 Instance.SetThink(() => {
+    UpdateTickScale();
     RunThinkQueue();
 
     if (started) {
@@ -403,7 +430,9 @@ Instance.SetThink(() => {
             Tick(flyBoss);
         }
     }
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    if (started || thinkQueue.length > 0) {
+        Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    }
 });
 
 function Tick(flyBoss) {
@@ -453,7 +482,17 @@ function Tick(flyBoss) {
                     if (!target || !IsValidTarget()) {
                         returnToToaster = true;
                     } else if (!grabbedPlayer) {
-                        QueueThink(Instance.GetGameTime() + 15.0, () => { returnToToaster = true; });
+                        currentTripId++;
+                        let myTrip = currentTripId;
+                        let minTime = 5.0;
+                        let maxTime = 20.0;
+                        let randomFlyTime = Math.random() * (maxTime - minTime) + minTime;
+                        
+                        QueueThink(Instance.GetGameTime() + randomFlyTime, () => { 
+                            if (currentTripId === myTrip) {
+                                returnToToaster = true; 
+                            }
+                        });
                     }
 
                     if (p === target) target = null;
@@ -474,10 +513,10 @@ function Tick(flyBoss) {
     }
 
     if (!dead) {
-        TeleportGrabbedPlayers(vectorAdd(flyPos, { x: 0, y: 0, z: -80 }));
+        TeleportGrabbedPlayers(vectorAdd(flyPos, { x: 0, y: 0, z: -40 }));
     }
 
-    if (!grabbedPlayer && !spawnEggs && eggsCurrentlySpawned < maxSpawnedEggs && Math.floor(Math.random() * EGG_SPAWN_ROLL) === 0 && distToFloor > 0.1 && isAboveValidGround) {
+    if (!grabbedPlayer && !spawnEggs && eggsCurrentlySpawned < maxSpawnedEggs && Math.random() < (1 - Math.pow(500 / 501, tickScale)) && distToFloor > 0.1 && isAboveValidGround) {
         spawnEggs = true;
     }
 
@@ -518,6 +557,7 @@ function Tick(flyBoss) {
             returnToToaster = false;
             grabbedPlayers = [];
             previousDistanceToTarget = -1;
+            currentTripId++; 
         } else {
             MoveTowardsTarget(flyPos, TOASTER_POSITION);
             previousDistanceToTarget = currentDistanceToTarget;
