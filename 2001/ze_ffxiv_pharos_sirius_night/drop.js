@@ -1,7 +1,13 @@
 import { Instance } from "cs_script/point_script";
 
 Instance.OnScriptInput("Drop", (event) => {
-    const Player = event.activator;
-    if (!Player || !Player.IsValid()) return;
-    Player.GetPlayerController().GetPlayerPawn().DropWeapon(Player.GetPlayerController().GetPlayerPawn().GetActiveWeapon());
+    const player = event.activator;
+    if (!player?.IsValid()) return;
+
+    const playerController = player.GetPlayerController();
+    const playerPawn = playerController?.GetPlayerPawn();
+    const activeWeapon = playerPawn?.GetActiveWeapon();
+
+    if (!playerPawn?.IsValid() || !activeWeapon?.IsValid()) return;
+    playerPawn.DropWeapon(activeWeapon);
 });
