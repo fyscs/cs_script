@@ -4,11 +4,16 @@ import { CSPlayerPawn, Instance, CSGearSlot } from "cs_script/point_script";
  * 数据存读取脚本
  * 此脚本用于实现回合结算后仍能恢复连关数据
  * 此脚本由皮皮猫233编写
- * 2026/3/6
+ * 2026/7/5
  */
+
+const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL];
+const weaponNames = ["weapon_taser"];
+const itemNames = ["weapon_healthshot", "weapon_molotov", "weapon_flashbang", "weapon_incgrenade", "weapon_hegrenade", "weapon_smokegrenade", "weapon_decoy"];
 
 let continuousSwitch = false;
 const playerData = new Map();
+let pickInterval = 30;
 
 Instance.OnScriptInput("SaveData", () => {
     Instance.ServerCommand("say **正在保存连关数据**");
@@ -23,10 +28,17 @@ Instance.OnScriptInput("SaveData", () => {
     for (const player of players) {
         if (!player || !player.IsValid() || player.GetTeamNumber() !== 3) continue;
         const health = player.GetHealth();
-        if (!(health > 0)) continue;
+        if (health <= 0) continue;
         const armor = player.GetArmor();
         const weapons = FindWeapons(player);
-        playerData.set(player, { armor: armor, health: health, weapons: weapons });
+        playerData.set(player, { 
+            armor: armor, 
+            health: health, 
+            weapons: weapons, 
+            items: FindItems(player), 
+            helmet: player.HasHelmet(), 
+            money: player.GetPlayerController()?.GetMoneySpendableNow() 
+        });
     }
 });
 
@@ -41,8 +53,8 @@ Instance.OnScriptInput("ReadData", () => {
         Instance.ServerCommand("c_revive @t");
     });
 
-    // 延迟2秒后读取数据
-    Delay(2, () => {
+    // 延迟5秒后读取数据
+    Delay(5, () => {
         Instance.ServerCommand("say **正在读取连关数据**");
         const players = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
         for (const player of players) {
@@ -53,9 +65,26 @@ Instance.OnScriptInput("ReadData", () => {
                 const properties = playerData.get(player);
                 player.SetArmor(properties.armor);
                 player.SetHealth(properties.health);
-                GiveWeapons(player, properties.weapons);
-            } else if (player.GetTeamNumber() === 3) {
-                player.Kill();
+                GiveWeaponsAndItems(player, properties.weapons, properties.items);
+                player.SetHasHelmet(properties.helmet);
+                if (properties.money) {
+                    const playerController = player.GetPlayerController();
+                    if (playerController && playerController.IsValid()) {
+                        const currentMoney = playerController.GetMoneySpendableNow();
+                        playerController.AddMoneySpendableNow(properties.money - currentMoney);
+                    }
+                }
+            } else {
+                const playerController = player.GetPlayerController();
+                if (playerController && playerController.IsValid()) {
+                    Instance.ServerCommand("c_infect #" + playerController.GetPlayerSlot());
+                    player.Teleport({ position: { x: 0, y: 0, z: -4560 } });
+
+                    // 延迟1秒后检测是否仍为人类防止部分社区禁止c_infect指令
+                    Delay(1, () => {
+                        if (player.IsValid() && player.GetTeamNumber() === 3) player.Kill();
+                    });
+                }
             }
         }
         playerData.clear();
@@ -63,11 +92,17 @@ Instance.OnScriptInput("ReadData", () => {
 });
 
 Instance.OnScriptInput("Enable", () => {
+    pickInterval = 20;
     continuousSwitch = true;
 });
 
 Instance.OnScriptInput("Disable", () => {
     continuousSwitch = false;
+});
+
+Instance.OnRoundStart(() => {
+    Instance.EntFireAtName({ name: "infected_pick_text", input: "SetIntMessage", value: pickInterval });
+    Instance.EntFireAtName({ name: "infected_pick_timer", input: "RefireTime", value: pickInterval });
 });
 
 Instance.OnRoundEnd((event) => {
@@ -80,6 +115,17 @@ Instance.OnRoundEnd((event) => {
         }
         playerData.clear();
     }
+    if (!continuousSwitch) {
+        if (event.winningTeam === 2) {
+            pickInterval = Math.min(pickInterval + 3, 40);
+        } else if (event.winningTeam === 3) {
+            pickInterval = Math.max(pickInterval - 5, 20);
+        }
+    } else {
+        if (event.winningTeam === 2) {
+            pickInterval = Math.min(pickInterval + 5, 40);
+        }
+    }
 });
 
 /**
@@ -87,13 +133,11 @@ Instance.OnRoundEnd((event) => {
  * @param {CSPlayerPawn} player 
  */
 function FindWeapons(player) {
-    const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL]
-    const weaponNames = ["weapon_healthshot", "weapon_molotov", "weapon_flashbang", "weapon_incgrenade", "weapon_hegrenade", "weapon_smokegrenade", "weapon_decoy", "weapon_taser"]
     const weapons = [];
     for (const weaponSlot of weaponSlots) {
         const weapon = player.FindWeaponBySlot(weaponSlot);
         if (!weapon || !weapon.IsValid()) continue;
-        const name = weapon.GetClassName();
+        const name = weapon.GetData().GetName();
         weapons.push(name);
     }
     for (const weaponName of weaponNames) {
@@ -105,15 +149,35 @@ function FindWeapons(player) {
 }
 
 /**
+ * 获取当前玩家的全部道具
+ * @param {CSPlayerPawn} player 
+ */
+function FindItems(player) {
+    const items = new Array(itemNames.length).fill(0);
+    for (let i = 0; i < itemNames.length; i++) {
+        const item = player.FindWeapon(itemNames[i]);
+        if (!item || !item.IsValid()) continue;
+        items[i] = item.GetReserveAmmo();
+    }
+    return items;
+}
+
+/**
  * 给予玩家多种武器
  * @param {CSPlayerPawn} player 
  * @param {string[]} weapons
+ * @param {number[]} items
  */
-function GiveWeapons(player, weapons) {
+function GiveWeaponsAndItems(player, weapons, items) {
     for (const weapon of weapons) {
         player.DestroyWeapons();
         Delay(1, () => {
             player.GiveNamedItem(weapon);
+            for (let i = 0; i < itemNames.length; i++) {
+                for (let number = 0; number < items[i]; number++) {
+                    player.GiveNamedItem(itemNames[i]);
+                }
+            }
         });
     }
 }

@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/18
+ * 2026/7/3
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -15,6 +15,7 @@ const CONFIG = {
     jockeyAccelerate: 1920 * timeDelta,     // jockey的移动加速度
     pouncePushedCD: 10,                     // 被推开后的CD惩罚
     damage: 5,                              // 伤害（每秒）
+    maxHealth: 10000                        // 最大血量值
 }
 
 const state = {
@@ -22,7 +23,8 @@ const state = {
     pouncePushedCD: 0,
     isAttacking: false,
     airDuration: 0,
-    attackDuration: 0
+    attackDuration: 0,
+    healthInterval: 0
 }
 
 let jockey = /** @type {CSPlayerPawn|undefined} */ (undefined);
@@ -41,19 +43,25 @@ Instance.OnScriptInput("BecomeJockey", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !jockey || !jockey.IsValid()) return;
+    const playerEyePostion = player.GetEyePosition();
+    const playerPostion = player.GetAbsOrigin();
+    const jockeyEyePostion = jockey.GetEyePosition();
+    if (IsBlocked(playerEyePostion, jockeyEyePostion) && IsBlocked(playerPostion, jockeyEyePostion)) return;
     state.isAttacking = true;
     pounced = player;
-    jockey.Teleport({ position: pounced.GetAbsOrigin(), velocity: { x: 0, y: 0, z: 0 } });
+    jockey.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: jockey, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
+    Instance.EntFireAtName({ name: "jockey_attack_trigger_" + suffix, input: "Disable" });
     Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "StartGlowing" });
     Instance.EntFireAtName({ name: "jockey_model_" + suffix, input: "SetAnimationLooping", value: "a_jockey_ride_idle" });
     Instance.EntFireAtName({ name: "jockey_attack_sound_" + suffix, input: "StartSound" });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: jockey });
     Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: pounced, delay: 0.1 });
     Instance.EntFireAtName({ name: "controlled_by_jockey_hudhint", input: "ShowHudHint", activator: pounced });
-    Instance.ServerCommand(`say **${pounced.GetPlayerController()?.GetPlayerName()}被Jockey抓住了，使用匕首重击来解救你的队友**`);
+    const pouncedController = pounced.GetPlayerController();
+    if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(pouncedController.GetPlayerName())} <<被Jockey抓住了，使用匕首重击来解救你的队友**`);
 });
 
 Instance.OnRoundStart(() => {
@@ -95,8 +103,12 @@ Instance.OnKnifeAttack((event) => {
 
                 // 人类与jockey之间无遮挡时才判定解除
                 if (!result.didHit) {
-                    Instance.ServerCommand(`say **${player.GetPlayerController()?.GetPlayerName()}解救了${pounced.GetPlayerController()?.GetPlayerName()}**`);
-                    player.GetPlayerController()?.AddMoneySpendableNow(5000);
+                    const playerController = player.GetPlayerController();
+                    const pouncedController = pounced.GetPlayerController();
+                    if (playerController && playerController.IsValid()) {
+                        playerController.AddMoneySpendableNow(5000);
+                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(playerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
+                    }
                     CancelAttack(pounced, jockey);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
@@ -129,6 +141,7 @@ function UpdateState(player) {
         const pouncedKeyDirection = GetAbsKeyDirection(pounced);
         const accelerate = VectorAdd(VectorScale(jockeyKeyDirection, CONFIG.jockeyAccelerate), VectorScale(pouncedKeyDirection, CONFIG.pouncedAccelerate));
         const newVelocity = VectorAdd(VectorScale(velocity, 0.9), accelerate);
+        newVelocity.z = velocity.z;
         LimitHorizontalMagnitude(newVelocity, 250);
         pounced.Teleport({ velocity: newVelocity });
         player.Teleport({ position: pounced.GetAbsOrigin() });
@@ -145,6 +158,13 @@ function UpdateState(player) {
         }
         return;
     }
+
+    // 回血检查
+    if (state.healthInterval >= 1) {
+        state.healthInterval = 0;
+        const currentHealth = player.GetHealth();
+        if (currentHealth < CONFIG.maxHealth) player.SetHealth(Math.min(currentHealth + 500, CONFIG.maxHealth));
+    } else state.healthInterval += timeDelta;
 
     // CD检查
     if (state.pouncePushedCD > 0 || state.pounceCD > 0) {
@@ -240,6 +260,20 @@ function GetAbsKeyDirection(player) {
     const KeyAngleYaw = directionMap[`${h},${v}`];
     if (!Number.isNaN(KeyAngleYaw)) return AnglesToVector({ pitch: 0, yaw: player.GetAbsAngles().yaw + KeyAngleYaw, roll: 0 });
     else return { x: 0, y: 0, z: 0 };
+}
+
+/**
+ * 判断两点之间是否被阻挡
+ * @param {import("cs_script/point_script").Vector} vec1 
+ * @param {import("cs_script/point_script").Vector} vec2 
+ */
+function IsBlocked(vec1, vec2, ignorePlayers = true, ignoreEntity = undefined) {
+    return Instance.TraceLine({
+        start: vec1,
+        end: vec2,
+        ignorePlayers,
+        ignoreEntity
+    }).didHit;
 }
 
 /**
@@ -353,4 +387,13 @@ function IsPointInViewCone(eyePos, eyeAng, point, fovDeg) {
 
     // 4. 比较
     return angleDeg <= fovDeg;
+}
+
+/**
+ * 移除常见危险字符防止注入
+ * @param {string} str 
+ * @returns 
+ */
+function Sanitize(str) {
+    return str.replace(/[";`$\\\n\r]/g, ""); // 
 }

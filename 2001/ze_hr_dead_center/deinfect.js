@@ -6,10 +6,11 @@ import { Instance, Entity, CSWeaponAttackType } from "cs_script/point_script";
  * 此脚本为针对风云社适配后的版本
  * 使用其他方式来代替返回abort实现免抓的效果
  * 此脚本由皮皮猫233编写
- * 2026/4/20
+ * 2026/6/20
  */
 
 let deinfectSwitch = false;
+const infected = new Set();
 
 Instance.OnScriptInput("Enable", () => {
     deinfectSwitch = true;
@@ -22,10 +23,21 @@ Instance.OnScriptInput("Disable", () => {
     SetHumanGod(false);
 });
 
+Instance.OnScriptInput("PushInfected", (inputData) => {
+    if (!inputData.active || !inputData.active.IsValid()) return;
+    infected.add(inputData.active);
+});
+
+Instance.OnScriptInput("RemoveInfected", (inputData) => {
+    if (!inputData.active || !inputData.active.IsValid()) return;
+    infected.delete(inputData.active);
+});
+
 Instance.OnRoundStart(() => {
     deinfectSwitch = false;
     SetHumanGod(false);
     thinkQueue.length = 0;
+    infected.clear();
 });
 
 Instance.OnPlayerKill((event) => {
@@ -38,7 +50,7 @@ Instance.OnKnifeAttack((event) => {
     if (!deinfectSwitch) return;
 
     const player = event.weapon.GetOwner();
-    if (!player || !player.IsValid() || player.GetTeamNumber() !== 2) return;
+    if (!player || !player.IsValid() || player.GetTeamNumber() !== 2 || infected.has(player)) return;
 
     const start = player.GetEyePosition();
     const forward = getForward(player.GetEyeAngles());
