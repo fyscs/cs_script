@@ -3,7 +3,7 @@ import { Instance, PointTemplate } from "cs_script/point_script";
 /** 
  * 道具效果生成脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/1
+ * 2026/7/12
  */
 
 Instance.OnScriptInput("Explode", (inputData) => {
@@ -34,12 +34,18 @@ function Explode(type, position, angles) {
     if (!entities) return;
     for (const entity of entities) {
         Instance.EntFireAtTarget({ target: entity, input: "Kill", delay: 7 });
-        if (entity.GetClassName() === "env_explosion") {
+        const className = entity.GetClassName();
+        const entityName = entity.GetEntityName();
+        if (className === "env_explosion") {
             Instance.EntFireAtTarget({ target: entity, input: "Explode" });
-        } else if (entity.GetClassName() === "env_shake") {
+        } else if (className === "env_shake") {
             Instance.EntFireAtTarget({ target: entity, input: "StartShake" });
-        } else if (entity.GetClassName() === "point_soundevent") {
+        } else if (className === "point_soundevent") {
             Instance.EntFireAtTarget({ target: entity, input: "StopSound", delay: 6.9 });
+        } else if (entityName === "item_oxygentank_effect_hurt") {
+            Instance.EntFireAtTarget({ target: entity, input: "Kill", delay: 0.4 });
+        } else if (entityName === "item_anecanister_effect_hurt") {
+            Instance.EntFireAtTarget({ target: entity, input: "Kill", delay: 0.4 });
         }
     }
 }

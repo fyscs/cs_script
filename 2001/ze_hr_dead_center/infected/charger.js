@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/3
+ * 2026/7/12
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -65,7 +65,6 @@ Instance.OnScriptInput("Push", (inputData) => {
 Instance.OnRoundStart(() => {
     if (charger && charger.IsValid()) {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
-        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "movetype 2" });
     }
     if (caught && caught.IsValid()) {
@@ -78,16 +77,8 @@ Instance.OnRoundStart(() => {
 Instance.OnPlayerKill((event) => {
     if (event.player === charger) {
         Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
-        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
-        if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
-            // @ts-ignore
-            const attackerController = event.attacker.GetPlayerController();
-            const caughtController = caught?.GetPlayerController();
-            if (attackerController && attackerController.IsValid()) {
-                attackerController.AddMoneySpendableNow(5000);
-                if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(caughtController.GetPlayerName())} <<**`);
-            }
-        }
+        // @ts-ignore
+        if (caught && caught.IsValid() && event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") SaveHuman(caught, event.attacker);
         CancelAttack(caught, charger);
         Instance.EntFireAtName({ name: "charger_kill_relay_" + suffix, input: "Trigger" });
     }
@@ -272,6 +263,20 @@ function CancelAttack(player, charger) {
         Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: player, delay: 0.1 });
     }
     caught = undefined;
+}
+
+/**
+ * 解救播报与奖励
+ * @param {CSPlayerPawn} caught 
+ * @param {CSPlayerPawn} attacker 
+ */
+function SaveHuman(caught, attacker) {
+    const attackerController = attacker.GetPlayerController();
+    if (!attackerController || !attackerController.IsValid()) return
+    const caughtController = caught.GetPlayerController();
+    if (!caughtController || !caughtController.IsValid()) return
+    attackerController.AddMoneySpendableNow(5000);
+    Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(caughtController.GetPlayerName())} <<**`);
 }
 
 /**
