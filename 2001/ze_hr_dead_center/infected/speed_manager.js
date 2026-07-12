@@ -3,21 +3,24 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * 速度管理系统
  * 此脚本由皮皮猫233编写
- * 2026/7/12
+ * 2026/7/13
  */
 
+/** @typedef {{ speed: number, tasks: Map<Entity, number> }} State */
+/** @typedef {Map<Entity, State>} Players */
+/** @type {Players} */
 const players = new Map();
 
 for (let mulit = 0.1; mulit < 3.1; mulit += 0.1) {
     for (let duration = 0; duration <= 20; duration += 1) {
-        Instance.OnScriptInput(`Speed(${mulit.toFixed(1)}, ${duration})`, (inputData) => Speed(inputData.activator, mulit, duration))
+        Instance.OnScriptInput(`Speed(${mulit.toFixed(1)}, ${duration})`, ({ activator, caller }) => Speed(activator, caller, mulit, duration))
     }
 }
-Instance.OnScriptInput(`Speed(0.67, 0)`, (inputData) => Speed(inputData.activator, 1 / 1.5, 0));
+Instance.OnScriptInput(`Speed(0.67, 0)`, ({ activator, caller }) => Speed(activator, caller, 1 / 1.5, 0));
 
 Instance.OnRoundStart(() => {
     players.forEach((state, player) => {
-        for(const task of state.tasks) CancelDelay(task);
+        state.tasks.forEach((taskId, caller) => CancelDelay(taskId));
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
     });
     players.clear();
@@ -25,29 +28,35 @@ Instance.OnRoundStart(() => {
 
 Instance.OnPlayerKill((event) => {
     if (!players.has(event.player)) return;
-    const state = players.get(event.player);
-    for(const task of state.tasks) CancelDelay(task);
+    const state = /** @type {State} */ (players.get(event.player));
+    state.tasks.forEach((taskId, caller) => {
+        CancelDelay(taskId);
+        state.tasks.delete(caller);
+    });
     Instance.EntFireAtTarget({ target: event.player, input: "KeyValue", value: "speed 1" });
 });
 
 /**
  * 速度设置
  * @param {Entity|undefined} player
+ * @param {Entity|undefined} caller
  * @param {number} mulit 
  * @param {number} duration 
  */
-function Speed(player, mulit, duration) {
+function Speed(player, caller, mulit, duration) {
     if (!player || !player.IsValid()) return;
-    if (!players.has(player)) players.set(player, { speed: 1, tasks: [] });
-    const state = players.get(player);
+    if (!players.has(player)) players.set(player, { speed: 1, tasks: new Map() });
+    const state = /** @type {State} */ (players.get(player));
     state.speed *= mulit;
     Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
-    if (duration !== 0) {
-        state.tasks.push(Delay(duration, () => {
-            state.speed /= mulit;
-            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
-        }));
-    }
+    if (duration === 0) return;
+    if (!caller || !caller.IsValid()) return;
+    if (state.tasks.has(caller)) RescheduleDelay(/** @type {number} */ (state.tasks.get(caller)), duration);
+    else state.tasks.set(caller, Delay(duration, () => {
+        state.speed /= mulit;
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
+        state.tasks.delete(caller);
+    }));
 }
 
 /** @type {{ id: number, time: number, callback: () => void }[]} */
@@ -60,7 +69,7 @@ let nextTaskId = 1;
  * 延迟执行函数
  * @param {number} delaySeconds 延迟的秒数
  * @param {() => void} callback 回调函数
- * @returns {number} 任务ID，可用于取消
+ * @returns {number} 任务ID，可用于取消或重新调度
  */
 function Delay(delaySeconds, callback) {
     const executeTime = Instance.GetGameTime() + delaySeconds;
@@ -106,7 +115,7 @@ function CancelDelay(taskId) {
     const task = taskMap.get(taskId);
     if (!task) return; // 任务不存在或已执行/取消
 
-    // 从数组中移除（利用对象引用定位）
+    // 从数组中移除
     const index = thinkQueue.indexOf(task);
     if (index !== -1) {
         thinkQueue.splice(index, 1);
@@ -118,8 +127,48 @@ function CancelDelay(taskId) {
         if (thinkQueue.length > 0) {
             Instance.SetNextThink(thinkQueue[0].time);
         }
-        // 若队列已空，不再设think，RunThinkQueue会在执行结束后自然停止
     }
+}
+
+/**
+ * 重新设置未执行任务的新延迟时间（从当前游戏时间开始计算）
+ * @param {number} taskId 任务ID
+ * @param {number} newDelaySeconds 新的延迟秒数
+ * @returns {boolean} 是否修改成功（任务存在且未执行）
+ */
+function RescheduleDelay(taskId, newDelaySeconds) {
+    const task = taskMap.get(taskId);
+    if (!task) return false;
+
+    const newTime = Instance.GetGameTime() + newDelaySeconds;
+
+    // 如果时间没有变化，直接返回
+    if (task.time === newTime) return true;
+
+    // 先从队列中移除
+    const index = thinkQueue.indexOf(task);
+    if (index === -1) return false; // 理论上不会发生
+    thinkQueue.splice(index, 1);
+
+    // 更新时间
+    task.time = newTime;
+
+    // 按新时间重新插入到正确位置
+    let insertIndex = 0;
+    for (let i = thinkQueue.length - 1; i >= 0; i--) {
+        if (thinkQueue[i].time <= newTime) {
+            insertIndex = i + 1;
+            break;
+        }
+    }
+    thinkQueue.splice(insertIndex, 0, task);
+
+    // 更新下一次think时间（只要队列不为空就重新设置最早时间）
+    if (thinkQueue.length > 0) {
+        Instance.SetNextThink(thinkQueue[0].time);
+    }
+
+    return true;
 }
 
 /**
