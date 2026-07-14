@@ -4,7 +4,7 @@ import { CSPlayerPawn, Instance, CSGearSlot } from "cs_script/point_script";
  * 数据存读取脚本
  * 此脚本用于实现回合结算后仍能恢复连关数据
  * 此脚本由皮皮猫233编写
- * 2026/7/5
+ * 2026/7/14
  */
 
 const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL];
@@ -78,7 +78,7 @@ Instance.OnScriptInput("ReadData", () => {
                 const playerController = player.GetPlayerController();
                 if (playerController && playerController.IsValid()) {
                     Instance.ServerCommand("c_infect #" + playerController.GetPlayerSlot());
-                    player.Teleport({ position: { x: 0, y: 0, z: -4560 } });
+                    player.Teleport({ position: { x: 0, y: 0, z: -3560 } });
 
                     // 延迟1秒后检测是否仍为人类防止部分社区禁止c_infect指令
                     Delay(1, () => {

@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/12
+ * 2026/7/14
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -43,13 +43,13 @@ Instance.OnScriptInput("BecomeJockey", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !jockey || !jockey.IsValid()) return;
-    const playerEyePostion = player.GetEyePosition();
-    const playerPostion = player.GetAbsOrigin();
-    const jockeyEyePostion = jockey.GetEyePosition();
-    if (IsBlocked(playerEyePostion, jockeyEyePostion) && IsBlocked(playerPostion, jockeyEyePostion)) return;
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    const jockeyEyePosition = jockey.GetEyePosition();
+    if (IsBlocked(playerEyePosition, jockeyEyePosition) && IsBlocked(playerPosition, jockeyEyePosition)) return;
     state.isAttacking = true;
     pounced = player;
-    jockey.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
+    jockey.Teleport({ position: playerPosition, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: jockey, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
@@ -129,7 +129,7 @@ function UpdateState(player) {
     if (state.isAttacking) {
 
         // 被感染立刻解除
-        if (!pounced || !pounced.IsValid() || pounced.GetTeamNumber() !== 3) {
+        if (!pounced || !pounced.IsValid() || !pounced.IsAlive() || pounced.GetTeamNumber() !== 3) {
             CancelAttack(pounced, player);
             return;
         }

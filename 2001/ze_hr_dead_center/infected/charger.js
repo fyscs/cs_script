@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/12
+ * 2026/7/14
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -44,10 +44,10 @@ Instance.OnScriptInput("BecomeCharger", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !charger || !charger.IsValid()) return;
-    const playerEyePostion = player.GetEyePosition();
-    const playerPostion = player.GetAbsOrigin();
-    const chargerEyePostion = charger.GetEyePosition();
-    if (IsBlocked(playerEyePostion, chargerEyePostion) && IsBlocked(playerPostion, chargerEyePostion)) return;
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    const chargerEyePosition = charger.GetEyePosition();
+    if (IsBlocked(playerEyePosition, chargerEyePosition) && IsBlocked(playerPosition, chargerEyePosition)) return;
     caught = player;
     Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: caught, input: "AddContext", value: "player_controlled:1" });
@@ -143,8 +143,8 @@ function UpdateState(charger) {
     if (state.isAttacking) {
 
         // 被感染立刻解除
-        if (!caught || !caught.IsValid() || caught.GetTeamNumber() !== 3) {
-            CancelAttack(undefined, charger);
+        if (!caught || !caught.IsValid() || !caught.IsAlive() || caught.GetTeamNumber() !== 3) {
+            CancelAttack(caught, charger);
             return;
         }
         const handTarget = Instance.FindEntityByName("charger_hand_target_move_" + suffix);

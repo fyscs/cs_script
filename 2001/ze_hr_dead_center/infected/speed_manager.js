@@ -47,16 +47,18 @@ function Speed(player, caller, mulit, duration) {
     if (!player || !player.IsValid()) return;
     if (!players.has(player)) players.set(player, { speed: 1, tasks: new Map() });
     const state = /** @type {State} */ (players.get(player));
-    state.speed *= mulit;
-    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
     if (duration === 0) return;
     if (!caller || !caller.IsValid()) return;
-    if (state.tasks.has(caller)) RescheduleDelay(/** @type {number} */ (state.tasks.get(caller)), duration);
-    else state.tasks.set(caller, Delay(duration, () => {
-        state.speed /= mulit;
+    if (state.tasks.has(caller)) RescheduleDelay(/** @type {number} */(state.tasks.get(caller)), duration);
+    else {
+        state.speed *= mulit;
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
-        state.tasks.delete(caller);
-    }));
+        state.tasks.set(caller, Delay(duration, () => {
+            state.speed /= mulit;
+            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
+            state.tasks.delete(caller);
+        }));
+    }
 }
 
 /** @type {{ id: number, time: number, callback: () => void }[]} */

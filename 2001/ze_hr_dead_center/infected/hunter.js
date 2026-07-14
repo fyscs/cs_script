@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Hunter脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/12
+ * 2026/7/14
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -52,16 +52,16 @@ Instance.OnScriptInput("BecomeHunter", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !hunter || !hunter.IsValid()) return;
-    const playerEyePostion = player.GetEyePosition();
-    const playerPostion = player.GetAbsOrigin();
-    const hunterEyePostion = hunter.GetEyePosition();
-    if (IsBlocked(playerEyePostion, hunterEyePostion) && IsBlocked(playerPostion, hunterEyePostion)) return;
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    const hunterEyePosition = hunter.GetEyePosition();
+    if (IsBlocked(playerEyePosition, hunterEyePosition) && IsBlocked(playerPosition, hunterEyePosition)) return;
 
     // 命中玩家时将其扑倒
     CancelPounceAndResetAbsTimes();
     state.isAttacking = true;
     pounced = player;
-    hunter.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
+    hunter.Teleport({ position: playerPosition, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
     Instance.EntFireAtName({ name: "hunter_attack_trigger_" + suffix, input: "Disable" });
@@ -145,8 +145,8 @@ function UpdateState(player) {
     if (state.isAttacking) {
 
         // 被感染立刻解除
-        if (!pounced || !pounced.IsValid() || pounced.GetTeamNumber() !== 3) {
-            CancelAttack(undefined, player);
+        if (!pounced || !pounced.IsValid() || !pounced.IsAlive() || pounced.GetTeamNumber() !== 3) {
+            CancelAttack(pounced, player);
             return;
         }
 
