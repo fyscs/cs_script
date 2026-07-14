@@ -276,6 +276,9 @@ function UpdateState(smoker) {
             dragged = /** @type {CSPlayerPawn} */ (result.hitEntity);
             state.dragTargets.length = 2;
             Instance.EntFireAtTarget({ target: smoker, input: "KeyValue", value: "movetype 0" });
+            Instance.EntFireAtTarget({ target: dragged, input: "AddContext", value: "player_controlled:1" });
+            const draggedController = dragged.GetPlayerController();
+            if (draggedController && draggedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(draggedController.GetPlayerName())} <<被Smoker缠住了，射击舌头或使用匕首重击来解救你的队友**`);
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: smoker });
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPersonFreeze", activator: dragged, delay: 0.1 });
             Instance.EntFireAtName({ name: "smoker_model_" + suffix, input: "StartGlowing" });
