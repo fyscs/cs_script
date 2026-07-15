@@ -192,18 +192,22 @@ function UpdateState(smoker) {
             }
         } else state.dragDuration += timeDelta;
 
-        // 判定是否有障碍物遮挡
-        let tonguePhys = /** @type {Entity[]} */ ([]);
-        for (const phys of state.tonguePhys) tonguePhys = tonguePhys.concat(phys);
-        const result = Instance.TraceLine({
-            start: state.dragTargets[state.dragTargets.length - 2],
-            end: lastTarget,
-            ignorePlayers: true,
-            ignoreEntity: tonguePhys
-        });
-        if (result.didHit) {
-            state.dragTargets[state.dragTargets.length - 1] = result.end;
-            state.dragTargets.push({ x: 0, y: 0, z: 0 });
+        // 折点数量小于10时才继续检测障碍物，防止无限递归
+        if (state.dragTargets.length < 10) {
+
+            // 判定是否有障碍物遮挡
+            let tonguePhys = /** @type {Entity[]} */ ([]);
+            for (const phys of state.tonguePhys) tonguePhys = tonguePhys.concat(phys);
+            const result = Instance.TraceLine({
+                start: lastTarget,
+                end: state.dragTargets[state.dragTargets.length - 2],
+                ignorePlayers: true,
+                ignoreEntity: tonguePhys
+            });
+            if (result.didHit) {
+                state.dragTargets[state.dragTargets.length - 1] = result.end;
+                state.dragTargets.push({ x: 0, y: 0, z: 0 });
+            }
         }
 
         // 设置舌头碰撞与特效
