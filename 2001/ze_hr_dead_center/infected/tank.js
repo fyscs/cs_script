@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * Tank脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/11
+ * 2026/7/15
  */
 
 let tank = /** @type {Entity|undefined} */ (undefined);
@@ -53,10 +53,6 @@ Instance.OnScriptInput("Throw", () => {
 });
 
 Instance.OnRoundStart(() => {
-    if (tank && tank.IsValid()) {
-        Instance.EntFireAtTarget({ target: tank, input: "SetDamageFilter", value: "" });
-        Instance.EntFireAtTarget({ target: tank, input: "Alpha", value: 255 });
-    }
     Instance.EntFireAtName({ name: "tank_script_" + suffix, input: "Kill" });
 });
 

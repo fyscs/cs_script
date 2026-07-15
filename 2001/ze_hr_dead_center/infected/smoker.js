@@ -15,7 +15,7 @@ const CONFIG = {
     lengthPreTongue: 32,        // 每段舌头碰撞的长度
     dragSpeed: 100,             // 拉取速度
     tongueHealth: 20,           // 舌头血量（子弹数）
-    maxHealth: 5000             // 最大生命值
+    maxHealth: 2000             // 最大生命值
 }
 
 const state = {
@@ -52,11 +52,9 @@ Instance.OnScriptInput("HitTongue", (inputData) => {
     if (!smoker || !smoker.IsValid()) return;
     state.tongueHealth--;
     if (state.tongueHealth <= 0) {
-        CancelDrag(dragged, smoker);
         const attacker = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
-        if (!attacker || !attacker.IsValid()) return;
-        if (!dragged || !dragged.IsValid()) return;
-        SaveHuman(dragged, attacker);
+        if (attacker && attacker.IsValid() && dragged && dragged.IsValid()) SaveHuman(dragged, attacker);
+        CancelDrag(dragged, smoker);
     }
 });
 
@@ -106,6 +104,7 @@ Instance.OnPlayerKill((event) => {
     // @ts-ignore
     if (dragged && dragged.IsValid() && event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") SaveHuman(dragged, event.attacker);
     CancelDrag(dragged, smoker);
+    Instance.FindEntityByName("smoker_cloud_particle_" + suffix)?.Teleport({ position: smoker.GetAbsOrigin() });
     Instance.EntFireAtName({ name: "smoker_kill_relay_" + suffix, input: "Trigger" });
 });
 
@@ -234,7 +233,7 @@ function UpdateState(smoker) {
     if (state.healthInterval >= 1) {
         state.healthInterval = 0;
         const currentHealth = smoker.GetHealth();
-        if (currentHealth < CONFIG.maxHealth) smoker.SetHealth(Math.min(currentHealth + 500, CONFIG.maxHealth));
+        if (currentHealth < CONFIG.maxHealth) smoker.SetHealth(Math.min(currentHealth + 100, CONFIG.maxHealth));
     } else state.healthInterval += timeDelta;
 
     // CD检查

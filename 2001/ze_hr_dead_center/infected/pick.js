@@ -3,7 +3,7 @@ import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/12
+ * 2026/7/15
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
@@ -98,6 +98,9 @@ Instance.OnPlayerKill((event) => {
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
+        const state = infected.get(player);
+        state.isInfected = false;
+        state.isPreInfected = false;
     }
 });
 
