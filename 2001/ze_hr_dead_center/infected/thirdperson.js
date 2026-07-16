@@ -3,38 +3,14 @@ import { Instance, Entity } from "cs_script/point_script";
 /**
  * 第三人称脚本
  * 此脚本由皮皮猫233编写
- * 2026/6/17
+ * 2026/7/16
  */
 
 const cameraEntities = new Map();
 let cameraIndex = 0;
 
-Instance.OnScriptInput("ThirdPerson", (inputData) => {
-    const player = inputData.activator;
-    if (!player || !player.IsValid()) return;
-
-    player.SetEntityName("player_thirdperson_" + cameraIndex);
-    // @ts-ignore
-    const entities = Instance.FindEntityByName("thirdperson_temp").ForceSpawn(player.GetEyePosition(), player.GetAbsAngles());
-    cameraEntities.set(player, entities);
-    for (const entity of entities) {
-
-        const entityName = entity.GetEntityName();
-        switch (entityName) {
-            case "thirdperson_mm":
-                Instance.EntFireAtTarget({ target: entity, input: "SetMeasureTarget", value: "player_thirdperson_" + cameraIndex });
-                break;
-            case "thirdperson_camera":
-                Instance.EntFireAtTarget({ target: entity, input: "KeyValue", value: "target thirdperson_move_" + cameraIndex });
-                Instance.EntFireAtTarget({ target: entity, input: "EnableCamera", activator: player });
-                break;
-            case "thirdperson_move":
-                entity.SetEntityName("thirdperson_move_" + cameraIndex);
-                Instance.EntFireAtTarget({ target: entity, input: "Close" });
-        }
-    }
-    cameraIndex++;
-});
+Instance.OnScriptInput("ThirdPerson", (inputData) => ThirdPerson(inputData.activator));
+Instance.OnScriptInput("ThirdPersonFreeze", (inputData) => ThirdPerson(inputData.activator, true));
 
 Instance.OnScriptInput("FirstPerson", (inputData) => {
     const player = inputData.activator;
@@ -57,6 +33,9 @@ Instance.OnScriptInput("FirstPerson", (inputData) => {
                         break;
                     case "thirdperson_camera":
                         Instance.EntFireAtTarget({ target: entity, input: "DisableCamera", activator: player, delay: 0.5 });
+                        break;
+                    case "thirdperson_freeze_ui":
+                        Instance.EntFireAtTarget({ target: entity, input: "Deactivate", activator: player });
                 }
                 Instance.EntFireAtTarget({ target: entity, input: "Kill", delay: 1 });
             }
@@ -73,3 +52,40 @@ Instance.OnRoundStart(() => {
     cameraEntities.clear();
     cameraIndex = 0;
 });
+
+/**
+ * 应用第三人称
+ * @param {Entity|undefined} player 
+ * @param {boolean} freeze
+ */
+function ThirdPerson(player, freeze = false) {
+    if (!player || !player.IsValid()) return;
+
+    player.SetEntityName("player_thirdperson_" + cameraIndex);
+    let entities = [];
+    // @ts-ignore
+    if (freeze) entities = Instance.FindEntityByName("thirdperson_freeze_temp").ForceSpawn(player.GetEyePosition(), player.GetAbsAngles());
+    // @ts-ignore
+    else entities = Instance.FindEntityByName("thirdperson_temp").ForceSpawn(player.GetEyePosition(), player.GetAbsAngles());
+    cameraEntities.set(player, entities);
+    for (const entity of entities) {
+
+        const entityName = entity.GetEntityName();
+        switch (entityName) {
+            case "thirdperson_mm":
+                Instance.EntFireAtTarget({ target: entity, input: "SetMeasureTarget", value: "player_thirdperson_" + cameraIndex });
+                break;
+            case "thirdperson_camera":
+                Instance.EntFireAtTarget({ target: entity, input: "KeyValue", value: "target thirdperson_move_" + cameraIndex });
+                Instance.EntFireAtTarget({ target: entity, input: "EnableCamera", activator: player });
+                break;
+            case "thirdperson_move":
+                entity.SetEntityName("thirdperson_move_" + cameraIndex);
+                Instance.EntFireAtTarget({ target: entity, input: "Close" });
+                break;
+            case "thirdperson_freeze_ui":
+                Instance.EntFireAtTarget({ target: entity, input: "Activate", activator: player });
+        }
+    }
+    cameraIndex++;
+}

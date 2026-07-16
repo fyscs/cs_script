@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, Entity, CSWeaponAttackType } from "cs
 /**
  * Smoker脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/15
+ * 2026/7/16
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -224,7 +224,7 @@ function UpdateState(smoker) {
         dragDirection.z = 0;
         dragDirection = VectorNormalize(dragDirection);
         const newVelocity = VectorScale(dragDirection, CONFIG.dragSpeed);
-        newVelocity.z = dragDirection.z;
+        newVelocity.z = draggedVelocity.z;
         dragged.Teleport({ velocity: newVelocity });
         return;
     }

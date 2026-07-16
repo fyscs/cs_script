@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * 速度管理系统
  * 此脚本由皮皮猫233编写
- * 2026/7/13
+ * 2026/7/16
  */
 
 /** @typedef {{ speed: number, tasks: Map<Entity, number> }} State */
@@ -47,17 +47,21 @@ function Speed(player, caller, mulit, duration) {
     if (!player || !player.IsValid()) return;
     if (!players.has(player)) players.set(player, { speed: 1, tasks: new Map() });
     const state = /** @type {State} */ (players.get(player));
-    if (duration === 0) return;
-    if (!caller || !caller.IsValid()) return;
-    if (state.tasks.has(caller)) RescheduleDelay(/** @type {number} */(state.tasks.get(caller)), duration);
-    else {
+    if (duration === 0) {
         state.speed *= mulit;
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
-        state.tasks.set(caller, Delay(duration, () => {
-            state.speed /= mulit;
+    } else {
+        if (!caller || !caller.IsValid()) return;
+        if (state.tasks.has(caller)) RescheduleDelay(/** @type {number} */(state.tasks.get(caller)), duration);
+        else {
+            state.speed *= mulit;
             Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
-            state.tasks.delete(caller);
-        }));
+            state.tasks.set(caller, Delay(duration, () => {
+                state.speed /= mulit;
+                Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed " + state.speed.toFixed(2) });
+                state.tasks.delete(caller);
+            }));
+        }
     }
 }
 

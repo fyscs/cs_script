@@ -3,7 +3,7 @@ import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/15
+ * 2026/7/16
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
@@ -21,6 +21,7 @@ class Infected {
         this.isMotherZombie = false;
         this.isPreInfected = false;
         this.isInfected = false;
+        this.isDeadPreInfected = false;
         this.type = "none";
     }
 
@@ -29,6 +30,7 @@ class Infected {
         // this.wantTank = false;
         this.isPreInfected = false;
         this.isInfected = false;
+        this.isDeadPreInfected = false;
         this.type = "none";
     }
 }
@@ -62,13 +64,13 @@ Instance.OnScriptInput("PushMotherZombies", () => {
 Instance.OnScriptInput("PickInfected", () => {
     const infectedList = GetPreInfected();
     if (infectedList.length === 0) return;
-    BecomePreInfected(/** @type {CSPlayerPawn} */(infectedList[Math.floor(infectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
+    TestPreInfected(/** @type {CSPlayerPawn} */(infectedList[Math.floor(infectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
 });
 
 Instance.OnScriptInput("PickTank", () => {
     const tankList = GetPreTank();
     if (tankList.length === 0) return;
-    BecomePreInfected(/** @type {CSPlayerPawn} */(tankList[Math.floor(tankList.length * Math.random())]), "Tank");
+    TestPreInfected(/** @type {CSPlayerPawn} */(tankList[Math.floor(tankList.length * Math.random())]), "Tank");
 });
 
 Instance.OnRoundStart(() => {
@@ -144,6 +146,10 @@ Instance.SetThink(() => {
     // }
     infected.forEach((state, player) => {
         if (player.IsValid()) {
+            if (state.isDeadPreInfected && player.IsAlive()) {
+                state.isDeadPreInfected = false;
+                BecomePreInfected(player, state.type);
+            }
             if (state.isPreInfected && player.IsInputPressed(CSInputs.ATTACK2) && CheckSpawn(player)) {
                 BecomeInfected(player);
             }
@@ -155,11 +161,26 @@ Instance.SetThink(() => {
 Instance.SetNextThink(Instance.GetGameTime());
 
 /**
+ * 尝试变为预复活特感
+ * @param {CSPlayerPawn} player 
+ * @param {string} type 
+ */
+function TestPreInfected(player, type) {
+    if (player.IsAlive()) BecomePreInfected(player, type);
+    else {
+        const state = infected.get(player);
+        state.type = type;
+        state.isDeadPreInfected = true;
+    }
+}
+
+/**
  * 成为预复活特感
  * @param {CSPlayerPawn} player 
  * @param {string} type 
  */
 function BecomePreInfected(player, type) {
+    if (!player.IsAlive()) return;
     if (!infected.has(player)) infected.set(player, new Infected(player));
     const state = infected.get(player);
     state.isPreInfected = true;
@@ -240,8 +261,8 @@ function GetPreInfected() {
             const state = infected.get(player);
             if (
                 player.IsValid() &&
-                player.IsAlive() &&
                 player.GetTeamNumber() === 2 &&
+                !state.isDeadPreInfected &&
                 !state.isPreInfected &&
                 !state.isInfected
             ) {
@@ -251,7 +272,6 @@ function GetPreInfected() {
         } else {
             if (
                 player.IsValid() &&
-                player.IsAlive() &&
                 player.GetTeamNumber() === 2
             ) normalZombies.push(player);
         }
@@ -270,15 +290,14 @@ function GetPreTank() {
             const state = infected.get(player);
             if (
                 player.IsValid() &&
-                player.IsAlive() &&
                 player.GetTeamNumber() === 2 &&
+                !state.isDeadPreInfected &&
                 !state.isPreInfected &&
                 !state.isInfected
             ) players.push(player);
         } else {
             if (
                 player.IsValid() &&
-                player.IsAlive() &&
                 player.GetTeamNumber() === 2
             ) players.push(player);
         }
