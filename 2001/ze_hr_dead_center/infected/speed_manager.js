@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * 速度管理系统
  * 此脚本由皮皮猫233编写
- * 2026/7/16
+ * 2026/7/17
  */
 
 /** @typedef {{ speed: number, tasks: Map<Entity, number> }} State */
@@ -29,6 +29,7 @@ Instance.OnRoundStart(() => {
 Instance.OnPlayerKill((event) => {
     if (!players.has(event.player)) return;
     const state = /** @type {State} */ (players.get(event.player));
+    state.speed = 1;
     state.tasks.forEach((taskId, caller) => {
         CancelDelay(taskId);
         state.tasks.delete(caller);
