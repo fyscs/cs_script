@@ -3,14 +3,14 @@ import { Instance, CSPlayerPawn, CSInputs, Entity, CSWeaponAttackType } from "cs
 /**
  * Smoker脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/16
+ * 2026/7/19
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
 
 const CONFIG = {
     damage: 20,                 // 攻击伤害（每秒）
-    shootCD: 10,                // 发射CD
+    shootCD: 20,                // 发射CD
     maxLength: 2000,            // 舌头最大长度
     lengthPreTongue: 32,        // 每段舌头碰撞的长度
     dragSpeed: 100,             // 拉取速度

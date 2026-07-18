@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/14
+ * 2026/7/19
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -64,7 +64,6 @@ Instance.OnScriptInput("Push", (inputData) => {
 
 Instance.OnRoundStart(() => {
     if (charger && charger.IsValid()) {
-        Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "movetype 2" });
     }
     if (caught && caught.IsValid()) {
@@ -76,7 +75,6 @@ Instance.OnRoundStart(() => {
 
 Instance.OnPlayerKill((event) => {
     if (event.player === charger) {
-        Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
         // @ts-ignore
         if (caught && caught.IsValid() && event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") SaveHuman(caught, event.attacker);
         CancelAttack(caught, charger);
@@ -223,6 +221,8 @@ function CancelCharge(charger) {
             Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "SetAnimationLooping", value: "Charger_pound" });
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: charger });
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: caught, delay: 0.1 });
+            const caughtController = caught.GetPlayerController();
+            if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(caughtController.GetPlayerName())} <<被Charger抓住了，击杀Charger来解救你的队友**`);
         } else {
             Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
             Instance.EntFireAtTarget({ target: caught, input: "RemoveContext", value: "player_controlled" });

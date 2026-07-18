@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * Tank脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/15
+ * 2026/7/19
  */
 
 let tank = /** @type {Entity|undefined} */ (undefined);
@@ -11,9 +11,9 @@ let suffix = 0;
 
 Instance.OnScriptInput("BecomeTank", (inputData) => {
     tank = inputData.activator;
-    const scriptName = inputData.caller?.GetEntityName();
-    if (scriptName?.startsWith("tank_relay")) {
-        suffix = Number(scriptName.slice(11));
+    const relayName = inputData.caller?.GetEntityName();
+    if (relayName?.startsWith("tank_relay")) {
+        suffix = Number(relayName.slice(11));
     }
 });
 
