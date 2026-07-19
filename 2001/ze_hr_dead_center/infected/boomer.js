@@ -8,7 +8,8 @@ import { Entity, Instance } from "cs_script/point_script";
 
 const CONFIG = {
     duration: 5,
-    cd: 20
+    cd: 20,
+    damage: 40
 }
 
 let boomer = /** @type {Entity|undefined} */ (undefined);
@@ -38,27 +39,8 @@ Instance.OnScriptInput("ShowCd", () => {
     Main();
 });
 
-Instance.OnScriptInput("CheckGlow", (inputData) => {
-    const player = inputData.activator;
-    if (!player || !player.IsValid()) return;
-    if (!boomer || !boomer.IsValid()) return;
-    if (player.GetTeamNumber() !== 3) return;
-    const boomerPosition = boomer.GetEyePosition();
-    const playerEyePosition = player.GetEyePosition();
-    const playerPosition = player.GetAbsOrigin();
-    if (IsBlocked(boomerPosition, playerEyePosition) && IsBlocked(boomerPosition, playerPosition)) return;
-    Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(0.7, 5)", activator: player });
-    if (glowPlayers.has(player) || glowPlayers.size > 5) return;
-    glowPlayers.add(player);
-    Instance.EntFireAtName({ name: "glow_script", input: "RunScriptInput", value: "Glow(255, 150, 0)", activator: player });
-    Delay(CONFIG.duration, () => {
-        glowPlayers.delete(player);
-        Instance.EntFireAtName({ name: "glow_script", input: "RunScriptInput", value: "Unglow", activator: player });
-    });
-    if (isMainRunning) return;
-    isMainRunning = true;
-    Main();
-});
+Instance.OnScriptInput("CheckGlow", (inputData) => CheckGlow(inputData.activator));
+Instance.OnScriptInput("CheckGlowAndExplode", (inputData) => CheckGlow(inputData.activator, true));
 
 Instance.OnScriptInput("Explode", () => {
     if (boomer && boomer.IsValid()) boomer.Kill();
@@ -78,6 +60,40 @@ Instance.OnPlayerKill((event) => {
 Instance.OnRoundStart(() => {
     Instance.EntFireAtName({ name: "boomer_script_" + suffix, input: "Kill" });
 });
+
+/**
+ * 隔墙检查
+ * @param {Entity|undefined} player 
+ * @param {boolean} isExplode 
+ * @returns 
+ */
+function CheckGlow(player, isExplode = false) {
+    if (!player || !player.IsValid()) return;
+    if (!boomer || !boomer.IsValid()) return;
+    const boomerPosition = boomer.GetEyePosition();
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    if (IsBlocked(boomerPosition, playerEyePosition) && IsBlocked(boomerPosition, playerPosition)) return;
+    if (isExplode) {
+        const health = player.GetHealth();
+        if (health <= 40) player.Kill();
+        else player.SetHealth(health - 40);
+    }
+    // @ts-ignore
+    const post = Instance.FindEntityByName("boomer_post_temp").ForceSpawn(playerPosition)[0];
+    Instance.EntFireAtTarget({ target: post, input: "Kill", delay: 0.1 });
+    Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(0.7, 5)", activator: player });
+    if (glowPlayers.has(player) || glowPlayers.size > 5) return;
+    glowPlayers.add(player);
+    Instance.EntFireAtName({ name: "glow_script", input: "RunScriptInput", value: "Glow(255, 150, 0)", activator: player });
+    Delay(CONFIG.duration, () => {
+        glowPlayers.delete(player);
+        Instance.EntFireAtName({ name: "glow_script", input: "RunScriptInput", value: "Unglow", activator: player });
+    });
+    if (isMainRunning) return;
+    isMainRunning = true;
+    Main();
+}
 
 /**
  * 主循环
