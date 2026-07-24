@@ -1,6 +1,6 @@
 import { Instance } from "cs_script/point_script";
 
-Instance.OnScriptInput("DropWeapon", ({ caller, activator }) => {
+Instance.OnScriptInput("Drop", ({ caller, activator }) => {
     if (activator?.IsValid())
     {
         const player = activator;
