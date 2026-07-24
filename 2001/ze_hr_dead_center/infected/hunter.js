@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Hunter脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/3
+ * 2026/7/14
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -52,16 +52,16 @@ Instance.OnScriptInput("BecomeHunter", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !hunter || !hunter.IsValid()) return;
-    const playerEyePostion = player.GetEyePosition();
-    const playerPostion = player.GetAbsOrigin();
-    const hunterEyePostion = hunter.GetEyePosition();
-    if (IsBlocked(playerEyePostion, hunterEyePostion) && IsBlocked(playerPostion, hunterEyePostion)) return;
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    const hunterEyePosition = hunter.GetEyePosition();
+    if (IsBlocked(playerEyePosition, hunterEyePosition) && IsBlocked(playerPosition, hunterEyePosition)) return;
 
     // 命中玩家时将其扑倒
     CancelPounceAndResetAbsTimes();
     state.isAttacking = true;
     pounced = player;
-    hunter.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
+    hunter.Teleport({ position: playerPosition, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
     Instance.EntFireAtName({ name: "hunter_attack_trigger_" + suffix, input: "Disable" });
@@ -91,6 +91,8 @@ Instance.OnRoundStart(() => {
 Instance.OnPlayerKill((event) => {
     if (event.player === hunter) {
         CancelAttack(pounced, hunter);
+        // @ts-ignore
+        if (pounced?.IsValid() && event.attacker?.IsValid() && event.attacker.GetClassName() === "player") SaveHuman(pounced, event.attacker);
         Instance.EntFireAtName({ name: "hunter_kill_relay_" + suffix, input: "Trigger" });
     }
 });
@@ -117,12 +119,7 @@ Instance.OnKnifeAttack((event) => {
 
                 // 人类与Hunter之间无遮挡时才判定解除
                 if (!result.didHit) {
-                    const playerController = player.GetPlayerController();
-                    const pouncedController = pounced.GetPlayerController();
-                    if (playerController && playerController.IsValid()) {
-                        playerController.AddMoneySpendableNow(5000);
-                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(playerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
-                    }
+                    SaveHuman(pounced, player);
                     CancelAttack(pounced, hunter);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
@@ -148,8 +145,8 @@ function UpdateState(player) {
     if (state.isAttacking) {
 
         // 被感染立刻解除
-        if (!pounced || !pounced.IsValid() || pounced.GetTeamNumber() !== 3) {
-            CancelAttack(undefined, player);
+        if (!pounced || !pounced.IsValid() || !pounced.IsAlive() || pounced.GetTeamNumber() !== 3) {
+            CancelAttack(pounced, player);
             return;
         }
 
@@ -395,6 +392,20 @@ function CancelPounce() {
 function CancelPounceAndResetAbsTimes() {
     CancelPounce();
     state.absPounceTimes = 0;
+}
+
+/**
+ * 解救播报与奖励
+ * @param {CSPlayerPawn} pounced 
+ * @param {CSPlayerPawn} attacker 
+ */
+function SaveHuman(pounced, attacker) {
+    const attackerController = attacker.GetPlayerController();
+    if (!attackerController || !attackerController.IsValid()) return
+    const pouncedController = pounced.GetPlayerController();
+    if (!pouncedController || !pouncedController.IsValid()) return
+    attackerController.AddMoneySpendableNow(5000);
+    Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
 }
 
 /**

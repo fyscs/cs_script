@@ -3,19 +3,37 @@ import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/1
+ * 2026/7/16
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
-const currentInfecteds = new Set();
 
 let enableTank = false;
-const tankList = new Set();
-
 let enableInfected = false;
-const infectedList = new Set();
-const preInfected = new Map();
-const motherZombies = new Set();
+
+const infected = new Map();
+
+class Infected {
+    /** @param {CSPlayerPawn} player */
+    constructor(player) {
+        // this.wantInfected = false;
+        // this.wantTank = false;
+        this.isMotherZombie = false;
+        this.isPreInfected = false;
+        this.isInfected = false;
+        this.isDeadPreInfected = false;
+        this.type = "none";
+    }
+
+    Reset() {
+        // this.wantInfected = false;
+        // this.wantTank = false;
+        this.isPreInfected = false;
+        this.isInfected = false;
+        this.isDeadPreInfected = false;
+        this.type = "none";
+    }
+}
 
 Instance.OnScriptInput("EnableTank", () => {
     enableTank = true;
@@ -26,85 +44,47 @@ Instance.OnScriptInput("EnableInfected", () => {
     enableInfected = true;
 });
 
-Instance.OnScriptInput("CheckPreInfected", (inputData) => {
-    const player = inputData.activator;
-    if (!player || !player.IsValid()) return;
-    if (preInfected.has(player)) {
-        preInfected.delete(player);
-        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
-        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
-        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
-        Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
-        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
-        player.Kill();
-    }
-});
-
 Instance.OnScriptInput("PushMotherZombies", () => {
-    motherZombies.clear();
-    const players = Instance.FindEntitiesByClass("player");
+    infected.forEach((state, player) => {
+        state.isMotherZombie = false;
+    });
+    const players = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
     for (const player of players) {
-        if (player.IsValid() && player.GetTeamNumber() === 2) motherZombies.add(player);
+        if (player.IsValid() && player.GetTeamNumber() === 2) {
+            if (infected.has(player)) infected.get(player).isMotherZombie = true;
+            else {
+                const state = new Infected(player);
+                state.isMotherZombie = true;
+                infected.set(player, state);
+            }
+        }
     }
 });
 
 Instance.OnScriptInput("PickInfected", () => {
-    // const newInfectedList = RemoveHumansAndInfetedAndNotMotherZombie(infectedList);
-    // if (newInfectedList.length !== 0) {
-    //     BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
-    // } else {
-    //     const newInfectedList = RemoveHumansAndInfeted(infectedList);
-    //     if (newInfectedList.length !== 0) {
-    //         BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
-    //     } else {
-            const newInfectedList = RemoveHumansAndInfeted(Instance.FindEntitiesByClass("player"));
-            if (newInfectedList.length !== 0) {
-                BecomePreInfected(/** @type {CSPlayerPawn} */ (newInfectedList[Math.floor(newInfectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
-            }
-    //     }
-    // }
+    const infectedList = GetPreInfected();
+    if (infectedList.length === 0) return;
+    TestPreInfected(/** @type {CSPlayerPawn} */(infectedList[Math.floor(infectedList.length * Math.random())]), infectedTypes[Math.floor(infectedTypes.length * Math.random())]);
 });
 
 Instance.OnScriptInput("PickTank", () => {
-    // const newTankList = RemoveHumansAndInfetedAndNotMotherZombie(tankList);
-    // if (newTankList.length !== 0) {
-    //     BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
-    // } else {
-    //     const newTankList = RemoveHumansAndInfeted(tankList);
-    //     if (newTankList.length !== 0) {
-    //         BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
-    //     } else {
-            const newTankList = RemoveHumansAndInfeted(Instance.FindEntitiesByClass("player"));
-            if (newTankList.length !== 0) {
-                BecomePreInfected(/** @type {CSPlayerPawn} */ (newTankList[Math.floor(newTankList.length * Math.random())]), "Tank");
-            }
-    //     }
-    // }
+    const tankList = GetPreTank();
+    if (tankList.length === 0) return;
+    TestPreInfected(/** @type {CSPlayerPawn} */(tankList[Math.floor(tankList.length * Math.random())]), "Tank");
 });
 
 Instance.OnRoundStart(() => {
-    for (const player of currentInfecteds) {
+    infected.forEach((state, player) => {
         if (player && player.IsValid()) {
-            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
-            Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
-            Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
-            Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
-        }
-    }
-    preInfected.forEach((value, player) => {
-        if (player && player.IsValid()) {
-            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
             Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
             Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
-        }
+            Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
+            state.Reset();
+        } else infected.delete(player);
     });
-    currentInfecteds.clear();
     enableInfected = false;
-    infectedList.clear();
     enableTank = false;
-    tankList.clear();
-    preInfected.clear();
 });
 
 Instance.OnPlayerReset((event) => {
@@ -115,20 +95,14 @@ Instance.OnPlayerReset((event) => {
 
 Instance.OnPlayerKill((event) => {
     const player = event.player;
-    if (currentInfecteds.has(player)) {
-        currentInfecteds.delete(player);
-        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
-        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
-        Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
-        Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
-        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
-    } else if (preInfected.has(player)) {
-        preInfected.delete(player);
-        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
-        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
+    if (infected.has(player)) {
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
+        Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
+        const state = infected.get(player);
+        state.isInfected = false;
+        state.isPreInfected = false;
     }
 });
 
@@ -137,8 +111,13 @@ Instance.OnPlayerKill((event) => {
 //         if (event.text === "!tank") {
 //             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
 //                 const pawn = event.player.GetPlayerPawn();
-//                 if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
-//                     tankList.add(pawn);
+//                 if (pawn && pawn.IsValid()) {
+//                     if (infected.has(pawn)) infected.get(pawn).wantTank = true;
+//                     else {
+//                         const state = new Infected(pawn);
+//                         state.wantTank = true;
+//                         infected.set(pawn, state);
+//                     }
 //                 }
 //             }
 //         }
@@ -147,8 +126,13 @@ Instance.OnPlayerKill((event) => {
 //         if (event.text === "!infected") {
 //             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
 //                 const pawn = event.player.GetPlayerPawn();
-//                 if (pawn && pawn.IsValid() && !currentInfecteds.has(pawn)) {
-//                     infectedList.add(pawn);
+//                 if (pawn && pawn.IsValid()) {
+//                     if (infected.has(pawn)) infected.get(pawn).wantInfected = true;
+//                     else {
+//                         const state = new Infected(pawn);
+//                         state.wantInfected = true;
+//                         infected.set(pawn, state);
+//                     }
 //                 }
 //             }
 //         }
@@ -156,15 +140,20 @@ Instance.OnPlayerKill((event) => {
 // });
 
 Instance.SetThink(() => {
-    const players = Instance.FindEntitiesByClass("player");
-    for (const player of players) {
-        if (player.IsValid() && player.GetTeamNumber() === 3) Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "no_special_infected_filter" });
-    }
-    preInfected.forEach((value, player) => {
-        if (player.IsValid() && player.IsInputPressed(CSInputs.ATTACK2) && CheckSpawn(player)) {
-            BecomeInfected(player, preInfected.get(player));
-            preInfected.delete(player);
-        }
+    // const players = Instance.FindEntitiesByClass("player");
+    // for (const player of players) {
+    //     if (player.IsValid() && player.GetTeamNumber() === 3) Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "no_special_infected_filter" });
+    // }
+    infected.forEach((state, player) => {
+        if (player.IsValid()) {
+            if (state.isDeadPreInfected && player.IsAlive()) {
+                state.isDeadPreInfected = false;
+                BecomePreInfected(player, state.type);
+            }
+            if (state.isPreInfected && player.IsInputPressed(CSInputs.ATTACK2) && CheckSpawn(player)) {
+                BecomeInfected(player);
+            }
+        } else infected.delete(player);
     });
     Instance.SetNextThink(Instance.GetGameTime() + 1 / 8);
 });
@@ -172,15 +161,31 @@ Instance.SetThink(() => {
 Instance.SetNextThink(Instance.GetGameTime());
 
 /**
+ * 尝试变为预复活特感
+ * @param {CSPlayerPawn} player 
+ * @param {string} type 
+ */
+function TestPreInfected(player, type) {
+    if (player.IsAlive()) BecomePreInfected(player, type);
+    else {
+        const state = infected.get(player);
+        state.type = type;
+        state.isDeadPreInfected = true;
+    }
+}
+
+/**
  * 成为预复活特感
  * @param {CSPlayerPawn} player 
  * @param {string} type 
  */
 function BecomePreInfected(player, type) {
-    currentInfecteds.add(player);
-    Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "PushInfected", activator: player });
-    Instance.EntFireAtName({ name: "infected_pick_script", input: "RunScriptInput", value: "CheckPreInfected", activator: player, delay: 20 });
-    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1.5" });
+    if (!player.IsAlive()) return;
+    if (!infected.has(player)) infected.set(player, new Infected(player));
+    const state = infected.get(player);
+    state.isPreInfected = true;
+    state.type = type;
+    Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(1.5, 0)", activator: player });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_pre_infected:1" });
@@ -189,7 +194,6 @@ function BecomePreInfected(player, type) {
     }
     const knife = player.FindWeaponBySlot(CSGearSlot.KNIFE);
     if (knife && knife.IsValid()) player.DestroyWeapon(knife);
-    preInfected.set(player, type);
 }
 
 /**
@@ -219,16 +223,19 @@ function CheckSpawn(player) {
 /**
  * 成为特感
  * @param {CSPlayerPawn} player 
- * @param {string} type 
  */
-function BecomeInfected(player, type) {
-    player.Teleport({ velocity: { x: 0, y: 0, z: 0 }});
+function BecomeInfected(player) {
+    if (!infected.has(player)) return;
+    const state = infected.get(player);
+    state.isInfected = true;
+    state.isPreInfected = false;
+    player.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     player.GiveNamedItem("weapon_knife", true);
-    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "speed 1" });
+    Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(0.67, 0)", activator: player });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
     Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_infected:1" });
-    const typeLow = type.toLowerCase();
+    const typeLow = state.type.toLowerCase();
     // @ts-ignore
     const entities = Instance.FindEntityByName(typeLow + "_temp").ForceSpawn(player.GetAbsOrigin(), player.GetAbsAngles());
     for (const entity of entities) {
@@ -239,31 +246,63 @@ function BecomeInfected(player, type) {
         }
     }
     const playerController = player.GetPlayerController();
-    if (playerController && playerController.IsValid()) Instance.ServerCommand("say >> " + Sanitize(playerController.GetPlayerName()) + " << 成为了" + type + "!!!");
+    if (playerController && playerController.IsValid()) Instance.ServerCommand("say >> " + Sanitize(playerController.GetPlayerName()) + " << 成为了" + state.type + "!!!");
 }
 
 /**
- * 去除人类、特感以及非母体玩家
- * @param {Set<Entity>|Entity[]} players 
+ * 获取符合抽取为特感要求的玩家
  */
-function RemoveHumansAndInfetedAndNotMotherZombie(players) {
-    let newPlayers = [];
-    for (const player of players) {
-        if (player && player.IsValid() && player.IsAlive() && player.GetTeamNumber() === 2 && !currentInfecteds.has(player) && !preInfected.has(player) && motherZombies.has(player)) newPlayers.push(player);
+function GetPreInfected() {
+    let normalZombies = [];
+    let motherZombies = [];
+    const allPlayers = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
+    for (const player of allPlayers) {
+        if (infected.has(player)) {
+            const state = infected.get(player);
+            if (
+                player.IsValid() &&
+                player.GetTeamNumber() === 2 &&
+                !state.isDeadPreInfected &&
+                !state.isPreInfected &&
+                !state.isInfected
+            ) {
+                normalZombies.push(player);
+                if (state.isMotherZombie) motherZombies.push(player);
+            }
+        } else {
+            if (
+                player.IsValid() &&
+                player.GetTeamNumber() === 2
+            ) normalZombies.push(player);
+        }
     }
-    return newPlayers;
+    return motherZombies.length !== 0 ? motherZombies : normalZombies;
 }
 
 /**
- * 去除人类玩家与特感玩家
- * @param {Set<Entity>|Entity[]} players 
+ * 获取符合抽取为Tank要求的玩家
  */
-function RemoveHumansAndInfeted(players) {
-    let newPlayers = [];
-    for (const player of players) {
-        if (player && player.IsValid() && player.IsAlive() && player.GetTeamNumber() === 2 && !currentInfecteds.has(player) && !preInfected.has(player)) newPlayers.push(player);
+function GetPreTank() {
+    let players = [];
+    const allPlayers = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
+    for (const player of allPlayers) {
+        if (infected.has(player)) {
+            const state = infected.get(player);
+            if (
+                player.IsValid() &&
+                player.GetTeamNumber() === 2 &&
+                !state.isDeadPreInfected &&
+                !state.isPreInfected &&
+                !state.isInfected
+            ) players.push(player);
+        } else {
+            if (
+                player.IsValid() &&
+                player.GetTeamNumber() === 2
+            ) players.push(player);
+        }
     }
-    return newPlayers;
+    return players;
 }
 
 /**

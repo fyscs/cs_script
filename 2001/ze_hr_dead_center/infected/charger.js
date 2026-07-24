@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs } from "cs_script/point_script";
 /**
  * Charger脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/3
+ * 2026/7/19
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -44,10 +44,10 @@ Instance.OnScriptInput("BecomeCharger", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !charger || !charger.IsValid()) return;
-    const playerEyePostion = player.GetEyePosition();
-    const playerPostion = player.GetAbsOrigin();
-    const chargerEyePostion = charger.GetEyePosition();
-    if (IsBlocked(playerEyePostion, chargerEyePostion) && IsBlocked(playerPostion, chargerEyePostion)) return;
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    const chargerEyePosition = charger.GetEyePosition();
+    if (IsBlocked(playerEyePosition, chargerEyePosition) && IsBlocked(playerPosition, chargerEyePosition)) return;
     caught = player;
     Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: caught, input: "AddContext", value: "player_controlled:1" });
@@ -64,8 +64,6 @@ Instance.OnScriptInput("Push", (inputData) => {
 
 Instance.OnRoundStart(() => {
     if (charger && charger.IsValid()) {
-        Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
-        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
         Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "movetype 2" });
     }
     if (caught && caught.IsValid()) {
@@ -77,17 +75,8 @@ Instance.OnRoundStart(() => {
 
 Instance.OnPlayerKill((event) => {
     if (event.player === charger) {
-        Instance.EntFireAtTarget({ target: charger, input: "SetScale", value: 1 });
-        Instance.EntFireAtTarget({ target: charger, input: "KeyValue", value: "speed 1" });
-        if (event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") {
-            // @ts-ignore
-            const attackerController = event.attacker.GetPlayerController();
-            const caughtController = caught?.GetPlayerController();
-            if (attackerController && attackerController.IsValid()) {
-                attackerController.AddMoneySpendableNow(5000);
-                if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(caughtController.GetPlayerName())} <<**`);
-            }
-        }
+        // @ts-ignore
+        if (caught && caught.IsValid() && event.attacker && event.attacker.IsValid() && event.attacker.GetClassName() === "player") SaveHuman(caught, event.attacker);
         CancelAttack(caught, charger);
         Instance.EntFireAtName({ name: "charger_kill_relay_" + suffix, input: "Trigger" });
     }
@@ -152,8 +141,8 @@ function UpdateState(charger) {
     if (state.isAttacking) {
 
         // 被感染立刻解除
-        if (!caught || !caught.IsValid() || caught.GetTeamNumber() !== 3) {
-            CancelAttack(undefined, charger);
+        if (!caught || !caught.IsValid() || !caught.IsAlive() || caught.GetTeamNumber() !== 3) {
+            CancelAttack(caught, charger);
             return;
         }
         const handTarget = Instance.FindEntityByName("charger_hand_target_move_" + suffix);
@@ -232,6 +221,8 @@ function CancelCharge(charger) {
             Instance.EntFireAtName({ name: "charger_model_" + suffix, input: "SetAnimationLooping", value: "Charger_pound" });
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: charger });
             Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "ThirdPerson", activator: caught, delay: 0.1 });
+            const caughtController = caught.GetPlayerController();
+            if (caughtController && caughtController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(caughtController.GetPlayerName())} <<被Charger抓住了，击杀Charger来解救你的队友**`);
         } else {
             Instance.EntFireAtTarget({ target: caught, input: "KeyValue", value: "movetype 2" });
             Instance.EntFireAtTarget({ target: caught, input: "RemoveContext", value: "player_controlled" });
@@ -272,6 +263,20 @@ function CancelAttack(player, charger) {
         Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: player, delay: 0.1 });
     }
     caught = undefined;
+}
+
+/**
+ * 解救播报与奖励
+ * @param {CSPlayerPawn} caught 
+ * @param {CSPlayerPawn} attacker 
+ */
+function SaveHuman(caught, attacker) {
+    const attackerController = attacker.GetPlayerController();
+    if (!attackerController || !attackerController.IsValid()) return
+    const caughtController = caught.GetPlayerController();
+    if (!caughtController || !caughtController.IsValid()) return
+    attackerController.AddMoneySpendableNow(5000);
+    Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(caughtController.GetPlayerName())} <<**`);
 }
 
 /**

@@ -3,7 +3,7 @@ import { Instance, CSPlayerPawn, CSInputs, CSWeaponAttackType } from "cs_script/
 /**
  * Jockey脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/3
+ * 2026/7/14
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
@@ -43,13 +43,13 @@ Instance.OnScriptInput("BecomeJockey", (inputData) => {
 Instance.OnScriptInput("Attack", (inputData) => {
     const player = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
     if (!player || !player.IsValid() || !jockey || !jockey.IsValid()) return;
-    const playerEyePostion = player.GetEyePosition();
-    const playerPostion = player.GetAbsOrigin();
-    const jockeyEyePostion = jockey.GetEyePosition();
-    if (IsBlocked(playerEyePostion, jockeyEyePostion) && IsBlocked(playerPostion, jockeyEyePostion)) return;
+    const playerEyePosition = player.GetEyePosition();
+    const playerPosition = player.GetAbsOrigin();
+    const jockeyEyePosition = jockey.GetEyePosition();
+    if (IsBlocked(playerEyePosition, jockeyEyePosition) && IsBlocked(playerPosition, jockeyEyePosition)) return;
     state.isAttacking = true;
     pounced = player;
-    jockey.Teleport({ position: playerPostion, velocity: { x: 0, y: 0, z: 0 } });
+    jockey.Teleport({ position: playerPosition, velocity: { x: 0, y: 0, z: 0 } });
     pounced.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     Instance.EntFireAtTarget({ target: jockey, input: "KeyValue", value: "movetype 1" });
     Instance.EntFireAtTarget({ target: pounced, input: "AddContext", value: "player_controlled:1" });
@@ -77,6 +77,8 @@ Instance.OnRoundStart(() => {
 Instance.OnPlayerKill((event) => {
     if (event.player === jockey) {
         CancelAttack(pounced, jockey);
+        // @ts-ignore
+        if (pounced?.IsValid() && event.attacker?.IsValid() && event.attacker.GetClassName() === "player") SaveHuman(pounced, event.attacker);
         Instance.EntFireAtName({ name: "jockey_kill_relay_" + suffix, input: "Trigger" });
     }
 });
@@ -103,12 +105,7 @@ Instance.OnKnifeAttack((event) => {
 
                 // 人类与jockey之间无遮挡时才判定解除
                 if (!result.didHit) {
-                    const playerController = player.GetPlayerController();
-                    const pouncedController = pounced.GetPlayerController();
-                    if (playerController && playerController.IsValid()) {
-                        playerController.AddMoneySpendableNow(5000);
-                        if (pouncedController && pouncedController.IsValid()) Instance.ServerCommand(`say **>> ${Sanitize(playerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
-                    }
+                    SaveHuman(pounced, player);
                     CancelAttack(pounced, jockey);
                     state.pouncePushedCD = CONFIG.pouncePushedCD;
                 }
@@ -132,7 +129,7 @@ function UpdateState(player) {
     if (state.isAttacking) {
 
         // 被感染立刻解除
-        if (!pounced || !pounced.IsValid() || pounced.GetTeamNumber() !== 3) {
+        if (!pounced || !pounced.IsValid() || !pounced.IsAlive() || pounced.GetTeamNumber() !== 3) {
             CancelAttack(pounced, player);
             return;
         }
@@ -218,6 +215,20 @@ function CancelAttack(pounced, jockey) {
         Instance.EntFireAtName({ name: "thirdperson_script", input: "RunScriptInput", value: "FirstPerson", activator: pounced, delay: 0.1 });
     }
     pounced = undefined;
+}
+
+/**
+ * 解救播报与奖励
+ * @param {CSPlayerPawn} pounced 
+ * @param {CSPlayerPawn} attacker 
+ */
+function SaveHuman(pounced, attacker) {
+    const attackerController = attacker.GetPlayerController();
+    if (!attackerController || !attackerController.IsValid()) return
+    const pouncedController = pounced.GetPlayerController();
+    if (!pouncedController || !pouncedController.IsValid()) return
+    attackerController.AddMoneySpendableNow(5000);
+    Instance.ServerCommand(`say **>> ${Sanitize(attackerController.GetPlayerName())} <<解救了>> ${Sanitize(pouncedController.GetPlayerName())} <<**`);
 }
 
 /**
@@ -358,7 +369,7 @@ function IsPointInSphere(point, center, radius) {
 function IsPointInViewCone(eyePos, eyeAng, point, fovDeg) {
     // 1. 将欧拉角转换为视线方向向量（Source 引擎坐标系：X 前，Y 左，Z 上）
     const pitch = eyeAng.pitch * (Math.PI / 180);
-    const yaw   = eyeAng.yaw   * (Math.PI / 180);
+    const yaw = eyeAng.yaw * (Math.PI / 180);
 
     const forwardX = Math.cos(pitch) * Math.cos(yaw);
     const forwardY = Math.cos(pitch) * Math.sin(yaw);
