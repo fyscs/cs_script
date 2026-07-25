@@ -4,7 +4,7 @@ import { CSPlayerPawn, Instance, CSGearSlot } from "cs_script/point_script";
  * 数据存读取脚本
  * 此脚本用于实现回合结算后仍能恢复连关数据
  * 此脚本由皮皮猫233编写
- * 2026/7/16
+ * 2026/7/23
  */
 
 const weaponSlots = [CSGearSlot.RIFLE, CSGearSlot.PISTOL];
@@ -31,13 +31,13 @@ Instance.OnScriptInput("SaveData", () => {
         if (health <= 0) continue;
         const armor = player.GetArmor();
         const weapons = FindWeapons(player);
-        playerData.set(player, { 
-            armor: armor, 
-            health: health, 
-            weapons: weapons, 
-            items: FindItems(player), 
-            helmet: player.HasHelmet(), 
-            money: player.GetPlayerController()?.GetMoneySpendableNow() 
+        playerData.set(player, {
+            armor: armor,
+            health: health,
+            weapons: weapons,
+            items: FindItems(player),
+            helmet: player.HasHelmet(),
+            money: player.GetPlayerController()?.GetMoneySpendableNow()
         });
     }
 });
@@ -172,17 +172,17 @@ function FindItems(player) {
  * @param {number[]} items
  */
 function GiveWeaponsAndItems(player, weapons, items) {
-    for (const weapon of weapons) {
-        player.DestroyWeapons();
-        Delay(1, () => {
+    player.DestroyWeapons();
+    Delay(1, () => {
+        for (const weapon of weapons) {
             player.GiveNamedItem(weapon);
-            for (let i = 0; i < itemNames.length; i++) {
-                for (let number = 0; number < items[i]; number++) {
-                    player.GiveNamedItem(itemNames[i]);
-                }
-            }
-        });
-    }
+        }
+        for (let i = 0; i < itemNames.length; i++) {
+            if (items[i] <= 0) continue;
+            player.GiveNamedItem(itemNames[i]);
+            player.FindWeapon(itemNames[i])?.SetReserveAmmo(items[i]);
+        }
+    });
 }
 
 /** @type {{ time: number, callback: () => void }[]} */
@@ -238,7 +238,7 @@ function QueueThink(time, callback) {
  */
 function RunThinkQueue() {
     const currentTime = Instance.GetGameTime();
-    
+
     // 执行所有到期的任务
     while (thinkQueue.length > 0 && thinkQueue[0].time <= currentTime) {
         const task = thinkQueue.shift();
