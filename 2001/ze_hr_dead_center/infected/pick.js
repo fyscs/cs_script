@@ -156,9 +156,12 @@ function Main() {
     infected.forEach((state, player) => {
         if (player.IsValid()) {
             if (state.isDeadPreInfected && player.IsAlive()) {
+                state.isDeadPreInfected = false;
                 Delay(0.5, () => {
-                    if (!player.IsValid() || !player.IsAlive()) return;
-                    state.isDeadPreInfected = false;
+                    if (!player.IsValid() || !player.IsAlive()) {
+                        state.isDeadPreInfected = true;
+                        return;
+                    }
                     BecomePreInfected(player, state.type);
                 });
             }
