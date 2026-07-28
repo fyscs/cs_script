@@ -3,13 +3,14 @@ import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/16
+ * 2026/7/28
  */
 
 const infectedTypes = ["Hunter", "Jockey", "Charger"];
 
 let enableTank = false;
 let enableInfected = false;
+let isMainRunning = false;
 
 const infected = new Map();
 
@@ -78,6 +79,7 @@ Instance.OnRoundStart(() => {
         if (player && player.IsValid()) {
             Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
             Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
+            Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
             Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
             state.Reset();
@@ -85,6 +87,9 @@ Instance.OnRoundStart(() => {
     });
     enableInfected = false;
     enableTank = false;
+    if (isMainRunning) return;
+    isMainRunning = true;
+    Main();
 });
 
 Instance.OnPlayerReset((event) => {
@@ -98,6 +103,7 @@ Instance.OnPlayerKill((event) => {
     if (infected.has(player)) {
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
+        Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
         Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_infected" });
         const state = infected.get(player);
@@ -139,7 +145,10 @@ Instance.OnPlayerKill((event) => {
 //     }
 // });
 
-Instance.SetThink(() => {
+/**
+ * 主循环
+ */
+function Main() {
     // const players = Instance.FindEntitiesByClass("player");
     // for (const player of players) {
     //     if (player.IsValid() && player.GetTeamNumber() === 3) Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "no_special_infected_filter" });
@@ -147,18 +156,19 @@ Instance.SetThink(() => {
     infected.forEach((state, player) => {
         if (player.IsValid()) {
             if (state.isDeadPreInfected && player.IsAlive()) {
-                state.isDeadPreInfected = false;
-                BecomePreInfected(player, state.type);
+                Delay(0.5, () => {
+                    if (!player.IsValid() || !player.IsAlive()) return;
+                    state.isDeadPreInfected = false;
+                    BecomePreInfected(player, state.type);
+                });
             }
             if (state.isPreInfected && player.IsInputPressed(CSInputs.ATTACK2) && CheckSpawn(player)) {
                 BecomeInfected(player);
             }
         } else infected.delete(player);
     });
-    Instance.SetNextThink(Instance.GetGameTime() + 1 / 8);
-});
-
-Instance.SetNextThink(Instance.GetGameTime());
+    Delay(1 / 8, Main);
+}
 
 /**
  * 尝试变为预复活特感
@@ -187,6 +197,7 @@ function BecomePreInfected(player, type) {
     state.type = type;
     Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(1.5, 0)", activator: player });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
+    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 0.2" });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_pre_infected:1" });
     for (let i = 0; i < 10; i++) {
@@ -202,6 +213,10 @@ function BecomePreInfected(player, type) {
  */
 function CheckSpawn(player) {
     const position = player.GetEyePosition();
+    if (!player.GetGroundEntity()) {
+        Instance.EntFireAtName({ name: "pre_infected_spawn_in_air_hudhint", input: "ShowHudHint", activator: player });
+        return false;
+    }
     const humans = GetAllHumans();
     for (const human of humans) {
         const humanPositon = human.GetEyePosition();
@@ -232,6 +247,7 @@ function BecomeInfected(player) {
     player.Teleport({ velocity: { x: 0, y: 0, z: 0 } });
     player.GiveNamedItem("weapon_knife", true);
     Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(0.67, 0)", activator: player });
+    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
     Instance.EntFireAtTarget({ target: player, input: "RemoveContext", value: "player_pre_infected" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_infected:1" });
@@ -340,3 +356,142 @@ function IsPointInSphere(point, center, radius) {
 function Sanitize(str) {
     return str.replace(/[";`$\\\n\r]/g, ""); // 
 }
+
+/** @type {{ id: number, time: number, callback: () => void }[]} */
+const thinkQueue = [];
+/** @type {Map<number, { id: number, time: number, callback: () => void }>} */
+const taskMap = new Map();
+let nextTaskId = 1;
+
+/**
+ * 延迟执行函数
+ * @param {number} delaySeconds 延迟的秒数
+ * @param {() => void} callback 回调函数
+ * @returns {number} 任务ID，可用于取消或重新调度
+ */
+function Delay(delaySeconds, callback) {
+    const executeTime = Instance.GetGameTime() + delaySeconds;
+    return QueueThink(executeTime, callback);
+}
+
+/**
+ * 将think任务加入队列
+ * @param {number} time 执行时间
+ * @param {() => void} callback 回调函数
+ * @returns {number} 任务ID
+ */
+function QueueThink(time, callback) {
+    const id = nextTaskId++;
+    const task = { id, time, callback };
+
+    // 查找插入位置（按时间升序）
+    let insertIndex = 0;
+    for (let i = thinkQueue.length - 1; i >= 0; i--) {
+        if (thinkQueue[i].time <= time) {
+            insertIndex = i + 1;
+            break;
+        }
+    }
+
+    // 插入任务并记录
+    thinkQueue.splice(insertIndex, 0, task);
+    taskMap.set(id, task);
+
+    // 如果新任务是最早的，则更新think
+    if (insertIndex === 0) {
+        Instance.SetNextThink(time);
+    }
+
+    return id;
+}
+
+/**
+ * 取消指定ID的延迟任务（若尚未执行）
+ * @param {number} taskId 任务ID
+ */
+function CancelDelay(taskId) {
+    const task = taskMap.get(taskId);
+    if (!task) return; // 任务不存在或已执行/取消
+
+    // 从数组中移除
+    const index = thinkQueue.indexOf(task);
+    if (index !== -1) {
+        thinkQueue.splice(index, 1);
+    }
+    taskMap.delete(taskId);
+
+    // 如果移除的是队首任务，需要重新设置下一次think
+    if (index === 0) {
+        if (thinkQueue.length > 0) {
+            Instance.SetNextThink(thinkQueue[0].time);
+        }
+    }
+}
+
+/**
+ * 重新设置未执行任务的新延迟时间（从当前游戏时间开始计算）
+ * @param {number} taskId 任务ID
+ * @param {number} newDelaySeconds 新的延迟秒数
+ * @returns {boolean} 是否修改成功（任务存在且未执行）
+ */
+function RescheduleDelay(taskId, newDelaySeconds) {
+    const task = taskMap.get(taskId);
+    if (!task) return false;
+
+    const newTime = Instance.GetGameTime() + newDelaySeconds;
+
+    // 如果时间没有变化，直接返回
+    if (task.time === newTime) return true;
+
+    // 先从队列中移除
+    const index = thinkQueue.indexOf(task);
+    if (index === -1) return false; // 理论上不会发生
+    thinkQueue.splice(index, 1);
+
+    // 更新时间
+    task.time = newTime;
+
+    // 按新时间重新插入到正确位置
+    let insertIndex = 0;
+    for (let i = thinkQueue.length - 1; i >= 0; i--) {
+        if (thinkQueue[i].time <= newTime) {
+            insertIndex = i + 1;
+            break;
+        }
+    }
+    thinkQueue.splice(insertIndex, 0, task);
+
+    // 更新下一次think时间（只要队列不为空就重新设置最早时间）
+    if (thinkQueue.length > 0) {
+        Instance.SetNextThink(thinkQueue[0].time);
+    }
+
+    return true;
+}
+
+/**
+ * Think循环处理函数
+ */
+function RunThinkQueue() {
+    const currentTime = Instance.GetGameTime();
+
+    // 执行所有到期的任务
+    while (thinkQueue.length > 0 && thinkQueue[0].time <= currentTime) {
+        const task = thinkQueue.shift();
+        if (!task) return;
+        taskMap.delete(task.id); // 清理映射
+        try {
+            task.callback();
+        } catch (e) {
+            // 避免回调异常中断队列处理
+        }
+    }
+
+    // 更新下一次think
+    if (thinkQueue.length > 0) {
+        Instance.SetNextThink(thinkQueue[0].time);
+    }
+}
+
+// 设置Think循环
+Instance.SetThink(RunThinkQueue);

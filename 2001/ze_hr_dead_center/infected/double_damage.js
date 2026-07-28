@@ -1,0 +1,22 @@
+import { CSWeaponType, Instance } from "cs_script/point_script";
+
+/**
+ * 双倍人类武器伤害与近战高伤脚本
+ * 请根据社区需求使用stripper选择性开启
+ * 对double_damage_script实体修改cs_script属性为scripts/vscripts/infected/double_damage.vjs来开启此功能
+ * 此脚本由皮皮猫233编写
+ * 2026/7/28
+ */
+
+Instance.OnModifyPlayerDamage((event) => {
+    const weapon = event.weapon;
+    if (!weapon || !weapon.IsValid()) return;
+    const attacker = event.attacker;
+    if (!attacker || !attacker.IsValid() || attacker.GetTeamNumber() !== 3) return;
+    const weaponType = weapon.GetData().GetType();
+    if (weaponType === CSWeaponType.KNIFE) {
+        return { abort: true, damage: 2000 };
+    } else {
+        return { abort: true, damage: event.damage * 2 };
+    }
+});
