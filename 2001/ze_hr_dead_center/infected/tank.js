@@ -3,11 +3,12 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * Tank脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/19
+ * 2026/7/30
  */
 
 let tank = /** @type {Entity|undefined} */ (undefined);
 let suffix = 0;
+let throwPosition = { x: 0, y: 0, z: 0 };
 
 Instance.OnScriptInput("BecomeTank", (inputData) => {
     tank = inputData.activator;
@@ -33,14 +34,20 @@ Instance.OnScriptInput("Hit", (inputData) => {
                 const velocity = tank.GetAbsVelocity();
                 const speed = Math.hypot(velocity.x, velocity.y);
                 if (speed >= 160) {
-                    tank.Teleport({ velocity: LimitHorizontalMagnitude(velocity, Math.max((speed - 20), 160))});
+                    tank.Teleport({ velocity: LimitHorizontalMagnitude(velocity, Math.max((speed - 20), 160)) });
                 }
             }
         }
     }
 });
 
-Instance.OnScriptInput("Throw", () => {
+Instance.OnScriptInput("Throw", (inputData) => {
+    const player = inputData.activator;
+    if (!player || !player.IsValid()) return;
+    throwPosition = player.GetAbsOrigin();
+    for (let i = 0; i < 3.6; i += 0.1) {
+        Instance.EntFireAtTarget({ target: player, input: "SetAbsOrigin", value: `${throwPosition.x} ${throwPosition.y} ${throwPosition.z}`,delay: i });
+    }
     // @ts-ignore
     const concreteEntities = Instance.FindEntityByName("tank_concrete_temp").ForceSpawn();
     for (const entity of concreteEntities) {
