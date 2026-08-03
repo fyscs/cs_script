@@ -3,10 +3,10 @@ import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/28
+ * 2026/8/3
  */
 
-const infectedTypes = ["Hunter", "Jockey", "Charger"];
+const infectedTypes = ["Spitter", "Boomer", "Smoker", "Hunter", "Jockey", "Charger"];
 
 let enableTank = false;
 let enableInfected = false;

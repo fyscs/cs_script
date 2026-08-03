@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * Boomer脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/19
+ * 2026/8/3
  */
 
 const CONFIG = {
@@ -33,7 +33,7 @@ Instance.OnScriptInput("BecomeBoomer", (inputData) => {
 });
 
 Instance.OnScriptInput("ShowCd", () => {
-    cd = 20;
+    cd = CONFIG.cd;
     if (isMainRunning) return;
     isMainRunning = true;
     Main();
