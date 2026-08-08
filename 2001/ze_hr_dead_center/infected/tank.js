@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * Tank脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/30
+ * 2026/8/8
  */
 
 let tank = /** @type {Entity|undefined} */ (undefined);
@@ -12,6 +12,7 @@ let throwPosition = { x: 0, y: 0, z: 0 };
 
 Instance.OnScriptInput("BecomeTank", (inputData) => {
     tank = inputData.activator;
+    if (tank?.IsValid()) Instance.EntFireAtTarget({ target: tank, input: "AddContext", value: "player_tank:1" });
     const relayName = inputData.caller?.GetEntityName();
     if (relayName?.startsWith("tank_relay")) {
         suffix = Number(relayName.slice(11));
@@ -20,6 +21,7 @@ Instance.OnScriptInput("BecomeTank", (inputData) => {
 
 Instance.OnScriptInput("Die", () => {
     if (tank && tank.IsValid()) {
+        Instance.EntFireAtTarget({ target: tank, input: "RemoveContext", value: "player_tank" });
         tank.Kill();
     }
 });

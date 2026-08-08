@@ -3,7 +3,7 @@ import { Entity, Instance } from "cs_script/point_script";
 /**
  * Spitter脚本
  * 此脚本由皮皮猫233编写
- * 2026/8/3
+ * 2026/8/8
  */
 
 const CONFIG = {
@@ -60,7 +60,15 @@ Instance.OnScriptInput("ShowCd", () => {
 
 Instance.OnPlayerKill((event) => {
     if (event.player !== spitter) return;
-    SpawnHurt(spitter.GetAbsOrigin());
+    const start = spitter.GetAbsOrigin();
+    const end = { ...start };
+    end.z -= 10;
+    const result = Instance.TraceLine({
+        start,
+        end,
+        ignorePlayers: true
+    });
+    if (result.didHit) SpawnHurt(result.end);
     Instance.EntFireAtName({ name: "spitter_kill_relay_" + suffix, input: "Trigger" });
 });
 
