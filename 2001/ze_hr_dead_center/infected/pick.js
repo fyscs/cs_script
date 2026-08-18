@@ -3,7 +3,7 @@ import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/8/3
+ * 2026/8/19
  */
 
 const infectedTypes = ["Spitter", "Boomer", "Smoker", "Hunter", "Jockey", "Charger"];
@@ -101,6 +101,7 @@ Instance.OnPlayerReset((event) => {
 Instance.OnPlayerKill((event) => {
     const player = event.player;
     if (infected.has(player)) {
+        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
@@ -199,6 +200,7 @@ function BecomePreInfected(player, type) {
     state.isPreInfected = true;
     state.type = type;
     Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(1.5, 0)", activator: player });
+    Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "PushInfected", activator: player });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 0.2" });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
