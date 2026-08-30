@@ -3,14 +3,15 @@ import { Instance, CSPlayerPawn, CSInputs, Entity, CSWeaponAttackType } from "cs
 /**
  * Smoker脚本
  * 此脚本由皮皮猫233编写
- * 2026/7/19
+ * 2026/8/28
  */
 
 let timeDelta = 1 / 8;      // Think循环的时间变化量
 
 const CONFIG = {
     damage: 20,                 // 攻击伤害（每秒）
-    shootCD: 20,                // 发射CD
+    shootCD: 5,                 // 发射CD
+    punishCD: 20,               // 惩罚CD
     maxLength: 2000,            // 舌头最大长度
     lengthPreTongue: 32,        // 每段舌头碰撞的长度
     dragSpeed: 100,             // 拉取速度
@@ -54,6 +55,7 @@ Instance.OnScriptInput("HitTongue", (inputData) => {
     if (state.tongueHealth <= 0) {
         const attacker = /** @type {CSPlayerPawn|undefined} */ (inputData.activator);
         if (attacker && attacker.IsValid() && dragged && dragged.IsValid()) SaveHuman(dragged, attacker);
+        state.shootCD = CONFIG.punishCD;
         CancelDrag(dragged, smoker);
     }
 });
@@ -81,6 +83,7 @@ Instance.OnKnifeAttack((event) => {
                 // 人类与被控人类之间无遮挡时才判定解除
                 if (!result.didHit) {
                     SaveHuman(dragged, player);
+                    state.shootCD = CONFIG.punishCD;
                     CancelDrag(dragged, smoker);
                 }
             }
