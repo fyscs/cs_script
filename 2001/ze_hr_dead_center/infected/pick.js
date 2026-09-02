@@ -1,9 +1,9 @@
-import { CSGearSlot, CSInputs, CSPlayerPawn, Entity, Instance } from "cs_script/point_script";
+import { CSGearSlot, CSInputs, CSPlayerController, CSPlayerPawn, CustomHudLayout, Entity, Instance } from "cs_script/point_script";
 
 /**
  * 特感获取脚本
  * 此脚本由皮皮猫233编写
- * 2026/8/3
+ * 2026/8/30
  */
 
 const infectedTypes = ["Spitter", "Boomer", "Smoker", "Hunter", "Jockey", "Charger"];
@@ -17,8 +17,8 @@ const infected = new Map();
 class Infected {
     /** @param {CSPlayerPawn} player */
     constructor(player) {
-        // this.wantInfected = false;
-        // this.wantTank = false;
+        this.wantInfected = false;
+        this.wantTank = false;
         this.isMotherZombie = false;
         this.isPreInfected = false;
         this.isInfected = false;
@@ -27,8 +27,8 @@ class Infected {
     }
 
     Reset() {
-        // this.wantInfected = false;
-        // this.wantTank = false;
+        this.wantInfected = false;
+        this.wantTank = false;
         this.isPreInfected = false;
         this.isInfected = false;
         this.isDeadPreInfected = false;
@@ -36,9 +36,186 @@ class Infected {
     }
 }
 
+/* ========================== HUD 相关 (CustomHudLayout) ========================== */
+const HUD_LAYOUT_NAME = "infected_hud_layout";
+// 预特感面板图片 id 的后缀（对应 panorama/images/map_icons/ 下的 svg 与 xml 中的面板 id）
+const panelImageTypes = ["boomer", "smoker", "hunter", "jockey", "charger", "spitter", "tank"];
+
+/** @type {CustomHudLayout | undefined} */
+let hudLayoutCache = undefined;
+
+/** @returns {CustomHudLayout | undefined} */
+function GetHudLayout() {
+    if (!(hudLayoutCache instanceof Entity) || !hudLayoutCache.IsValid()) {
+        hudLayoutCache = /** @type {CustomHudLayout | undefined} */ (Instance.FindEntitiesByName(HUD_LAYOUT_NAME)[0]);
+        // 回退：按类查找任意 custom_hud_layout
+        if (!(hudLayoutCache instanceof Entity)) {
+            hudLayoutCache = /** @type {CustomHudLayout | undefined} */ (Instance.FindEntitiesByClass("custom_hud_layout")[0]);
+        }
+    }
+    return hudLayoutCache;
+}
+
+/** @returns {CustomHudLayout | undefined} */
+function GetValidHudLayout() {
+    const layout = GetHudLayout();
+    if (!(layout instanceof Entity) || !layout.IsValid()) return undefined;
+    return layout;
+}
+
+/**
+ * @param {number} slot
+ * @param {string} panelId
+ * @param {boolean} captureInput
+ */
+function ShowPanelForPlayer(slot, panelId, captureInput) {
+    const layout = GetValidHudLayout();
+    if (!layout) return;
+    layout.SetHasClassForPlayer(slot, panelId, "Hidden", false);
+    if (captureInput) layout.SetInputCaptureEnabled(slot, true);
+}
+
+/**
+ * @param {number} slot
+ * @param {string} panelId
+ * @param {boolean} captureInput
+ */
+function HidePanelForPlayer(slot, panelId, captureInput) {
+    const layout = GetValidHudLayout();
+    if (!layout) return;
+    layout.SetHasClassForPlayer(slot, panelId, "Hidden", true);
+    if (captureInput) layout.SetInputCaptureEnabled(slot, false);
+}
+
+/** @param {number} slot */
+function HideChoosePanelForPlayer(slot) { HidePanelForPlayer(slot, "choose_panel", true); }
+/** @param {number} slot */
+function ShowChoosePanelForPlayer(slot) {
+    HideTankPanelForPlayer(slot);   // 与 Tank 面板互斥
+    ShowPanelForPlayer(slot, "choose_panel", true);
+    AutoHidePanel(slot, "choose_panel", 25);
+}
+/** @param {number} slot */
+function HideTankPanelForPlayer(slot) { HidePanelForPlayer(slot, "tank_panel", true); }
+/** @param {number} slot */
+function ShowTankPanelForPlayer(slot) {
+    HideChoosePanelForPlayer(slot); // 与宿主选择面板互斥
+    const layout = GetValidHudLayout();
+    if (!layout) return;
+    layout.SetDialogVariableStringForPlayer(slot, "tank_panel", "tank_text", "你是否想要成为 Tank？");
+    ShowPanelForPlayer(slot, "tank_panel", true);
+    AutoHidePanel(slot, "tank_panel", 25);
+}
+/** @param {number} slot */
+function HidePrePanelForPlayer(slot) { HidePanelForPlayer(slot, "pre_panel", false); }
+
+/**
+ * 自动关闭仍处于打开状态的选择 / 意愿面板，避免玩家被困在鼠标模式里
+ * @param {number} slot
+ * @param {string} panelId
+ * @param {number} seconds
+ */
+function AutoHidePanel(slot, panelId, seconds) {
+    Delay(seconds, () => {
+        HidePanelForPlayer(slot, panelId, true);
+    });
+}
+
+/**
+ * 显示预特感提示面板（不呼出鼠标）
+ * @param {number} slot
+ * @param {string} type
+ */
+function ShowPrePanelForPlayer(slot, type) {
+    const layout = GetValidHudLayout();
+    if (!layout) return;
+    layout.SetDialogVariableStringForPlayer(slot, "pre_panel", "pre_title", "你被抽选为 " + type + "！");
+    layout.SetDialogVariableStringForPlayer(slot, "pre_panel", "pre_hint", "躲避人类视线后使用[鼠标右键]成为 " + type + "！");
+    for (const t of panelImageTypes) {
+        layout.SetHasClassForPlayer(slot, "pre_img_" + t, "Hidden", t.toLowerCase() !== String(type).toLowerCase());
+    }
+    layout.SetHasClassForPlayer(slot, "pre_panel", "Hidden", false);
+    // 预特感面板仅提示，不呼出鼠标（不启用输入捕获）
+}
+
+/** @param {number} slot */
+function HideAllPanelsForPlayer(slot) {
+    HidePanelForPlayer(slot, "choose_panel", true);
+    HidePanelForPlayer(slot, "tank_panel", true);
+    HidePanelForPlayer(slot, "pre_panel", false);
+}
+
+function ResetAllHud() {
+    const layout = GetValidHudLayout();
+    if (!layout) return;
+    for (const controller of Instance.GetAllPlayerControllers()) {
+        if (controller && controller.IsValid()) {
+            HideAllPanelsForPlayer(controller.GetPlayerSlot());
+        }
+    }
+}
+
+/** @param {CSPlayerController} controller
+ *  @param {boolean} value */
+function SetPlayerWantInfected(controller, value) {
+    if (!controller || !controller.IsValid()) return;
+    const pawn = controller.GetPlayerPawn();
+    if (!pawn || !pawn.IsValid()) return;
+    if (infected.has(pawn)) infected.get(pawn).wantInfected = value;
+    else {
+        const state = new Infected(pawn);
+        state.wantInfected = value;
+        infected.set(pawn, state);
+    }
+}
+
+/** @param {CSPlayerController} controller
+ *  @param {boolean} value */
+function SetPlayerWantTank(controller, value) {
+    if (!controller || !controller.IsValid()) return;
+    const pawn = controller.GetPlayerPawn();
+    if (!pawn || !pawn.IsValid()) return;
+    if (infected.has(pawn)) infected.get(pawn).wantTank = value;
+    else {
+        const state = new Infected(pawn);
+        state.wantTank = value;
+        infected.set(pawn, state);
+    }
+}
+
+/** @param {{ isMotherZombie: boolean, isDeadPreInfected: boolean, isPreInfected: boolean, isInfected: boolean }} state
+ *  @param {CSPlayerPawn} player */
+function IsEligibleMother(state, player) {
+    return state.isMotherZombie &&
+        player.IsValid() &&
+        player.GetTeamNumber() === 2 &&
+        !state.isDeadPreInfected &&
+        !state.isPreInfected &&
+        !state.isInfected;
+}
+
+/** @param {CSPlayerPawn} player */
+function ShowChoosePanelIfEligible(player) {
+    const state = infected.get(player);
+    if (!state || !IsEligibleMother(state, player)) return;
+    const controller = player.GetPlayerController();
+    if (controller && controller.IsValid()) ShowChoosePanelForPlayer(controller.GetPlayerSlot());
+}
+
+function ShowTankPanelToEligibleMothers() {
+    infected.forEach((state, player) => {
+        if (player.IsValid() && IsEligibleMother(state, player)) {
+            const controller = player.GetPlayerController();
+            if (controller && controller.IsValid()) ShowTankPanelForPlayer(controller.GetPlayerSlot());
+        }
+    });
+}
+
 Instance.OnScriptInput("EnableTank", () => {
     enableTank = true;
-    // Instance.ServerCommand('say **在聊天框中输入"!tank"有概率成为本关Tank**');
+    Instance.ServerCommand('say **在聊天框中输入"!tank"有概率成为本关Tank**');
+    // 对母体玩家且非特感 / 预特感玩家显示 Tank 意愿面板
+    ShowTankPanelToEligibleMothers();
 });
 
 Instance.OnScriptInput("EnableInfected", () => {
@@ -58,6 +235,8 @@ Instance.OnScriptInput("PushMotherZombies", () => {
                 state.isMotherZombie = true;
                 infected.set(player, state);
             }
+            // 僵尸重生为母体时，询问是否想成为特感
+            ShowChoosePanelIfEligible(player);
         }
     }
 });
@@ -87,6 +266,7 @@ Instance.OnRoundStart(() => {
     });
     enableInfected = false;
     enableTank = false;
+    ResetAllHud();
     if (isMainRunning) return;
     isMainRunning = true;
     Main();
@@ -101,6 +281,7 @@ Instance.OnPlayerReset((event) => {
 Instance.OnPlayerKill((event) => {
     const player = event.player;
     if (infected.has(player)) {
+        Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "RemoveInfected", activator: player });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "" });
         Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 255 });
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 1" });
@@ -109,12 +290,15 @@ Instance.OnPlayerKill((event) => {
         const state = infected.get(player);
         state.isInfected = false;
         state.isPreInfected = false;
+        // 玩家死亡时关闭其所有 HUD 面板并释放鼠标
+        const controller = player.GetPlayerController();
+        if (controller && controller.IsValid()) HideAllPanelsForPlayer(controller.GetPlayerSlot());
     }
 });
 
 // Instance.OnPlayerChat((event) => {
 //     if (enableTank) {
-//         if (event.text === "!tank") {
+//         if (event.text.toLowerCase() === "!tank") {
 //             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
 //                 const pawn = event.player.GetPlayerPawn();
 //                 if (pawn && pawn.IsValid()) {
@@ -129,7 +313,7 @@ Instance.OnPlayerKill((event) => {
 //         }
 //     }
 //     if (enableInfected) {
-//         if (event.text === "!infected") {
+//         if (event.text.toLowerCase() === "!infected" || event.text.toLowerCase() === "!infe") {
 //             if (event.player && event.player.IsValid() && event.player.GetTeamNumber() === 2) {
 //                 const pawn = event.player.GetPlayerPawn();
 //                 if (pawn && pawn.IsValid()) {
@@ -144,6 +328,33 @@ Instance.OnPlayerKill((event) => {
 //         }
 //     }
 // });
+
+// 处理 CustomHudLayout 面板按钮点击
+Instance.OnCustomHudClicked((event) => {
+    if (event.layout !== GetHudLayout()) return;
+    const controller = event.player;
+    if (!controller || !controller.IsValid()) return;
+    const slot = controller.GetPlayerSlot();
+    switch (event.buttonId) {
+        case "choose_normal_btn":       // 普通僵尸
+            SetPlayerWantInfected(controller, false);
+            HideChoosePanelForPlayer(slot);
+            break;
+        case "choose_infected_btn":     // 特感
+            SetPlayerWantInfected(controller, true);
+            HideChoosePanelForPlayer(slot);
+            break;
+        case "tank_yes_btn":            // 想要成为 Tank
+            SetPlayerWantTank(controller, true);
+            HideTankPanelForPlayer(slot);
+            break;
+        case "tank_close_btn":          // 关闭 Tank 面板
+            HideTankPanelForPlayer(slot);
+            break;
+        default:
+            break;
+    }
+});
 
 /**
  * 主循环
@@ -193,21 +404,29 @@ function TestPreInfected(player, type) {
  * @param {string} type 
  */
 function BecomePreInfected(player, type) {
-    if (!player.IsAlive()) return;
     if (!infected.has(player)) infected.set(player, new Infected(player));
     const state = infected.get(player);
     state.isPreInfected = true;
     state.type = type;
     Instance.EntFireAtName({ name: "speed_manager_script", input: "RunScriptInput", value: "Speed(1.5, 0)", activator: player });
+    Instance.EntFireAtName({ name: "deinfect_script", input: "RunScriptInput", value: "PushInfected", activator: player });
     Instance.EntFireAtTarget({ target: player, input: "Alpha", value: 0 });
     Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "gravity 0.2" });
     Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter", value: "god" });
     Instance.EntFireAtTarget({ target: player, input: "AddContext", value: "player_pre_infected:1" });
-    for (let i = 0; i < 10; i++) {
-        Instance.EntFireAtName({ name: "become_pre_" + type.toLowerCase() + "_filter", input: "TestActivator", activator: player, delay: i });
-    }
+    // for (let i = 0; i < 10; i++) {
+    //     Instance.EntFireAtName({ name: "become_pre_" + type.toLowerCase() + "_filter", input: "TestActivator", activator: player, delay: i });
+    // }
     const knife = player.FindWeaponBySlot(CSGearSlot.KNIFE);
     if (knife && knife.IsValid()) player.DestroyWeapon(knife);
+    // 显示对应特感的预特感提示面板（不呼出鼠标）
+    const controller = player.GetPlayerController();
+    if (controller && controller.IsValid()) {
+        const slot = controller.GetPlayerSlot();
+        HideChoosePanelForPlayer(slot);
+        HideTankPanelForPlayer(slot);
+        ShowPrePanelForPlayer(slot, type);
+    }
 }
 
 /**
@@ -265,36 +484,35 @@ function BecomeInfected(player) {
         }
     }
     const playerController = player.GetPlayerController();
-    if (playerController && playerController.IsValid()) Instance.ServerCommand("say >> " + Sanitize(playerController.GetPlayerName()) + " << 成为了" + state.type + "!!!");
+    if (playerController && playerController.IsValid()) {
+        // 玩家变为特感时自动关闭并释放其 HUD 界面
+        HideAllPanelsForPlayer(playerController.GetPlayerSlot());
+        Instance.ServerCommand("say >> " + Sanitize(playerController.GetPlayerName()) + " << 成为了" + state.type + "!!!");
+    }
 }
 
 /**
  * 获取符合抽取为特感要求的玩家
  */
 function GetPreInfected() {
-    let normalZombies = [];
-    let motherZombies = [];
-    const allPlayers = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
-    for (const player of allPlayers) {
-        if (infected.has(player)) {
-            const state = infected.get(player);
-            if (
-                player.IsValid() &&
-                player.GetTeamNumber() === 2 &&
-                !state.isDeadPreInfected &&
-                !state.isPreInfected &&
-                !state.isInfected
-            ) {
+    let motherZombies = /** @type {Entity[]} */ ([]);
+    let normalZombies = /** @type {Entity[]} */ ([]);
+    infected.forEach((state, player) => {
+        if (
+            state.wantInfected &&
+            player.IsValid() &&
+            player.GetTeamNumber() === 2 &&
+            !state.isDeadPreInfected &&
+            !state.isPreInfected &&
+            !state.isInfected
+        ) {
+            if (state.isMotherZombie) {
+                motherZombies.push(player);
+            } else {
                 normalZombies.push(player);
-                if (state.isMotherZombie) motherZombies.push(player);
             }
-        } else {
-            if (
-                player.IsValid() &&
-                player.GetTeamNumber() === 2
-            ) normalZombies.push(player);
         }
-    }
+    });
     return motherZombies.length !== 0 ? motherZombies : normalZombies;
 }
 
@@ -302,23 +520,40 @@ function GetPreInfected() {
  * 获取符合抽取为Tank要求的玩家
  */
 function GetPreTank() {
-    let players = [];
-    const allPlayers = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
-    for (const player of allPlayers) {
-        if (infected.has(player)) {
-            const state = infected.get(player);
-            if (
-                player.IsValid() &&
-                player.GetTeamNumber() === 2 &&
-                !state.isDeadPreInfected &&
-                !state.isPreInfected &&
-                !state.isInfected
-            ) players.push(player);
-        } else {
-            if (
-                player.IsValid() &&
-                player.GetTeamNumber() === 2
-            ) players.push(player);
+    let motherZombies = /** @type {Entity[]} */ ([]);
+    let normalZombies = /** @type {Entity[]} */ ([]);
+    infected.forEach((state, player) => {
+        if (
+            state.wantTank &&
+            player.IsValid() &&
+            player.GetTeamNumber() === 2 &&
+            !state.isDeadPreInfected &&
+            !state.isPreInfected &&
+            !state.isInfected
+        ) {
+            if (state.isMotherZombie) motherZombies.push(player);
+            else normalZombies.push(player);
+        }
+    });
+    let players = motherZombies.length !== 0 ? motherZombies : normalZombies;
+    if (players.length === 0) {
+        const allPlayers = /** @type {CSPlayerPawn[]} */ (Instance.FindEntitiesByClass("player"));
+        for (const player of allPlayers) {
+            if (infected.has(player)) {
+                const state = infected.get(player);
+                if (
+                    player.IsValid() &&
+                    player.GetTeamNumber() === 2 &&
+                    !state.isDeadPreInfected &&
+                    !state.isPreInfected &&
+                    !state.isInfected
+                ) players.push(player);
+            } else {
+                if (
+                    player.IsValid() &&
+                    player.GetTeamNumber() === 2
+                ) players.push(player);
+            }
         }
     }
     return players;

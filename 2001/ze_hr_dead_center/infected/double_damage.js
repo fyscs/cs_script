@@ -5,7 +5,7 @@ import { CSWeaponType, Instance } from "cs_script/point_script";
  * 请根据社区需求使用stripper选择性开启
  * 对double_damage_script实体修改cs_script属性为scripts/vscripts/infected/double_damage.vjs来开启此功能
  * 此脚本由皮皮猫233编写
- * 2026/7/28
+ * 2026/8/8
  */
 
 Instance.OnModifyPlayerDamage((event) => {
@@ -15,8 +15,8 @@ Instance.OnModifyPlayerDamage((event) => {
     if (!attacker || !attacker.IsValid() || attacker.GetTeamNumber() !== 3) return;
     const weaponType = weapon.GetData().GetType();
     if (weaponType === CSWeaponType.KNIFE) {
-        return { abort: true, damage: 2000 };
+        return { damage: 2000 };
     } else {
-        return { abort: true, damage: event.damage * 2 };
+        return { damage: event.damage * 2 };
     }
 });
