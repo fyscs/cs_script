@@ -3,21 +3,21 @@ import { Instance } from "cs_script/point_script";
 
 
 const TICKRATE = 0.1;
-const TARGET_DISTANCE = 3000;
-let SPEED_FORWARD = 220;
-const RETARGET_TIME = 8.00;
+const TARGET_DISTANCE = 800;
+let SPEED_FORWARD = 80;
+const RETARGET_TIME = 5.00;
 
-const boss_model = "Nemesis_Model";
-const boss_move_physbox = "Nemesis_Phys";
-const boss_script_ent = "nemesis_stars_script";
+const boss_model = "em_model1";
+const boss_move_physbox = "em_phys1";
+const boss_script_ent = "em_script1";
+const boss_attack_timer = "em_timer1";
 
 let p = null;
-// let boss_id = "";
-// let boss_script_ent = null;
 let bmphy = null;
 let bmdl = null;
 let ttime = 0.00;
 let ticking = false;
+let currentAnim = null;
 
 let speed_turning = 350;
 let ang_rot_limit = 10;
@@ -32,31 +32,16 @@ Instance.OnRoundStart(() => {
 	bmphy = null;
 	ticking = false;
 	lastTime = null;
-    SPEED_FORWARD = 220;
-});
-
-Instance.OnScriptInput("SetSpeedX2", ({ caller, activator }) => {
-    SPEED_FORWARD *= 2;
+    currentAnim = null;
+    SPEED_FORWARD = 100;
 });
 
 Instance.OnScriptInput("AttackSpeed", ({ caller, activator }) => {
-    SPEED_FORWARD -= 100;
-});
-
-Instance.OnScriptInput("SetSpeedX240", ({ caller, activator }) => {
-    SPEED_FORWARD += 20;
-});
-
-Instance.OnScriptInput("SetSpeedX1.7", ({ caller, activator }) => {
-    SPEED_FORWARD *= 1.7;
+    SPEED_FORWARD -= 50;
 });
 
 Instance.OnScriptInput("ResetSpeed", ({ caller, activator }) => {
-    SPEED_FORWARD = 220;
-});
-
-Instance.OnScriptInput("SetSpeedX50", ({ caller, activator }) => {
-    SPEED_FORWARD = 70;
+    SPEED_FORWARD = 100;
 });
 
 function SetEntities()
@@ -136,7 +121,28 @@ Instance.OnScriptInput("Tick", () => {
 	if(p == null || !p?.IsValid() || p?.GetHealth() <= 0.00 || p?.GetTeamNumber() != 3 || ttime >= RETARGET_TIME) 
 	{
 		p = null;
-		return SearchTarget();
+		SearchTarget();
+
+        if (p == null) 
+		{
+			bmphy.Teleport({velocity: {x: 0, y: 0, z: 0}});
+            if (currentAnim !== "idle")
+            {
+                Instance.EntFireAtName({ name: boss_model, input: "SetAnimationLooping", value: "idle", delay: 0 });
+                currentAnim = "idle";
+            }
+            Instance.EntFireAtName({ name: boss_attack_timer, input: "PauseTimer", delay: 0 });
+            return;
+		}
+        else
+        {
+        if (currentAnim !== "walk") 
+        {
+            Instance.EntFireAtName({ name: boss_model, input: "SetAnimationLooping", value: "walk", delay: 0 });
+            currentAnim = "walk";
+        }
+        Instance.EntFireAtName({ name: boss_attack_timer, input: "UnpauseTimer", delay: 0 });
+        }
     }
 	ttime += deltaTime;
 	let gto = p.GetAbsOrigin();

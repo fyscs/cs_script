@@ -2,8 +2,11 @@ import { Instance } from 'cs_script/point_script';
 
 let idPool = 0;
 let tasks = [];
-const SCHEDULER_THINK_INTERVAL = 0.1;
-const KAR_OWNER_CHECK_INTERVAL = 0.1;
+const MIN_SCHEDULER_INTERVAL_SECONDS = 0.1;
+const MIN_SCHEDULER_INTERVAL_MS = MIN_SCHEDULER_INTERVAL_SECONDS * 1000;
+function clampSchedulerMs(ms) {
+	return Math.max(ms, MIN_SCHEDULER_INTERVAL_MS);
+}
 
 function setTimeout(callback, ms) {
 	const id = idPool++;
@@ -16,10 +19,11 @@ function setTimeout(callback, ms) {
 }
 function setInterval(callback, ms) {
 	const id = idPool++;
+	const delayMs = clampSchedulerMs(ms);
 	tasks.unshift({
 		id,
-		everyNSeconds: ms / 1000,
-		atSeconds: Instance.GetGameTime() + ms / 1000,
+		everyNSeconds: delayMs / 1000,
+		atSeconds: Instance.GetGameTime() + delayMs / 1000,
 		callback,
 	});
 	return id;
@@ -90,7 +94,7 @@ Instance.OnScriptInput("PickUp_Kar", (Activator_Caller_Data) => {
 
             return;
         }
-    }, KAR_OWNER_CHECK_INTERVAL * 1000);
+    }, MIN_SCHEDULER_INTERVAL_MS);
 })
 
 function IsValidAlive(player)
@@ -113,7 +117,7 @@ Instance.OnRoundEnd((stuff) => {
 });
 Instance.SetThink(() => {
 	// This has to run every tick
-	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
+	Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL_SECONDS);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
+Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL_SECONDS);

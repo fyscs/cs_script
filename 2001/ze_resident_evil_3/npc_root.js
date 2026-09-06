@@ -442,11 +442,13 @@ class Euler {
 	}
 }
 
+const MIN_SCHEDULER_INTERVAL_SECONDS = 0.1;
+const MIN_SCHEDULER_INTERVAL_MS = MIN_SCHEDULER_INTERVAL_SECONDS * 1000;
+function clampSchedulerMs(ms) {
+	return Math.max(ms, MIN_SCHEDULER_INTERVAL_MS);
+}
 let idPool = 0;
 let tasks = [];
-const SCHEDULER_THINK_INTERVAL = 0.1;
-const NPC_TICK_INTERVAL = 0.1;
-const NPC_FADE_INTERVAL = 0.1;
 function setTimeout(callback, ms) {
 	const id = idPool++;
 	tasks.unshift({
@@ -458,10 +460,11 @@ function setTimeout(callback, ms) {
 }
 function setInterval(callback, ms) {
 	const id = idPool++;
+	const delayMs = clampSchedulerMs(ms);
 	tasks.unshift({
 		id,
-		everyNSeconds: ms / 1000,
-		atSeconds: Instance.GetGameTime() + ms / 1000,
+		everyNSeconds: delayMs / 1000,
+		atSeconds: Instance.GetGameTime() + delayMs / 1000,
 		callback,
 	});
 	return id;
@@ -496,10 +499,10 @@ function runSchedulerTick() {
 }
 Instance.SetThink(() => {
 	// This has to run every tick
-	Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
+	Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL_SECONDS);
 	runSchedulerTick();
 });
-Instance.SetNextThink(Instance.GetGameTime() + SCHEDULER_THINK_INTERVAL);
+Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL_SECONDS);
 Instance.OnScriptReload({ after: (undefined$1) => {
 	CLEAR_ALL_INTERVAL = false;
 }});
@@ -697,7 +700,7 @@ class class_npc_zombie
 	fDistanceSetTarget_Min = 350;
 	fDistanceSetTarget_Max = 500
 
-	fLifeWithoutHead = 4.0
+	fLifeWithoutHead = 2.0
 	iHP_Base = 5;
 	iHP_Head = 2;
 	fSpeed = 250.0;
@@ -760,7 +763,7 @@ class class_npc_zombie
 				return;
 			}
 			this.Tick();
-		}, NPC_TICK_INTERVAL * 1000);
+		}, MIN_SCHEDULER_INTERVAL_MS);
 	}
 
 	PostSpawn()
@@ -908,7 +911,7 @@ class class_npc_zombie
 		this.bCharge = true;
 		
 		const lTarget = this.lTarget;
-		const fTickrate = ConvertTimeFromPlayBack(0.25, this.fAnimRateCharge);
+		const fTickrate = Math.max(ConvertTimeFromPlayBack(0.25, this.fAnimRateCharge), MIN_SCHEDULER_INTERVAL_SECONDS);
 		let fDelay = ConvertTimeFromPlayBack(1.25, this.fAnimRateCharge);
 
 		const TimerCharge = setInterval(() => {
@@ -1366,9 +1369,9 @@ class class_npc_zombie
 				this.KillBaseFull();
 				return;
 			}
-			iAlpha -= 6;
+			iAlpha -= 3;
 			Instance.EntFireAtTarget({target: this.lModel, input: "Alpha", value: "" + iAlpha})
-		}, NPC_FADE_INTERVAL * 1000);
+		}, MIN_SCHEDULER_INTERVAL_MS);
 
 		}, fDelay * 1000);
 	}

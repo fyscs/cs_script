@@ -85,7 +85,7 @@ Instance.OnScriptInput("Start", () => {
 		// AutoDetectEntities();
         SetEntities();
 	    ticking = true;
-		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: TICKRATE });
+		Instance.EntFireAtName({ name: boss_script_ent, input: "runscriptinput", value: "Tick", delay: 0.00 });
 	}
 });
 
@@ -212,11 +212,6 @@ function SetGraduallyAng(ang_t, ent)
     else if(ang_dif < -add_gs)
     {
         ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_y - add_gs), roll: ent.GetAbsAngles().roll} });
-    }
-    else
-    {
-        ent.Teleport({ angles: {pitch: ent.GetAbsAngles().pitch, yaw: Math.round(ang_t), roll: ent.GetAbsAngles().roll} });
-        return 0;
     }
     return ang_dif
 }
