@@ -11,12 +11,12 @@ import { Instance, PointTemplate } from "cs_script/point_script";
 const pickNumber = 6;
 
 let currentMusic = "";
-const musicList = ["DieForYou", "bye", "ray", "Utakotoba", "Duvet", "NoMore", "DaKeJian", "RaiseUpYourBat", "SuiHua", "UmapyoiDensetsu", "GongXiFaCai", "TheTaleOfACruelWorld", "NewYorkBackRaise", "TheFarSideStarSFarewell", "InternetYamero", "DearYou", "BraveShine", "SongIAm", "FireBird", "Odysseus", "ShukuseiLoliKamiRequiem", "Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
+const musicList = ["GoodForTune", "Reloaded", "Welkius", "Marenol", "gris", "MaWaRe", "SinosDeNatal", "DieForYou", "bye", "ray", "Utakotoba", "Duvet", "NoMore", "DaKeJian", "RaiseUpYourBat", "SuiHua", "UmapyoiDensetsu", "GongXiFaCai", "TheTaleOfACruelWorld", "NewYorkBackRaise", "TheFarSideStarSFarewell", "InternetYamero", "DearYou", "BraveShine", "SongIAm", "FireBird", "Odysseus", "ShukuseiLoliKamiRequiem", "Miiro", "NceSBurn", "MortalWithYou", "UniversalCollapse", "NeoAspect", "TakeRisshu", "DistortedFate", "RageStrikes", "IAlwaysDo", "MaleFemale", "DaDongBei", "Louder", "NamelessPassion", "BeethovenVirus", "YukiNoShizukuAmeNoOto", "TVsShark", "Oborozuki", "Jericho", "KimitoatsumatteSeizaninaretara", "MusicaCaelestis", "SeeYouAgain", "HatedByLife", "InternetOverdose", "FeastOfMouse", "CornerstoneCorolla", "Tanebi", "ImprisonedXII", "Refrain", "SilhouetteDance", "SpringSunshine", "Encoder", "NamaeNoNaiKaibutsu", "TheTempest", "TengokuJigokuguni", "Mayoiuta", "Hitoshizuku", "BeepBeepImASheep", "TheOtherSide", "MyDemons", "Mujinku", "Rrharil", "Terrasphere", "DossolesHoliday"];
 const playedMusic = /** @type {Array<string>} */ ([]);
 
 // 设置最新谱面
 Instance.OnScriptInput("New", (inputData) => {
-    currentMusic = "MaWaRe" ;
+    currentMusic = "BokuNoWaFuu" ;
     Instance.EntFireAtName({ name: "music_game_soundevent", input: "SetSoundEventName", value: currentMusic });
 });
 
