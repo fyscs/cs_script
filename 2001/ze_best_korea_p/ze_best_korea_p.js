@@ -1,12 +1,835 @@
-import { Instance, CSGearSlot as CSGearSlot$1, CSInputs, CSPlayerPawn } from 'cs_script/point_script';
+import { Instance, Entity, CSInputs, CSGearSlot as CSGearSlot$1, CSPlayerPawn } from 'cs_script/point_script';
+
+const DEF_DUR = 1;
+const DEF_COL = { r: 255, g: 255, b: 255, a: 255 };
+/** Draws a disk/circle in the world */
+function drawDisk(config) {
+    const { origin, radius, normal = new Vec3(0, 0, 1), segments = 8, duration = DEF_DUR, color = DEF_COL, offset = 0 } = config;
+    const arbitrary = Math.abs(normal.z) < 0.99 ? new Vec3(0, 0, 1) : new Vec3(1, 0, 0);
+    const u = normal.cross(arbitrary).normal;
+    const v = normal.cross(u).normal;
+    const centerOffset = origin.add(normal.multiply(-offset));
+    let prevPoint = null;
+    for (let i = 0; i <= segments; i++) {
+        const angle = (i / segments) * Math.PI * 2;
+        const point = centerOffset
+            .add(u.multiply(Math.cos(angle) * radius))
+            .add(v.multiply(Math.sin(angle) * radius));
+        if (prevPoint) {
+            Instance.DebugLine({ start: prevPoint, end: point, duration, color });
+        }
+        Instance.DebugLine({ start: centerOffset, end: point, duration, color });
+        prevPoint = point;
+    }
+}
+/** Draws the 3 axis of a 3d transformation */
+function drawTransform(config) {
+    const { origin, up, right, forward, duration = DEF_DUR, size = 30 } = config;
+    Instance.DebugLine({ start: origin, end: origin.add(up.multiply(size)), duration: duration,
+        color: { r: 0, g: 0, b: 255 } });
+    Instance.DebugLine({ start: origin, end: origin.add(right.multiply(size)), duration: duration,
+        color: { r: 0, g: 255, b: 0 } });
+    Instance.DebugLine({ start: origin, end: origin.add(forward.multiply(size)), duration: duration,
+        color: { r: 255, g: 0, b: 0 } });
+}
+/** Draws the 3 axis of matrix transformation */
+function drawMatrix(config) {
+    const { matrix, duration = DEF_DUR, size = 30 } = config;
+    const origin = matrix.origin;
+    Instance.DebugLine({ start: origin, end: origin.add(matrix.up.multiply(size)), duration: duration,
+        color: { r: 0, g: 0, b: 255 } });
+    Instance.DebugLine({ start: origin, end: origin.add(matrix.right.multiply(size)), duration: duration,
+        color: { r: 0, g: 255, b: 0 } });
+    Instance.DebugLine({ start: origin, end: origin.add(matrix.forward.multiply(size)), duration: duration,
+        color: { r: 255, g: 0, b: 0 } });
+}
+/** Draws a solid square in the world */
+function drawSolidSquare(config) {
+    const { origin, angle, color = DEF_COL, density = 10, size, duration = DEF_DUR } = config;
+    const right = angle.right;
+    const forward = angle.forward;
+    const half = size / 2;
+    const step = size / density;
+    for (let i = 0; i <= density; i++) {
+        const t = -half + i * step;
+        const upOffset = forward.scale(t);
+        const start = origin.add(right.scale(-half)).add(upOffset);
+        const end = origin.add(right.scale(half)).add(upOffset);
+        const rightOffset = right.scale(t);
+        const start2 = origin.add(forward.scale(-half)).add(rightOffset);
+        const end2 = origin.add(forward.scale(half)).add(rightOffset);
+        Instance.DebugLine({ start, end, color, duration });
+        Instance.DebugLine({ start: start2, end: end2, color, duration });
+    }
+}
+/** Draws an 3D arrow. */
+function debugDrawArrow(config) {
+    const { origin, end, arrowHeadLength = 10, arrowHeadWidth = 5, color = DEF_COL, density = 25, duration = DEF_DUR } = config;
+    const dir = end.subtract(origin);
+    const length = dir.length;
+    if (length < 0.001) {
+        return;
+    }
+    const forward = dir.normal;
+    const worldRight = new Vec3(0, 1, 0);
+    let right = forward.cross(worldRight);
+    if (right.length < 0.001)
+        right = forward.cross(new Vec3(0, 0, 1));
+    right = right.normal;
+    const up = forward.cross(right).normal;
+    Instance.DebugLine({ start: origin, end: end, color, duration });
+    const arrowBase = end.subtract(forward.multiply(arrowHeadLength));
+    for (let i = 0; i < density; i++) {
+        const angle = (i / density) * Math.PI * 2;
+        const spokeDir = right.multiply(Math.cos(angle)).add(up.multiply(Math.sin(angle)));
+        const spokeLeft = arrowBase.add(spokeDir.multiply(-arrowHeadWidth));
+        const spokeRight = arrowBase.add(spokeDir.multiply(arrowHeadWidth));
+        Instance.DebugLine({ start: end, end: spokeLeft, color, duration });
+        Instance.DebugLine({ start: end, end: spokeRight, color, duration });
+    }
+}
+const daFont = {
+    ' ': [],
+    'A': [
+        [0, 0, 2, 6],
+        [2, 6, 4, 0],
+        [1, 3, 3, 3],
+    ],
+    'B': [
+        [0, 0, 0, 6],
+        [0, 6, 2.5, 6],
+        [2.5, 6, 3.5, 5],
+        [3.5, 5, 3.5, 4],
+        [3.5, 4, 2.5, 3],
+        [2.5, 3, 0, 3],
+        [2.5, 3, 3.5, 2],
+        [3.5, 2, 3.5, 1],
+        [3.5, 1, 2.5, 0],
+        [2.5, 0, 0, 0],
+    ],
+    'C': [
+        [3.5, 5, 2, 6],
+        [2, 6, 1, 6],
+        [1, 6, 0, 5],
+        [0, 5, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 2, 0],
+        [2, 0, 3.5, 1],
+    ],
+    'D': [
+        [0, 0, 0, 6],
+        [0, 6, 2, 6],
+        [2, 6, 3.5, 5],
+        [3.5, 5, 3.5, 1],
+        [3.5, 1, 2, 0],
+        [2, 0, 0, 0],
+    ],
+    'E': [
+        [0, 0, 0, 6],
+        [0, 6, 4, 6],
+        [0, 3, 3, 3],
+        [0, 0, 4, 0],
+    ],
+    'F': [
+        [0, 0, 0, 6],
+        [0, 6, 4, 6],
+        [0, 3, 3, 3],
+    ],
+    'G': [
+        [3.5, 5, 2, 6],
+        [2, 6, 1, 6],
+        [1, 6, 0, 5],
+        [0, 5, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 2, 0],
+        [2, 0, 3.5, 1],
+        [3.5, 1, 3.5, 3],
+        [3.5, 3, 2, 3],
+    ],
+    'H': [
+        [0, 0, 0, 6],
+        [4, 0, 4, 6],
+        [0, 3, 4, 3],
+    ],
+    'I': [
+        [1, 0, 3, 0],
+        [2, 0, 2, 6],
+        [1, 6, 3, 6],
+    ],
+    'J': [
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 3, 6],
+        [1, 6, 3, 6],
+    ],
+    'K': [
+        [0, 0, 0, 6],
+        [4, 6, 0, 3],
+        [0, 3, 4, 0],
+    ],
+    'L': [
+        [0, 6, 0, 0],
+        [0, 0, 4, 0],
+    ],
+    'M': [
+        [0, 0, 0, 6],
+        [0, 6, 2, 3],
+        [2, 3, 4, 6],
+        [4, 6, 4, 0],
+    ],
+    'N': [
+        [0, 0, 0, 6],
+        [0, 6, 4, 0],
+        [4, 0, 4, 6],
+    ],
+    'O': [
+        [1, 0, 0, 1],
+        [0, 1, 0, 5],
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 1],
+        [4, 1, 3, 0],
+        [3, 0, 1, 0],
+    ],
+    'P': [
+        [0, 0, 0, 6],
+        [0, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 4],
+        [4, 4, 3, 3],
+        [3, 3, 0, 3],
+    ],
+    'Q': [
+        [1, 0, 0, 1],
+        [0, 1, 0, 5],
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 1],
+        [4, 1, 3, 0],
+        [3, 0, 1, 0],
+        [2.5, 1.5, 4, 0],
+    ],
+    'R': [
+        [0, 0, 0, 6],
+        [0, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 4],
+        [4, 4, 3, 3],
+        [3, 3, 0, 3],
+        [2, 3, 4, 0],
+    ],
+    'S': [
+        [3.5, 5, 2, 6],
+        [2, 6, 1, 6],
+        [1, 6, 0, 5],
+        [0, 5, 0, 4],
+        [0, 4, 1, 3],
+        [1, 3, 3, 3],
+        [3, 3, 4, 2],
+        [4, 2, 4, 1],
+        [4, 1, 3, 0],
+        [3, 0, 2, 0],
+        [2, 0, 0.5, 1],
+    ],
+    'T': [
+        [0, 6, 4, 6],
+        [2, 6, 2, 0],
+    ],
+    'U': [
+        [0, 6, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 4, 1],
+        [4, 1, 4, 6],
+    ],
+    'V': [
+        [0, 6, 2, 0],
+        [2, 0, 4, 6],
+    ],
+    'W': [
+        [0, 6, 1, 0],
+        [1, 0, 2, 3],
+        [2, 3, 3, 0],
+        [3, 0, 4, 6],
+    ],
+    'X': [
+        [0, 6, 4, 0],
+        [0, 0, 4, 6],
+    ],
+    'Y': [
+        [0, 6, 2, 3],
+        [4, 6, 2, 3],
+        [2, 3, 2, 0],
+    ],
+    'Z': [
+        [0, 6, 4, 6],
+        [4, 6, 0, 0],
+        [0, 0, 4, 0],
+    ],
+    'a': [
+        [3, 4, 3, 0],
+        [3, 4, 1, 4],
+        [1, 4, 0, 3],
+        [0, 3, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+    ],
+    'b': [
+        [0, 6, 0, 0],
+        [0, 3, 1, 4],
+        [1, 4, 3, 4],
+        [3, 4, 3.5, 3],
+        [3.5, 3, 3.5, 1],
+        [3.5, 1, 3, 0],
+        [3, 0, 1, 0],
+        [1, 0, 0, 0],
+    ],
+    'c': [
+        [3, 3.5, 1.5, 4],
+        [1.5, 4, 0, 3],
+        [0, 3, 0, 1],
+        [0, 1, 1.5, 0],
+        [1.5, 0, 3, 1],
+    ],
+    'd': [
+        [3, 6, 3, 0],
+        [3, 3, 2, 4],
+        [2, 4, 0, 4],
+        [0, 4, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+    ],
+    'e': [
+        [0, 2, 3.5, 2],
+        [3.5, 2, 3.5, 3],
+        [3.5, 3, 2, 4],
+        [2, 4, 0, 3],
+        [0, 3, 0, 1],
+        [0, 1, 1.5, 0],
+        [1.5, 0, 3.5, 1],
+    ],
+    'f': [
+        [1, 0, 1, 5],
+        [1, 5, 2, 6],
+        [2, 6, 3, 5.5],
+        [0, 3, 2.5, 3],
+    ],
+    'g': [
+        [3.5, 4, 3.5, -2],
+        [3.5, -2, 2, -2],
+        [2, -2, 0, -1],
+        [3.5, 4, 2, 4],
+        [2, 4, 0, 3],
+        [0, 3, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3.5, 0],
+    ],
+    'h': [
+        [0, 6, 0, 0],
+        [0, 3, 1, 4],
+        [1, 4, 3, 4],
+        [3, 4, 3, 0],
+    ],
+    'i': [
+        [2, 5, 2, 5.8],
+        [2, 3, 2, 0],
+    ],
+    'j': [
+        [2, 5, 2, 5.8],
+        [2, 3, 2, -1],
+        [2, -1, 1, -2],
+        [1, -2, 0, -2],
+    ],
+    'k': [
+        [0, 6, 0, 0],
+        [0, 2, 3, 4],
+        [1.5, 2, 3, 0],
+    ],
+    'l': [
+        [2, 6, 2, 0],
+        [2, 0, 3, 0],
+    ],
+    'm': [
+        [0, 4, 0, 0],
+        [0, 3, 1, 4],
+        [1, 4, 2, 3],
+        [2, 3, 2, 0],
+        [2, 3, 3, 4],
+        [3, 4, 4, 3],
+        [4, 3, 4, 0],
+    ],
+    'n': [
+        [0, 4, 0, 0],
+        [0, 3, 1, 4],
+        [1, 4, 3, 4],
+        [3, 4, 3, 0],
+    ],
+    'o': [
+        [1, 0, 0, 1],
+        [0, 1, 0, 3],
+        [0, 3, 1, 4],
+        [1, 4, 3, 4],
+        [3, 4, 3.5, 3],
+        [3.5, 3, 3.5, 1],
+        [3.5, 1, 3, 0],
+        [3, 0, 1, 0],
+    ],
+    'p': [
+        [0, 4, 0, -2],
+        [0, 3, 1, 4],
+        [1, 4, 3, 4],
+        [3, 4, 3.5, 3],
+        [3.5, 3, 3.5, 1],
+        [3.5, 1, 3, 0],
+        [3, 0, 1, 0],
+        [1, 0, 0, 0],
+    ],
+    'q': [
+        [3.5, 4, 3.5, -2],
+        [3.5, -2, 2, -2],
+        [3.5, 3, 2, 4],
+        [2, 4, 0, 4],
+        [0, 4, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3.5, 0],
+    ],
+    'r': [
+        [0, 4, 0, 0],
+        [0, 3, 1, 4],
+        [1, 4, 2.5, 4],
+        [2.5, 4, 3.5, 3],
+    ],
+    's': [
+        [3, 3.5, 1.5, 4],
+        [1.5, 4, 0, 3],
+        [0, 3, 0, 2.5],
+        [0, 2.5, 1.5, 2],
+        [1.5, 2, 3, 2],
+        [3, 2, 3.5, 1],
+        [3.5, 1, 3.5, 0.5],
+        [3.5, 0.5, 2, 0],
+        [2, 0, 0, 0.5],
+    ],
+    't': [
+        [2, 6, 2, 0],
+        [0, 4, 3.5, 4],
+        [2, 0, 3.5, 0],
+    ],
+    'u': [
+        [0, 4, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 3, 4],
+    ],
+    'v': [
+        [0, 4, 2, 0],
+        [2, 0, 4, 4],
+    ],
+    'w': [
+        [0, 4, 1, 0],
+        [1, 0, 2, 2],
+        [2, 2, 3, 0],
+        [3, 0, 4, 4],
+    ],
+    'x': [
+        [0, 4, 3.5, 0],
+        [0, 0, 3.5, 4],
+    ],
+    'y': [
+        [0, 4, 2, 0],
+        [4, 4, 1, -2],
+        [1, -2, 0, -2],
+    ],
+    'z': [
+        [0, 4, 3.5, 4],
+        [3.5, 4, 0, 0],
+        [0, 0, 3.5, 0],
+    ],
+    '0': [
+        [1, 0, 0, 1],
+        [0, 1, 0, 5],
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 1],
+        [4, 1, 3, 0],
+        [3, 0, 1, 0],
+        [1, 1.5, 3, 4.5],
+    ],
+    '1': [
+        [1, 5, 2, 6],
+        [2, 6, 2, 0],
+        [0, 0, 4, 0],
+    ],
+    '2': [
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 4],
+        [4, 4, 0, 0],
+        [0, 0, 4, 0],
+    ],
+    '3': [
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 4],
+        [4, 4, 3, 3],
+        [3, 3, 1, 3],
+        [3, 3, 4, 2],
+        [4, 2, 4, 1],
+        [4, 1, 3, 0],
+        [3, 0, 1, 0],
+        [1, 0, 0, 1],
+    ],
+    '4': [
+        [3, 0, 3, 6],
+        [3, 6, 0, 2],
+        [0, 2, 4, 2],
+    ],
+    '5': [
+        [4, 6, 0, 6],
+        [0, 6, 0, 3],
+        [0, 3, 3, 3],
+        [3, 3, 4, 2],
+        [4, 2, 4, 1],
+        [4, 1, 3, 0],
+        [3, 0, 1, 0],
+        [1, 0, 0, 1],
+    ],
+    '6': [
+        [3, 6, 1, 6],
+        [1, 6, 0, 5],
+        [0, 5, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 4, 1],
+        [4, 1, 4, 2],
+        [4, 2, 3, 3],
+        [3, 3, 0, 3],
+    ],
+    '7': [
+        [0, 6, 4, 6],
+        [4, 6, 2, 3],
+        [2, 3, 2, 0],
+    ],
+    '8': [
+        [1, 3, 0, 4],
+        [0, 4, 0, 5],
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 4],
+        [4, 4, 3, 3],
+        [3, 3, 1, 3],
+        [1, 3, 0, 2],
+        [0, 2, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 4, 1],
+        [4, 1, 4, 2],
+        [4, 2, 3, 3],
+    ],
+    '9': [
+        [1, 3, 0, 4],
+        [0, 4, 0, 5],
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 3, 1, 3],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 4, 1],
+        [4, 1, 4, 5],
+    ],
+    '.': [
+        [1.5, 0, 2, 0],
+        [2, 0, 2, 0.5],
+        [2, 0.5, 1.5, 0.5],
+        [1.5, 0.5, 1.5, 0],
+    ],
+    ',': [
+        [1.5, 0.5, 2, 0.5],
+        [2, 0.5, 2, 0],
+        [2, 0, 1.5, -0.5],
+    ],
+    '!': [
+        [2, 6, 2, 2],
+        [1.5, 0, 2, 0],
+        [2, 0, 2, 0.5],
+        [2, 0.5, 1.5, 0.5],
+        [1.5, 0.5, 1.5, 0],
+    ],
+    '?': [
+        [0, 5, 1, 6],
+        [1, 6, 3, 6],
+        [3, 6, 4, 5],
+        [4, 5, 4, 4],
+        [4, 4, 2, 2],
+        [2, 2, 2, 1.5],
+        [1.5, 0, 2, 0],
+        [2, 0, 2, 0.5],
+        [2, 0.5, 1.5, 0.5],
+        [1.5, 0.5, 1.5, 0],
+    ],
+    ':': [
+        [1.5, 1, 2, 1],
+        [2, 1, 2, 1.5],
+        [2, 1.5, 1.5, 1.5],
+        [1.5, 1.5, 1.5, 1],
+        [1.5, 3, 2, 3],
+        [2, 3, 2, 3.5],
+        [2, 3.5, 1.5, 3.5],
+        [1.5, 3.5, 1.5, 3],
+    ],
+    ';': [
+        [1.5, 0.5, 2, 0.5],
+        [2, 0.5, 2, 0],
+        [2, 0, 1.5, -0.5],
+        [1.5, 3, 2, 3],
+        [2, 3, 2, 3.5],
+        [2, 3.5, 1.5, 3.5],
+        [1.5, 3.5, 1.5, 3],
+    ],
+    '+': [
+        [2, 1, 2, 5],
+        [0, 3, 4, 3],
+    ],
+    '-': [[0, 3, 4, 3]],
+    '*': [
+        [2, 2, 2, 5],
+        [0.5, 2.5, 3.5, 4.5],
+        [3.5, 2.5, 0.5, 4.5],
+    ],
+    '/': [[3.5, 6, 0.5, 0]],
+    '=': [
+        [0, 4, 4, 4],
+        [0, 2, 4, 2],
+    ],
+    '<': [
+        [4, 5, 0, 3],
+        [0, 3, 4, 1],
+    ],
+    '>': [
+        [0, 5, 4, 3],
+        [4, 3, 0, 1],
+    ],
+    '(': [
+        [3, 6, 1, 5],
+        [1, 5, 1, 1],
+        [1, 1, 3, 0],
+    ],
+    ')': [
+        [1, 6, 3, 5],
+        [3, 5, 3, 1],
+        [3, 1, 1, 0],
+    ],
+    '[': [
+        [3, 6, 1, 6],
+        [1, 6, 1, 0],
+        [1, 0, 3, 0],
+    ],
+    ']': [
+        [1, 6, 3, 6],
+        [3, 6, 3, 0],
+        [3, 0, 1, 0],
+    ],
+    '{': [
+        [3, 6, 2, 5.5],
+        [2, 5.5, 2, 3.5],
+        [2, 3.5, 1, 3],
+        [1, 3, 2, 2.5],
+        [2, 2.5, 2, 0.5],
+        [2, 0.5, 3, 0],
+    ],
+    '}': [
+        [1, 6, 2, 5.5],
+        [2, 5.5, 2, 3.5],
+        [2, 3.5, 3, 3],
+        [3, 3, 2, 2.5],
+        [2, 2.5, 2, 0.5],
+        [2, 0.5, 1, 0],
+    ],
+    '@': [
+        [3.5, 2, 3, 1],
+        [3, 1, 2, 0],
+        [2, 0, 1, 0],
+        [1, 0, 0, 1],
+        [0, 1, 0, 4],
+        [0, 4, 1, 5],
+        [1, 5, 2, 5],
+        [2, 5, 3, 4],
+        [3, 4, 3.5, 3],
+        [3.5, 3, 3.5, 2],
+        [3.5, 2, 2, 2],
+        [2, 2, 2, 4],
+        [2, 4, 3.5, 4],
+    ],
+    '#': [
+        [1, 0, 1, 6],
+        [3, 0, 3, 6],
+        [0, 4, 4, 4],
+        [0, 2, 4, 2],
+    ],
+    '%': [
+        [0, 0, 4, 6],
+        [1, 5, 1, 6],
+        [1, 6, 0, 6],
+        [0, 6, 0, 5],
+        [0, 5, 1, 5],
+        [3, 0, 3, 1],
+        [3, 1, 4, 1],
+        [4, 1, 4, 0],
+        [4, 0, 3, 0],
+    ],
+    '^': [
+        [1, 4, 2, 6],
+        [2, 6, 3, 4],
+    ],
+    '&': [
+        [4, 0, 1, 3],
+        [1, 3, 0, 4],
+        [0, 4, 0, 5],
+        [0, 5, 1, 6],
+        [1, 6, 2, 5],
+        [2, 5, 0, 2],
+        [0, 2, 0, 1],
+        [0, 1, 1, 0],
+        [1, 0, 3, 0],
+        [3, 0, 4, 1],
+    ],
+    '_': [[0, 0, 4, 0]],
+    '|': [[2, 0, 2, 6]],
+    '~': [
+        [0, 3, 1, 4],
+        [1, 4, 3, 2],
+        [3, 2, 4, 3],
+    ],
+    '"': [
+        [1, 4, 1, 6],
+        [3, 4, 3, 6],
+    ],
+    '\'': [[2, 4, 2, 6]],
+    '`': [[1, 6, 2, 5]],
+    '\\': [[0.5, 6, 3.5, 0]],
+    '→': [
+        [0, 3, 4, 3],
+        [4, 3, 2, 5],
+        [4, 3, 2, 1],
+    ],
+    '←': [
+        [4, 3, 0, 3],
+        [0, 3, 2, 5],
+        [0, 3, 2, 1],
+    ],
+    '↑': [
+        [2, 0, 2, 6],
+        [2, 6, 0, 4],
+        [2, 6, 4, 4],
+    ],
+    '↓': [
+        [2, 6, 2, 0],
+        [2, 0, 0, 2],
+        [2, 0, 4, 2],
+    ],
+    '↗': [
+        [0, 0, 4, 4],
+        [4, 4, 4, 1],
+        [4, 4, 1, 4],
+    ],
+    '↘': [
+        [0, 4, 4, 0],
+        [4, 0, 4, 3],
+        [4, 0, 1, 0],
+    ],
+    '↙': [
+        [4, 4, 0, 0],
+        [0, 0, 0, 3],
+        [0, 0, 3, 0],
+    ],
+    '↖': [
+        [4, 0, 0, 4],
+        [0, 4, 0, 1],
+        [0, 4, 3, 4],
+    ],
+    '↔': [
+        [0, 3, 4, 3],
+        [4, 3, 2, 5],
+        [4, 3, 2, 1],
+        [0, 3, 2, 5],
+        [0, 3, 2, 1],
+    ],
+    '↕': [
+        [2, 0, 2, 6],
+        [2, 6, 0, 4],
+        [2, 6, 4, 4],
+        [2, 0, 0, 2],
+        [2, 0, 4, 2],
+    ],
+};
+const charWidth = 4;
+const charSpace = 1;
+const lineHeight = 9;
+const CELL = charWidth + charSpace;
+/** Draw text in the world. */
+function draw(options) {
+    const { text, origin, angles, scale = 1, duration = 5, color = { r: 255, g: 255, b: 255, a: 255 }, } = options;
+    const lines = text.split('\n');
+    const right = angles.right;
+    const down = angles.down;
+    const totalHeight = (lines.length - 1) * lineHeight;
+    const topOffset = totalHeight / 2;
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const totalWidth = line.length * CELL - charSpace;
+        const offsetX = totalWidth / 2;
+        const offsetY = 3 - (topOffset - lineIndex * lineHeight);
+        const project = (fx, fy) => origin
+            .add(right.scale((fx - offsetX) * scale))
+            .add(down.scale(-(fy - offsetY) * scale));
+        let cursorX = 0;
+        for (const ch of line) {
+            const strokes = daFont[ch] ?? daFont['?'];
+            for (const [x1, y1, x2, y2] of strokes) {
+                const start = project(cursorX + x1, y1);
+                const end = project(cursorX + x2, y2);
+                Instance.DebugLine({ start, end, duration, color });
+            }
+            cursorX += CELL;
+        }
+    }
+}
+/** Draw text in the world. */
+const Debug3DText = { draw };
+
+function lineMap(value) {
+    if (value === null)
+        return '<null>';
+    if (value === undefined)
+        return '<undefined>';
+    if (value instanceof Entity) {
+        if (!value.IsValid())
+            return `<Invalid entity handle>`;
+        const name = value.GetEntityName();
+        return `<${value.GetClassName()}>${name ? ` (${name})` : ''}: ${JSON.stringify(value, null, 2)}`;
+    }
+    return typeof value === 'object' ? JSON.stringify(value, null, 2) : value;
+}
+function print(...args) {
+    Instance.Msg(args.map(lineMap).join(' '));
+}
+
+const RAD_TO_DEG = 180 / Math.PI;
+const DEG_TO_RAD = Math.PI / 180;
+const TICK_DT = 1 / 64;
 
 class MathUtils {
     static clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
     }
 }
-
-const RAD_TO_DEG = 180 / Math.PI;
 
 class Vector3Utils {
     static equals(a, b) {
@@ -67,6 +890,12 @@ class Vector3Utils {
     static distanceSquared(a, b) {
         return Vector3Utils.subtract(a, b).lengthSquared;
     }
+    static distance2D(a, b) {
+        return new Vec3(a.x - b.x, a.y - b.y, 0).length;
+    }
+    static distance2DSquared(a, b) {
+        return new Vec3(a.x - b.x, a.y - b.y, 0).lengthSquared;
+    }
     static floor(vector) {
         return new Vec3(Math.floor(vector.x), Math.floor(vector.y), Math.floor(vector.z));
     }
@@ -112,12 +941,41 @@ class Vector3Utils {
     static withZ(vector, z) {
         return new Vec3(vector.x, vector.y, z);
     }
+    static round(vector) {
+        return new Vec3(Math.round(vector.x), Math.round(vector.y), Math.round(vector.z));
+    }
+    static ceil(vector) {
+        return new Vec3(Math.ceil(vector.x), Math.ceil(vector.y), Math.ceil(vector.z));
+    }
+    static map(vector, callback) {
+        return new Vec3(callback(vector.x), callback(vector.y), callback(vector.z));
+    }
 }
 class Vec3 {
     x;
     y;
     z;
-    static Zero = new Vec3(0, 0, 0);
+    static get Zero() {
+        return new Vec3(0, 0, 0);
+    }
+    static get Forward() {
+        return new Vec3(1, 0, 0);
+    }
+    static get Backward() {
+        return new Vec3(-1, 0, 0);
+    }
+    static get Right() {
+        return new Vec3(0, -1, 0);
+    }
+    static get Left() {
+        return new Vec3(0, 1, 0);
+    }
+    static get Up() {
+        return new Vec3(0, 0, 1);
+    }
+    static get Down() {
+        return new Vec3(0, 0, -1);
+    }
     constructor(xOrVector, y, z) {
         if (typeof xOrVector === 'object') {
             this.x = xOrVector.x === 0 ? 0 : xOrVector.x;
@@ -156,6 +1014,18 @@ class Vec3 {
      */
     get floored() {
         return Vector3Utils.floor(this);
+    }
+    /**
+     * Ceil (Round up) each vector component
+     */
+    get ceil() {
+        return Vector3Utils.ceil(this);
+    }
+    /**
+     * Rounds each vector component
+     */
+    get round() {
+        return Vector3Utils.round(this);
     }
     /**
      * Calculates the angles from a forward vector
@@ -197,8 +1067,14 @@ class Vec3 {
     distance(vector) {
         return Vector3Utils.distance(this, vector);
     }
+    distance2D(vector) {
+        return Vector3Utils.distance2D(this, vector);
+    }
     distanceSquared(vector) {
         return Vector3Utils.distanceSquared(this, vector);
+    }
+    distance2DSquared(vector) {
+        return Vector3Utils.distance2DSquared(this, vector);
     }
     /**
      * Linearly interpolates the vector to a point based on a 0.0-1.0 fraction
@@ -335,12 +1211,24 @@ class EulerUtils {
     static clamp(angle, min, max) {
         return new Euler(MathUtils.clamp(angle.pitch, min.pitch, max.pitch), MathUtils.clamp(angle.yaw, min.yaw, max.yaw), MathUtils.clamp(angle.roll, min.roll, max.roll));
     }
+    static round(angle) {
+        return new Euler(Math.round(angle.pitch), Math.round(angle.yaw), Math.round(angle.roll));
+    }
+    static floor(angle) {
+        return new Euler(Math.floor(angle.pitch), Math.floor(angle.yaw), Math.floor(angle.roll));
+    }
+    static ceil(angle) {
+        return new Euler(Math.ceil(angle.pitch), Math.ceil(angle.yaw), Math.ceil(angle.roll));
+    }
 }
 class Euler {
     pitch;
     yaw;
     roll;
     static Zero = new Euler(0, 0, 0);
+    static Forward = new Euler(1, 0, 0);
+    static Right = new Euler(0, 1, 0);
+    static Up = new Euler(0, 0, 1);
     constructor(pitchOrAngle, yaw, roll) {
         if (typeof pitchOrAngle === 'object') {
             this.pitch = pitchOrAngle.pitch === 0 ? 0 : pitchOrAngle.pitch;
@@ -395,6 +1283,24 @@ class Euler {
     get down() {
         return this.up.inverse;
     }
+    /**
+     * Floor (Round down) each vector component
+     */
+    get floor() {
+        return EulerUtils.floor(this);
+    }
+    /**
+     * Ceil (Round up) each vector component
+     */
+    get ceil() {
+        return EulerUtils.ceil(this);
+    }
+    /**
+     * Rounds each vector component
+     */
+    get round() {
+        return EulerUtils.round(this);
+    }
     toString() {
         return `Euler: [${this.pitch}, ${this.yaw}, ${this.roll}]`;
     }
@@ -442,6 +1348,1073 @@ class Euler {
     }
 }
 
+class Matrix3x4 {
+    // no need for constructor as the array is initialised to 0 by default
+    m = new Float32Array(12);
+    // using a single dimensional array for performance, the matrix indices look like this
+    // so column index 3, row index 2 would be array index 11.
+    //      0  1  2  3
+    //
+    //  0   0  1  2  3
+    //  1   4  5  6  7
+    //  2   8  9  10 11
+    // set to identity
+    constructor() {
+        this.m.fill(0);
+        this.m[0] = 1;
+        this.m[5] = 1;
+        this.m[10] = 1;
+    }
+    equals(mat2, tolerance = 1e-5) {
+        for (let i = 0; i < 12; ++i) {
+            if (Math.abs(this.m[i] - mat2.m[i]) > tolerance)
+                return false;
+        }
+        return true;
+    }
+    get isIdentity() {
+        return this.equals(Matrix3x4.identityMatrix);
+    }
+    get isValid() {
+        if (!this.isOrthogonal) {
+            return false;
+        }
+        for (let i = 0; i < 12; i++) {
+            if (!Number.isFinite(this.m[i]))
+                return false;
+        }
+        return true;
+    }
+    // multiplying an orthogonal matrix with its transpose should always give us the identity matrix.
+    get isOrthogonal() {
+        return this.multiply(this.inverse).isIdentity;
+    }
+    /**
+     * Inverts the matrix. Actually a transpose but as long as our matrix stays orthogonal it should be the same.
+     */
+    get inverse() {
+        const retMat = new Matrix3x4();
+        // transpose the matrix
+        retMat.m[0] = this.m[0];
+        retMat.m[1] = this.m[4];
+        retMat.m[2] = this.m[8];
+        retMat.m[4] = this.m[1];
+        retMat.m[5] = this.m[5];
+        retMat.m[6] = this.m[9];
+        retMat.m[8] = this.m[2];
+        retMat.m[9] = this.m[6];
+        retMat.m[10] = this.m[10];
+        // convert translation to new space
+        const x = this.m[3];
+        const y = this.m[7];
+        const z = this.m[11];
+        retMat.m[3] = -(x * retMat.m[0] + y * retMat.m[1] + z * retMat.m[2]);
+        retMat.m[7] = -(x * retMat.m[4] + y * retMat.m[5] + z * retMat.m[6]);
+        retMat.m[11] = -(x * retMat.m[8] + y * retMat.m[9] + z * retMat.m[10]);
+        return retMat;
+    }
+    setOrigin(x, y, z) {
+        this.m[3] = x;
+        this.m[7] = y;
+        this.m[11] = z;
+    }
+    get origin() {
+        return new Vec3(this.m[3], this.m[7], this.m[11]);
+    }
+    set origin({ x, y, z }) {
+        this.setOrigin(x, y, z);
+    }
+    setAngles(pitch, yaw, roll) {
+        const ay = DEG_TO_RAD * yaw;
+        const ax = DEG_TO_RAD * pitch;
+        const az = DEG_TO_RAD * roll;
+        const sy = Math.sin(ay), cy = Math.cos(ay);
+        const sp = Math.sin(ax), cp = Math.cos(ax);
+        const sr = Math.sin(az), cr = Math.cos(az);
+        this.m[0] = cp * cy;
+        this.m[4] = cp * sy;
+        this.m[8] = -sp;
+        this.m[1] = sr * sp * cy + cr * -sy;
+        this.m[5] = sr * sp * sy + cr * cy;
+        this.m[9] = sr * cp;
+        this.m[2] = cr * sp * cy + -sr * -sy;
+        this.m[6] = cr * sp * sy + -sr * cy;
+        this.m[10] = cr * cp;
+    }
+    set angles(angles) {
+        this.setAngles(angles.pitch, angles.yaw, angles.roll);
+    }
+    get angles() {
+        const returnAngles = new Euler(0, 0, 0);
+        const forward0 = this.m[0];
+        const forward1 = this.m[4];
+        const xyDist = Math.sqrt(forward0 * forward0 + forward1 * forward1);
+        if (xyDist > 0.001) {
+            returnAngles.yaw = Math.atan2(forward1, forward0) * RAD_TO_DEG;
+            returnAngles.pitch = Math.atan2(-this.m[8], xyDist) * RAD_TO_DEG;
+            returnAngles.roll = Math.atan2(this.m[9], this.m[10]) * RAD_TO_DEG;
+        }
+        else {
+            // gimbal lock
+            returnAngles.yaw = Math.atan2(-this.m[1], this.m[5]) * RAD_TO_DEG;
+            returnAngles.pitch = Math.atan2(-this.m[8], xyDist) * RAD_TO_DEG;
+            returnAngles.roll = 0.0;
+        }
+        return returnAngles;
+    }
+    get forward() {
+        return new Vec3(this.m[0], this.m[4], this.m[8]);
+    }
+    set forward(vec) {
+        // normalise because users can not be trusted
+        const fwd = vec.normal;
+        let right;
+        if (Math.abs(fwd.dot(Vec3.Up)) > 0.999) {
+            // forward is nearly the same as up/down, use world forward instead to avoid divide by zero
+            right = fwd.cross(Vec3.Forward).normal;
+        }
+        else {
+            // this makes the right vector always perpendicular to world up vector,
+            // it makes the orientation of everything more stable.
+            right = Vec3.Up.cross(fwd).normal;
+        }
+        const up = fwd.cross(right).normal;
+        this.m[0] = fwd.x;
+        this.m[4] = fwd.y;
+        this.m[8] = fwd.z;
+        this.m[1] = right.x;
+        this.m[5] = right.y;
+        this.m[9] = right.z;
+        this.m[2] = up.x;
+        this.m[6] = up.y;
+        this.m[10] = up.z;
+    }
+    get backward() {
+        return new Vec3(-this.m[0], -this.m[4], -this.m[8]);
+    }
+    set backward(vec) {
+        this.forward = vec.inverse;
+    }
+    get right() {
+        return new Vec3(-this.m[1], -this.m[5], -this.m[9]);
+    }
+    set right(vec) {
+        // normalise because users can not be trusted
+        const right = vec.normal;
+        let fwd;
+        if (Math.abs(right.dot(Vec3.Up)) > 0.999) {
+            // right is nearly the same as up/down, use world forward instead to avoid divide by zero
+            fwd = Vec3.Forward.cross(right).normal;
+        }
+        else {
+            // this makes the forward vector always perpendicular to world up vector,
+            // it makes the orientation of everything more stable.
+            fwd = right.cross(Vec3.Up).normal;
+        }
+        const up = fwd.cross(right).normal;
+        this.m[0] = fwd.x;
+        this.m[4] = fwd.y;
+        this.m[8] = fwd.z;
+        this.m[1] = right.x;
+        this.m[5] = right.y;
+        this.m[9] = right.z;
+        this.m[2] = up.x;
+        this.m[6] = up.y;
+        this.m[10] = up.z;
+    }
+    get left() {
+        return this.right.inverse;
+    }
+    set left(vec) {
+        this.right = vec.inverse;
+    }
+    get up() {
+        return new Vec3(this.m[2], this.m[6], this.m[10]);
+    }
+    set up(vec) {
+        // normalise because users can not be trusted
+        const up = vec.normal;
+        let left;
+        if (Math.abs(up.dot(Vec3.Forward)) > 0.999) {
+            left = Vec3.Left.cross(up).normal;
+        }
+        else {
+            left = up.cross(Vec3.Forward).normal;
+        }
+        const fwd = left.cross(up).normal;
+        this.m[0] = fwd.x;
+        this.m[4] = fwd.y;
+        this.m[8] = fwd.z;
+        this.m[1] = left.x;
+        this.m[5] = left.y;
+        this.m[9] = left.z;
+        this.m[2] = up.x;
+        this.m[6] = up.y;
+        this.m[10] = up.z;
+    }
+    get down() {
+        return new Vec3(-this.m[2], -this.m[6], -this.m[10]);
+    }
+    set down(vec) {
+        this.up = vec.inverse;
+    }
+    multiply(mat2) {
+        const out = new Matrix3x4();
+        const m1 = this.m;
+        const m2 = mat2.m;
+        const m3 = out.m;
+        m3[0] = m1[0] * m2[0] + m1[1] * m2[4] + m1[2] * m2[8];
+        m3[1] = m1[0] * m2[1] + m1[1] * m2[5] + m1[2] * m2[9];
+        m3[2] = m1[0] * m2[2] + m1[1] * m2[6] + m1[2] * m2[10];
+        m3[3] = m1[0] * m2[3] + m1[1] * m2[7] + m1[2] * m2[11] + m1[3];
+        m3[4] = m1[4] * m2[0] + m1[5] * m2[4] + m1[6] * m2[8];
+        m3[5] = m1[4] * m2[1] + m1[5] * m2[5] + m1[6] * m2[9];
+        m3[6] = m1[4] * m2[2] + m1[5] * m2[6] + m1[6] * m2[10];
+        m3[7] = m1[4] * m2[3] + m1[5] * m2[7] + m1[6] * m2[11] + m1[7];
+        m3[8] = m1[8] * m2[0] + m1[9] * m2[4] + m1[10] * m2[8];
+        m3[9] = m1[8] * m2[1] + m1[9] * m2[5] + m1[10] * m2[9];
+        m3[10] = m1[8] * m2[2] + m1[9] * m2[6] + m1[10] * m2[10];
+        m3[11] = m1[8] * m2[3] + m1[9] * m2[7] + m1[10] * m2[11] + m1[11];
+        return out;
+    }
+    // assume this matrix is a pure rotation matrix, and rotate vec
+    rotateVec3(vec) {
+        // dot product input vec with the rotation part of the matrix
+        return new Vec3(vec.x * this.m[0] + vec.y * this.m[1] + vec.z * this.m[2], vec.x * this.m[4] + vec.y * this.m[5] + vec.z * this.m[6], vec.x * this.m[8] + vec.y * this.m[9] + vec.z * this.m[10]);
+    }
+    // almost the same as the rotate function, but it then adds on the translation part
+    // copy pasted for performance
+    transformVec3(vec) {
+        return new Vec3(vec.x * this.m[0] + vec.y * this.m[1] + vec.z * this.m[2] + this.m[3], vec.x * this.m[4] + vec.y * this.m[5] + vec.z * this.m[6] + this.m[7], vec.x * this.m[8] + vec.y * this.m[9] + vec.z * this.m[10] + this.m[11]);
+    }
+    /**
+     * Rotates by the inverse of the matrix.
+     */
+    rotateInverseVec3(vec) {
+        return new Vec3(vec.x * this.m[0] + vec.y * this.m[4] + vec.z * this.m[8], vec.x * this.m[1] + vec.y * this.m[5] + vec.z * this.m[9], vec.x * this.m[2] + vec.y * this.m[6] + vec.z * this.m[10]);
+    }
+    /**
+     * Transform vec by the transpose of the matrix, assuming the matrix is orthogonal this is also the inverse.
+     */
+    transformInverseVec3(vec) {
+        const vecMy = vec.x - this.m[3];
+        const vecMx = vec.y - this.m[7];
+        const vecMz = vec.z - this.m[11];
+        return new Vec3(vecMy * this.m[0] + vecMx * this.m[4] + vecMz * this.m[8], vecMy * this.m[1] + vecMx * this.m[5] + vecMz * this.m[9], vecMy * this.m[2] + vecMx * this.m[6] + vecMz * this.m[10]);
+    }
+    toString() {
+        return `\n           [${this.m[0]}, ${this.m[1]}, ${this.m[2]}, ${this.m[3]}]
+                \nMatrix3_4: [${this.m[4]}, ${this.m[5]}, ${this.m[6]}, ${this.m[7]}]
+                \n           [${this.m[8]}, ${this.m[9]}, ${this.m[10]}, ${this.m[11]}]`;
+    }
+    toArray() {
+        return this.m;
+    }
+    static getScaleMatrix(x, y, z) {
+        const matrix = new Matrix3x4();
+        matrix.m[0] = x;
+        matrix.m[5] = y;
+        matrix.m[10] = z;
+        return matrix;
+    }
+    static identityMatrix = Object.freeze(new Matrix3x4());
+}
+
+/** 2D curve point vector class */
+class CurvePoint {
+    x = 0;
+    y = 0;
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+    static Zero = new CurvePoint(0, 0);
+    toString() {
+        return `CurvePoint: [${this.x}, ${this.y}]`;
+    }
+    add(point) {
+        return new CurvePoint(this.x + point.x, this.y + point.y);
+    }
+    subtract(point) {
+        return new CurvePoint(this.x - point.x, this.y - point.y);
+    }
+    multiply(point) {
+        if (typeof point === 'number') {
+            return new CurvePoint(this.x * point, this.y * point);
+        }
+        else {
+            return new CurvePoint(this.x * point.x, this.y * point.y);
+        }
+    }
+    divide(point) {
+        if (typeof point === 'number') {
+            return new CurvePoint(this.x / point, this.y / point);
+        }
+        else {
+            return new CurvePoint(this.x / point.x, this.y / point.y);
+        }
+    }
+    length() {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+    }
+    normalise() {
+        const len = this.length();
+        if (len < 1e-9)
+            return CurvePoint.Zero;
+        return this.divide(len);
+    }
+}
+/**
+ * # Interactive in-world curve editor
+ *
+ * ## Controls:
+ * - USE - Move curve point.
+ * - USE + WALK - Remove curve point.
+ * - RELOAD - Add curve point.
+ * - INSPECT - Print curve data to console.
+ *
+ * ## Saving curve data:
+ *
+ * Press the RELOAD button and copy the curve data from the console into your script using
+ * {@link Curve.loadCurveFromString()}.
+ */
+class CurveEditor {
+    /** In-world editor origin */
+    Origin = Vec3.Zero;
+    /** In-world editor angles */
+    Angles = Euler.Zero;
+    /** In-world editor width */
+    Width = 50;
+    /** In-world editor height */
+    Height = 50;
+    /** Interactible curve handle radius (in editor-space units) */
+    HandleRadius = 0.5;
+    Curve;
+    Player;
+    HotHandleID = -1;
+    HotHandleDragOffset = CurvePoint.Zero;
+    PointAnchorColor = { r: 52, g: 90, b: 148, a: 255 };
+    PointHandleColor = { r: 227, g: 128, b: 57, a: 255 };
+    constructor(curve, player) {
+        this.Curve = curve;
+        this.Player = player;
+    }
+    /** Editor think logic, call in your own think function */
+    think() {
+        const edges0 = this.Origin;
+        const edges1 = edges0.add(this.Angles.right.multiply(this.Width));
+        const edges2 = edges0.add(this.Angles.up.multiply(this.Height));
+        const linePos = new Vec3(this.Player.GetEyePosition());
+        const lineAng = new Euler(this.Player.GetEyeAngles());
+        const barycentricUVT = computeIntersectionBarycentricCoordinates(linePos, linePos.add(lineAng.forward.multiply(10000)), edges0, edges1, edges2);
+        if (barycentricUVT === undefined) {
+            return;
+        }
+        const u = barycentricUVT.u;
+        const v = barycentricUVT.v;
+        const mousePos = new CurvePoint(u, v);
+        if (this.Player.WasInputJustPressed(CSInputs.RELOAD)) {
+            this.Curve.addSegment(mousePos);
+        }
+        if (this.Player.WasInputJustPressed(CSInputs.LOOK_AT_WEAPON)) {
+            this.Curve.printPointsToConsole();
+        }
+        // Handle point interaction: deletion check before move so we don't act on a
+        // just-deleted handle index.
+        for (let i = 0; i < this.Curve.pointCount; i++) {
+            const point = this.Curve.getPoint(i);
+            if (this.Player.WasInputJustPressed(CSInputs.USE)
+                && this.Player.IsInputPressed(CSInputs.WALK)
+                && this.HotHandleID === i) {
+                this.Curve.removeAnchor(i);
+                this.HotHandleID = -1;
+                break;
+            }
+            const newpos = this.freeMoveHandle(i, mousePos, point, this.HandleRadius);
+            this.Curve.movePoint(i, newpos);
+        }
+        // Draw handles
+        for (let i = 0; i < this.Curve.pointCount; i++) {
+            const point = this.Curve.getPoint(i);
+            // HandleRadius is in world units; normalise to editor UV space for hit-testing.
+            const normalised = this.HandleRadius / this.Height;
+            let color = this.Curve.isAnchorPoint(i) ? this.PointAnchorColor : this.PointHandleColor;
+            if (this.isNearHandle(mousePos, point, normalised)) {
+                const multiplier = this.HotHandleID === i ? 5 : 1.8;
+                color = {
+                    r: color.r * multiplier,
+                    g: color.g * multiplier,
+                    b: color.b * 1.8,
+                    a: 255,
+                };
+            }
+            drawDisk({
+                origin: this.curveToWorld(point.x, point.y),
+                radius: this.HandleRadius,
+                normal: this.Angles.forward,
+                duration: TICK_DT,
+                segments: 16,
+                color: color,
+            });
+        }
+        // Draw control-handle lines
+        for (let i = 0; i < this.Curve.segmentCount; i++) {
+            const segmentPoints = this.Curve.getPointsInSegment(i);
+            Instance.DebugLine({
+                start: this.curveToWorld(segmentPoints[0].x, segmentPoints[0].y),
+                end: this.curveToWorld(segmentPoints[1].x, segmentPoints[1].y),
+                color: this.PointHandleColor,
+            });
+            Instance.DebugLine({
+                start: this.curveToWorld(segmentPoints[2].x, segmentPoints[2].y),
+                end: this.curveToWorld(segmentPoints[3].x, segmentPoints[3].y),
+                color: this.PointHandleColor,
+            });
+        }
+        // Only resample when the curve is dirty (a point was moved / added / removed).
+        this.Curve.flushIfDirty();
+        debugRenderCurve(this.Curve, this.Origin, this.Angles, this.Width, this.Height);
+    }
+    curveToWorld(u, v) {
+        const ix = u * this.Width;
+        const iy = v * this.Height;
+        return this.Angles.right.multiply(ix).add(this.Angles.up.multiply(iy)).add(this.Origin);
+    }
+    freeMoveHandle(id, mousePos, position, worldRadius) {
+        // Convert world-space radius to normalised editor UV space.
+        const normRadius = worldRadius / this.Height;
+        let newpos = position;
+        if (this.Player.WasInputJustPressed(CSInputs.USE)) {
+            if (this.isNearHandle(mousePos, position, normRadius) && this.HotHandleID === -1) {
+                this.HotHandleID = id;
+                this.HotHandleDragOffset = new CurvePoint(mousePos.x - position.x, mousePos.y - position.y);
+            }
+        }
+        if (this.Player.IsInputPressed(CSInputs.USE)) {
+            if (this.HotHandleID !== -1 && this.HotHandleID === id) {
+                newpos = new CurvePoint(mousePos.x - this.HotHandleDragOffset.x, mousePos.y - this.HotHandleDragOffset.y);
+            }
+        }
+        if (this.Player.WasInputJustReleased(CSInputs.USE)) {
+            this.HotHandleID = -1;
+        }
+        return newpos;
+    }
+    /**
+     * @param normRadius - hit-test radius already normalised to editor UV space
+     */
+    isNearHandle(mousePos, position, normRadius) {
+        return mousePos.subtract(position).length() <= normRadius;
+    }
+}
+/**
+ * # Description
+ * Piecewise cubic Bezier curve constrained to be monotonically increasing in x (curve doesn't loop back on itself),
+ * This makes it useful as a mapping function [0, 1] => [0, 1].
+ *
+ * Equivalent to the curve editor found in most game engines and DCCs (Unity's
+ * AnimationCurve, Unreal's UCurveFloat, Blender's FCurve).
+ *
+ * # Usage
+ *
+ * It's recommended to use the {@link CurveEditor} in order to build curves,
+ * once built and loaded, use {@link evaluate} and {@link evaluateDerivative} to sample the curve.
+ */
+class Curve {
+    // Backing arrays are private so callers cannot mutate the spline into an invalid state.
+    // Use the public readonly views / methods instead.
+    _curvePoints = [
+        new CurvePoint(0, 0),
+        new CurvePoint(0.15, 0.35),
+        new CurvePoint(0.45, 0.05),
+        new CurvePoint(0.5, 0.5),
+    ];
+    _curveCache = [];
+    /** Whether the cache needs to be rebuilt before the next evaluate / render call. */
+    _dirty = true;
+    Resolution;
+    constructor(config) {
+        this.Resolution = config?.Resolution ?? 32;
+        if (config?.CurvePoints !== undefined && config.CurvePoints.length > 0) {
+            // Replace defaults with the provided points in-place (concat() returns a new
+            // array and would leave _curvePoints pointing at the empty default).
+            this._curvePoints.length = 0;
+            for (const p of config.CurvePoints) {
+                this._curvePoints.push(p);
+            }
+        }
+        this.sampleAndCacheCurve();
+        this._dirty = false;
+    }
+    /** Read-only view of the control points. */
+    get curvePoints() {
+        return this._curvePoints;
+    }
+    /** Read-only view of the cached sampled points. Rebuild via {@link flushIfDirty} first. */
+    get curveCache() {
+        return this._curveCache;
+    }
+    /** Number of control points. */
+    get pointCount() {
+        return this._curvePoints.length;
+    }
+    /** Returns control point at index `i`. */
+    getPoint(i) {
+        return this._curvePoints[i];
+    }
+    /**
+     * Number of cubic Bezier segments.
+     */
+    get segmentCount() {
+        return Math.max(0, Math.floor((this._curvePoints.length - 1) / 3));
+    }
+    addSegment(anchorPoint) {
+        const lastAnchor = this._curvePoints[this._curvePoints.length - 1];
+        const lastHandle = this._curvePoints[this._curvePoints.length - 2];
+        const clampedAnchor = new CurvePoint(Math.max(anchorPoint.x, lastAnchor.x + 0.05), anchorPoint.y);
+        const reflectedHandle = lastAnchor.multiply(2).subtract(lastHandle);
+        const clampedReflectedHandle = new CurvePoint(Math.max(reflectedHandle.x, lastAnchor.x + 0.001), reflectedHandle.y);
+        const midHandle = lastAnchor.add(clampedAnchor).multiply(0.5);
+        const clampedMidHandle = new CurvePoint(Math.min(Math.max(midHandle.x, lastAnchor.x + 0.001), clampedAnchor.x - 0.001), midHandle.y);
+        this._curvePoints.push(clampedReflectedHandle);
+        this._curvePoints.push(clampedMidHandle);
+        this._curvePoints.push(clampedAnchor);
+        this._dirty = true;
+    }
+    removeAnchor(i) {
+        const pointCount = this._curvePoints.length;
+        // Never remove the two base anchors (minimum: 4 points = 1 segment).
+        if (pointCount <= 4)
+            return;
+        if (!this.isAnchorPoint(i))
+            return;
+        if (i === 0) {
+            // First anchor: remove the anchor itself and the two handles that follow it.
+            this._curvePoints.splice(0, 3);
+        }
+        else if (i === pointCount - 1) {
+            // Last anchor: remove the two handles that precede it and the anchor itself.
+            this._curvePoints.splice(i - 2, 3);
+        }
+        else {
+            // Middle anchor: remove the handle before, the anchor, and the handle after.
+            this._curvePoints.splice(i - 1, 3);
+        }
+        this._dirty = true;
+    }
+    getPointsInSegment(i) {
+        return [
+            this._curvePoints[i * 3],
+            this._curvePoints[i * 3 + 1],
+            this._curvePoints[i * 3 + 2],
+            this._curvePoints[i * 3 + 3],
+        ];
+    }
+    isAnchorPoint(i) {
+        return i % 3 === 0;
+    }
+    movePoint(i, destination) {
+        if (this.isAnchorPoint(i)) {
+            const prevAnchorIndex = i - 3;
+            const nextAnchorIndex = i + 3;
+            const minX = prevAnchorIndex >= 0 ? this._curvePoints[prevAnchorIndex].x + 0.001 : 0;
+            const maxX = nextAnchorIndex < this._curvePoints.length ? this._curvePoints[nextAnchorIndex].x - 0.001 : 1;
+            const clampedDest = new CurvePoint(Math.min(Math.max(destination.x, minX), maxX), destination.y);
+            const clampedDelta = clampedDest.subtract(this._curvePoints[i]);
+            this._curvePoints[i] = clampedDest;
+            if (i + 1 < this._curvePoints.length) {
+                this._curvePoints[i + 1] = this._curvePoints[i + 1].add(clampedDelta);
+            }
+            if (i - 1 >= 0) {
+                this._curvePoints[i - 1] = this._curvePoints[i - 1].add(clampedDelta);
+            }
+        }
+        else {
+            const nextPointIsAnchor = (i + 1) % 3 === 0;
+            const anchorIndex = nextPointIsAnchor ? i + 1 : i - 1;
+            const otherAnchorIndex = nextPointIsAnchor ? i - 2 : i + 2;
+            const anchorX = this._curvePoints[anchorIndex].x;
+            const otherAnchorX = otherAnchorIndex >= 0 && otherAnchorIndex < this._curvePoints.length
+                ? this._curvePoints[otherAnchorIndex].x
+                : nextPointIsAnchor
+                    ? 0
+                    : 1;
+            const minX = Math.min(anchorX, otherAnchorX) + 0.001;
+            const maxX = Math.max(anchorX, otherAnchorX) - 0.001;
+            this._curvePoints[i] = new CurvePoint(Math.min(Math.max(destination.x, minX), maxX), destination.y);
+            const correspondingControlIndex = nextPointIsAnchor ? i + 2 : i - 2;
+            if (correspondingControlIndex >= 0 && correspondingControlIndex < this._curvePoints.length) {
+                const anchorPoint = this._curvePoints[anchorIndex];
+                const dist = anchorPoint.subtract(this._curvePoints[correspondingControlIndex]).length();
+                const dir = anchorPoint.subtract(this._curvePoints[i]).normalise();
+                const reflected = anchorPoint.add(dir.multiply(dist));
+                // Clamp the reflected handle so it stays within its own segment's x bounds.
+                const mirrorAnchorIndex = nextPointIsAnchor ? anchorIndex + 3 : anchorIndex - 3;
+                const mirrorAnchorX = mirrorAnchorIndex >= 0 && mirrorAnchorIndex < this._curvePoints.length
+                    ? this._curvePoints[mirrorAnchorIndex].x
+                    : nextPointIsAnchor
+                        ? 1
+                        : 0;
+                const mirrorMinX = Math.min(anchorX, mirrorAnchorX) + 0.001;
+                const mirrorMaxX = Math.max(anchorX, mirrorAnchorX) - 0.001;
+                this._curvePoints[correspondingControlIndex] = new CurvePoint(Math.min(Math.max(reflected.x, mirrorMinX), mirrorMaxX), reflected.y);
+            }
+        }
+        this._dirty = true;
+    }
+    /**
+     * Rebuilds the sample cache if any control points have changed since the last
+     */
+    flushIfDirty() {
+        if (this._dirty) {
+            this.sampleAndCacheCurve();
+            this._dirty = false;
+        }
+    }
+    /** Unconditionally rebuilds the sample cache. Prefer {@link flushIfDirty} in hot paths. */
+    sampleAndCacheCurve() {
+        if (this._curvePoints.length < 4)
+            return;
+        this._curveCache.length = 0;
+        for (let i = 0; i < this._curvePoints.length - 1; i += 3) {
+            const p1 = this._curvePoints[i];
+            const p2 = this._curvePoints[i + 1];
+            const p3 = this._curvePoints[i + 2];
+            const p4 = this._curvePoints[i + 3];
+            for (let j = 0; j < this.Resolution + 1; j++) {
+                const interpolatePoint = cubicBezierInterpolation(p1, p2, p3, p4, j / this.Resolution);
+                interpolatePoint.x = Math.min(Math.max(interpolatePoint.x, 0), 1);
+                interpolatePoint.y = Math.min(Math.max(interpolatePoint.y, 0), 1);
+                this._curveCache.push(interpolatePoint);
+            }
+        }
+        // Extend curve to x=0 / x=1 edges if the first or last anchor was moved inward.
+        const first = this._curveCache[0];
+        const last = this._curveCache[this._curveCache.length - 1];
+        if (first.x > 0) {
+            this._curveCache.unshift(new CurvePoint(0, first.y));
+        }
+        if (last.x < 1) {
+            this._curveCache.push(new CurvePoint(1, last.y));
+        }
+    }
+    /** Returns the y value of the curve at normalised x position [0, 1]. */
+    evaluate(x) {
+        if (this._curveCache.length < 2)
+            return 0;
+        x = Math.min(Math.max(x, 0), 1);
+        // Binary search for the segment where cache[lo].x <= x <= cache[hi].x.
+        let lo = 0;
+        let hi = this._curveCache.length - 1;
+        while (lo + 1 < hi) {
+            const mid = (lo + hi) >> 1;
+            if (this._curveCache[mid].x <= x) {
+                lo = mid;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        const a = this._curveCache[lo];
+        const b = this._curveCache[hi];
+        const dx = b.x - a.x;
+        if (dx < 1e-6)
+            return a.y;
+        const t = (x - a.x) / dx;
+        return a.y + (b.y - a.y) * t;
+    }
+    /**
+     * Returns the approximate derivative (slope) of the curve at normalised x [0, 1].
+     * Useful for velocity-aware easing and tangent calculations.
+     */
+    evaluateDerivative(x) {
+        if (this._curveCache.length < 2)
+            return 0;
+        x = Math.min(Math.max(x, 0), 1);
+        let lo = 0;
+        let hi = this._curveCache.length - 1;
+        while (lo + 1 < hi) {
+            const mid = (lo + hi) >> 1;
+            if (this._curveCache[mid].x <= x) {
+                lo = mid;
+            }
+            else {
+                hi = mid;
+            }
+        }
+        const a = this._curveCache[lo];
+        const b = this._curveCache[hi];
+        const dx = b.x - a.x;
+        if (dx < 1e-6)
+            return 0;
+        return (b.y - a.y) / dx;
+    }
+    printPointsToConsole() {
+        let finalString = '\n\n------------------ Curve points: ------------------\n\n';
+        for (let i = 0; i < this._curvePoints.length; i++) {
+            const point = this._curvePoints[i];
+            finalString += `${point.x} ${point.y}`;
+            if (i < this._curvePoints.length - 1) {
+                finalString += ',\n';
+            }
+        }
+        Instance.Msg(finalString);
+        Instance.Msg('\n\n---------------------------------------------------');
+    }
+    static loadCurveFromString(string, resolution) {
+        const splitString = string.split(',');
+        const points = [];
+        if (splitString.length < 2)
+            return undefined;
+        for (let i = 0; i < splitString.length; i++) {
+            const pointString = splitString[i].trim().split(' ');
+            if (pointString.length !== 2)
+                return undefined;
+            const x = Number.parseFloat(pointString[0]);
+            const y = Number.parseFloat(pointString[1]);
+            if (Number.isNaN(x) || Number.isNaN(y)) {
+                Instance.Msg(`Curve.loadCurveFromString: invalid number at index ${i}`);
+                return undefined;
+            }
+            points.push(new CurvePoint(x, y));
+        }
+        // A valid spline requires 1 + 3n control points (one base anchor plus three
+        // per additional segment: handle-out, handle-in, anchor).
+        if ((points.length - 1) % 3 !== 0) {
+            Instance.Msg(`Curve.loadCurveFromString: invalid point count ${points.length}. Expected 1 + 3n (e.g. 4, 7, 10 ...).`);
+            return undefined;
+        }
+        return new Curve({ CurvePoints: points, Resolution: resolution });
+    }
+    /** Renders an ASCII plot of the curve to the console. */
+    debugPrintCurve(steps = 100, height = 25) {
+        const rows = [];
+        for (let row = 0; row < height; row++)
+            rows.push('');
+        for (let i = 0; i <= steps; i++) {
+            const x = i / steps;
+            const y = this.evaluate(x);
+            const row = Math.round((1 - y) * (height - 1));
+            for (let r = 0; r < height; r++) {
+                rows[r] += r === row ? '*' : ' ';
+            }
+        }
+        for (const row of rows)
+            Instance.Msg(row);
+    }
+}
+function debugRenderCurve(curve, position, angle, width, height, duration = TICK_DT) {
+    const transformsMatrix = new Matrix3x4();
+    transformsMatrix.origin = position;
+    transformsMatrix.angles = angle;
+    const sideOffset = 0.5;
+    const arrowSize = 1;
+    const xDir = transformsMatrix.right;
+    const yDir = transformsMatrix.up;
+    const origin = transformsMatrix.origin.add(yDir.multiply(-sideOffset)).add(xDir.multiply(-sideOffset));
+    // X axis
+    const xDirArrowOrigin = origin.add(xDir.multiply(width));
+    const xDirArrowLeft = new Vec3(0, -width + arrowSize + sideOffset, arrowSize - sideOffset);
+    const xDirArrowRight = new Vec3(0, -width + arrowSize + sideOffset, -arrowSize - sideOffset);
+    Instance.DebugLine({
+        start: origin,
+        end: xDirArrowOrigin,
+        duration,
+        color: { r: 200, g: 30, b: 30 }
+    });
+    Instance.DebugLine({
+        start: xDirArrowOrigin,
+        end: transformsMatrix.transformVec3(xDirArrowLeft),
+        duration,
+        color: { r: 200, g: 30, b: 30 }
+    });
+    Instance.DebugLine({
+        start: xDirArrowOrigin,
+        end: transformsMatrix.transformVec3(xDirArrowRight),
+        duration,
+        color: { r: 200, g: 30, b: 30 }
+    });
+    // Y axis
+    const yDirArrowOrigin = origin.add(yDir.multiply(height));
+    const yDirArrowLeft = new Vec3(0, -arrowSize + sideOffset, height - arrowSize - sideOffset);
+    const yDirArrowRight = new Vec3(0, arrowSize + sideOffset, height - arrowSize - sideOffset);
+    Instance.DebugLine({ start: origin,
+        end: yDirArrowOrigin,
+        duration,
+        color: { r: 30, g: 200, b: 30 } });
+    Instance.DebugLine({
+        start: yDirArrowOrigin,
+        end: transformsMatrix.transformVec3(yDirArrowLeft),
+        duration,
+        color: { r: 30, g: 200, b: 30 }
+    });
+    Instance.DebugLine({
+        start: yDirArrowOrigin,
+        end: transformsMatrix.transformVec3(yDirArrowRight),
+        duration,
+        color: { r: 30, g: 200, b: 30 }
+    });
+    if (curve.curveCache.length < 2)
+        return;
+    for (let i = 1; i < curve.curveCache.length; i++) {
+        const startPoint = curve.curveCache[i - 1];
+        const endPoint = curve.curveCache[i];
+        const worldStartPoint = transformsMatrix.transformVec3(new Vec3(0, startPoint.x * -width, startPoint.y * height));
+        const worldEndPoint = transformsMatrix.transformVec3(new Vec3(0, endPoint.x * -width, endPoint.y * height));
+        Instance.DebugLine({ start: worldStartPoint, end: worldEndPoint, duration });
+    }
+}
+function linearInterpolate(a, b, t) {
+    return a.add(b.subtract(a).multiply(t));
+}
+function quadraticBezierInterpolation(a, b, c, t) {
+    return linearInterpolate(linearInterpolate(a, b, t), linearInterpolate(b, c, t), t);
+}
+function cubicBezierInterpolation(a, b, c, d, t) {
+    return linearInterpolate(quadraticBezierInterpolation(a, b, c, t), quadraticBezierInterpolation(b, c, d, t), t);
+}
+// taken from https://github.com/samisalreadytaken/vs_library
+function computeIntersectionBarycentricCoordinates(rayStart, rayEnd, v1, v2, v3) {
+    const edge1 = v2.subtract(v1);
+    const edge2 = v3.subtract(v1);
+    const rayDelta = rayEnd.subtract(rayStart);
+    const dirCrossEdge2 = rayDelta.cross(edge2);
+    let denom = dirCrossEdge2.dot(edge1);
+    if (denom < 1e-6 && denom > -1e-6)
+        return undefined;
+    denom = 1.0 / denom;
+    const org = rayStart.subtract(v1);
+    const orgCrossEdge1 = org.cross(edge1);
+    const t = orgCrossEdge1.dot(edge2) * denom;
+    if (t > 1.0)
+        return undefined;
+    return {
+        u: dirCrossEdge2.dot(org) * denom,
+        v: orgCrossEdge1.dot(rayDelta) * denom,
+        t,
+    };
+}
+
+class Vector2Utils {
+    static equals(a, b) {
+        return a.x === b.x && a.y === b.y;
+    }
+    static add(a, b) {
+        return new Vec2(a.x + b.x, a.y + b.y);
+    }
+    static subtract(a, b) {
+        return new Vec2(a.x - b.x, a.y - b.y);
+    }
+    static scale(vector, scale) {
+        return new Vec2(vector.x * scale, vector.y * scale);
+    }
+    static multiply(a, b) {
+        return new Vec2(a.x * b.x, a.y * b.y);
+    }
+    static divide(vector, divider) {
+        if (typeof divider === 'number') {
+            if (divider === 0)
+                throw Error('Division by zero');
+            return new Vec2(vector.x / divider, vector.y / divider);
+        }
+        else {
+            if (divider.x === 0 || divider.y === 0)
+                throw Error('Division by zero');
+            return new Vec2(vector.x / divider.x, vector.y / divider.y);
+        }
+    }
+    static length(vector) {
+        return Math.sqrt(Vector2Utils.lengthSquared(vector));
+    }
+    static lengthSquared(vector) {
+        return vector.x ** 2 + vector.y ** 2;
+    }
+    static normalize(vector) {
+        const len = Vector2Utils.length(vector);
+        return len ? Vector2Utils.divide(vector, len) : Vec2.Zero;
+    }
+    static dot(a, b) {
+        return a.x * b.x + a.y * b.y;
+    }
+    /**
+     * 2D cross product — returns the scalar Z component of the 3D cross product.
+     * Positive = b is counter-clockwise from a; negative = clockwise.
+     */
+    static cross(a, b) {
+        return a.x * b.y - a.y * b.x;
+    }
+    static inverse(vector) {
+        return new Vec2(-vector.x, -vector.y);
+    }
+    static distance(a, b) {
+        return Math.sqrt(Vector2Utils.distanceSquared(a, b));
+    }
+    static distanceSquared(a, b) {
+        return (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+    }
+    static floor(vector) {
+        return new Vec2(Math.floor(vector.x), Math.floor(vector.y));
+    }
+    static ceil(vector) {
+        return new Vec2(Math.ceil(vector.x), Math.ceil(vector.y));
+    }
+    static round(vector) {
+        return new Vec2(Math.round(vector.x), Math.round(vector.y));
+    }
+    static lerp(a, b, fraction, clamp = true) {
+        const t = clamp ? MathUtils.clamp(fraction, 0, 1) : fraction;
+        return new Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+    }
+    static directionTowards(a, b) {
+        return Vector2Utils.subtract(b, a).normal;
+    }
+    /** Returns the angle (in radians) of the vector from the positive X axis. */
+    static angle(vector) {
+        return Math.atan2(vector.y, vector.x);
+    }
+    /** Returns the signed angle (radians) from vector a to vector b. */
+    static angleBetween(a, b) {
+        return Math.atan2(Vector2Utils.cross(a, b), Vector2Utils.dot(a, b));
+    }
+    /** Returns the vector rotated 90° counter-clockwise. */
+    static perpendicular(vector) {
+        return new Vec2(-vector.y, vector.x);
+    }
+    static withX(vector, x) {
+        return new Vec2(x, vector.y);
+    }
+    static withY(vector, y) {
+        return new Vec2(vector.x, y);
+    }
+    static map(vector, callback) {
+        return new Vec2(callback(vector.x), callback(vector.y));
+    }
+    /** Lifts a Vec2 into a Vec3 with an optional z value (default 0). */
+    static toVec3(vector, z = 0) {
+        return new Vec3(vector.x, vector.y, z);
+    }
+}
+class Vec2 {
+    x;
+    y;
+    static get Zero() {
+        return new Vec2(0, 0);
+    }
+    static get Up() {
+        return new Vec2(1, 0);
+    }
+    static get Down() {
+        return new Vec2(-1, 0);
+    }
+    static get Right() {
+        return new Vec2(0, -1);
+    }
+    static get Left() {
+        return new Vec2(0, 1);
+    }
+    constructor(xOrVector, y) {
+        if (typeof xOrVector === 'object') {
+            this.x = xOrVector.x === 0 ? 0 : xOrVector.x;
+            this.y = xOrVector.y === 0 ? 0 : xOrVector.y;
+        }
+        else {
+            this.x = xOrVector === 0 ? 0 : xOrVector;
+            this.y = y === 0 ? 0 : y;
+        }
+    }
+    /** Drops the Z component of a Vec3 to produce a Vec2. */
+    static fromVec3(v) {
+        return new Vec2(v.x, v.y);
+    }
+    get length() {
+        return Vector2Utils.length(this);
+    }
+    get lengthSquared() {
+        return Vector2Utils.lengthSquared(this);
+    }
+    get normal() {
+        return Vector2Utils.normalize(this);
+    }
+    get inverse() {
+        return Vector2Utils.inverse(this);
+    }
+    get floored() {
+        return Vector2Utils.floor(this);
+    }
+    get ceil() {
+        return Vector2Utils.ceil(this);
+    }
+    get round() {
+        return Vector2Utils.round(this);
+    }
+    /** Angle (radians) of this vector from the positive X axis. */
+    get angle() {
+        return Vector2Utils.angle(this);
+    }
+    /** This vector rotated 90° counter-clockwise. */
+    get perpendicular() {
+        return Vector2Utils.perpendicular(this);
+    }
+    toString() {
+        return `Vec2: [${this.x}, ${this.y}]`;
+    }
+    equals(vector) {
+        return Vector2Utils.equals(this, vector);
+    }
+    add(vector) {
+        return Vector2Utils.add(this, vector);
+    }
+    subtract(vector) {
+        return Vector2Utils.subtract(this, vector);
+    }
+    divide(vector) {
+        return Vector2Utils.divide(this, vector);
+    }
+    multiply(scaleOrVector) {
+        return typeof scaleOrVector === 'number'
+            ? Vector2Utils.scale(this, scaleOrVector)
+            : Vector2Utils.multiply(this, scaleOrVector);
+    }
+    dot(vector) {
+        return Vector2Utils.dot(this, vector);
+    }
+    /** Scalar Z of the 3D cross product (signed area of parallelogram). */
+    cross(vector) {
+        return Vector2Utils.cross(this, vector);
+    }
+    distance(vector) {
+        return Vector2Utils.distance(this, vector);
+    }
+    distanceSquared(vector) {
+        return Vector2Utils.distanceSquared(this, vector);
+    }
+    /**
+     * Linearly interpolates towards a point based on a 0.0–1.0 fraction.
+     * Clamp limits the fraction to [0, 1].
+     */
+    lerpTo(vector, fraction, clamp = true) {
+        return Vector2Utils.lerp(this, vector, fraction, clamp);
+    }
+    /** Normalized direction vector pointing towards the given point. */
+    directionTowards(vector) {
+        return Vector2Utils.directionTowards(this, vector);
+    }
+    /** Signed angle (radians) from this vector to another. */
+    angleTo(vector) {
+        return Vector2Utils.angleBetween(this, vector);
+    }
+    withX(x) {
+        return Vector2Utils.withX(this, x);
+    }
+    withY(y) {
+        return Vector2Utils.withY(this, y);
+    }
+    /** Lifts this Vec2 into a Vec3 with an optional z value (default 0). */
+    toVec3(z = 0) {
+        return Vector2Utils.toVec3(this, z);
+    }
+}
+
 var Team;
 (function (Team) {
     Team[Team["UNASSIGNED"] = 0] = "UNASSIGNED";
@@ -481,8 +2454,10 @@ var CSGearSlot;
     CSGearSlot[CSGearSlot["C4"] = 4] = "C4";
 })(CSGearSlot || (CSGearSlot = {}));
 
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 let idPool = 0;
 let tasks = [];
+const MIN_SCHEDULER_INTERVAL = 0.1;
 function setTimeout(callback, ms) {
     const id = idPool++;
     tasks.unshift({
@@ -491,6 +2466,27 @@ function setTimeout(callback, ms) {
         callback,
     });
     return id;
+}
+function setInterval(callback, ms) {
+    const id = idPool++;
+    const intervalSeconds = Math.max(MIN_SCHEDULER_INTERVAL, ms / 1000);
+    tasks.unshift({
+        id,
+        everyNSeconds: intervalSeconds,
+        atSeconds: Instance.GetGameTime() + intervalSeconds,
+        callback,
+    });
+    return id;
+}
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function clearTimeout(id) {
+    tasks = tasks.filter((task) => task.id !== id);
+}
+const clearInterval = clearTimeout;
+function clearTasks() {
+    tasks = [];
 }
 function runSchedulerTick() {
     for (let i = tasks.length - 1; i >= 0; i--) {
@@ -707,11 +2703,11 @@ Instance.OnScriptInput("SetChewie", (data) => {
 });
 Instance.OnScriptInput("CheckChewie", () => {
     if (chewie !== undefined) {
-        EntFire("server", "Command", "say chewie is a stupid malay", 0.00);
-        EntFire("server", "Command", "say chewie is a stupid malay", 0.01);
-        EntFire("server", "Command", "say chewie is a stupid malay", 0.02);
-        EntFire("server", "Command", "say chewie is a stupid malay", 0.03);
-        EntFire("server", "Command", "say chewie is a stupid malay", 0.04);
+        EntFire("server", "Command", "say 有个猪头", 0.00);
+        EntFire("server", "Command", "say 有个猪头***", 0.01);
+        EntFire("server", "Command", "say 有个猪头", 0.02);
+        EntFire("server", "Command", "say 有个猪头", 0.03);
+        EntFire("server", "Command", "say 有个猪头", 0.04);
     }
 });
 let light = undefined;
@@ -1021,12 +3017,12 @@ Instance.OnScriptInput("WinZoneCheck", () => {
         EntFireTarget(p, "SetHealth", -1);
     }
     for (const i of win_zone_players) {
-        if (i.IsValid && i.GetTeamNumber() === Team.T) {
+        if (i.IsValid() && i.GetTeamNumber() === Team.T) {
             t_count++;
             if (i.GetHealth() > 1000)
                 i.SetHealth(1000);
         }
-        else if (i.IsValid && i.GetTeamNumber() === Team.CT) {
+        else if (i.IsValid() && i.GetTeamNumber() === Team.CT) {
             ct_count++;
         }
     }
@@ -1077,7 +3073,7 @@ Instance.OnScriptInput("PostCheck", () => {
 });
 // ZONE CHECK \\
 // WALLA BUTTON \\
-const walla_tickrate = 0.05;
+const walla_tickrate = 0.1;
 let walla_speed = 5;
 let walla_radius = 128;
 const walla_origin = new Vec3(13824, 13064, -736);
@@ -1205,7 +3201,7 @@ Instance.OnScriptInput("WallaDelay", () => {
 // GACHI GAPE \\
 const grave_hpadd = 4000;
 const grave_damage = 1000;
-const gape_tickrate = 0.05;
+const gape_tickrate = 0.1;
 const tickrate_castle = 1;
 const castle_range_check = 200;
 let gape_frame = 0;
@@ -1465,7 +3461,7 @@ Instance.OnScriptInput("PringlesTick", () => {
 Instance.OnScriptInput("StartColorTicking", (data) => {
     EntFireTarget(data.caller, "Start");
     color_ticking = true;
-    EntFire(script_korea, "RunScriptInput", "OverlayColor", 0.05);
+    EntFire(script_korea, "RunScriptInput", "OverlayColor", 0.1);
 });
 Instance.OnScriptInput("StopColorTicking", (data) => {
     color_ticking = false;
@@ -1475,7 +3471,7 @@ Instance.OnScriptInput("OverlayColor", () => {
     pringles_color = overlayColor(pringles_color, 20, 125);
     EntFire("pringles_overlay", "setcolortint", pringles_color + " " + pringles_color + " " + pringles_color);
     if (color_ticking)
-        EntFire(script_korea, "RunScriptInput", "OverlayColor", 0.05);
+        EntFire(script_korea, "RunScriptInput", "OverlayColor", 0.1);
     else
         return;
 });
@@ -1664,7 +3660,7 @@ class Soldier {
     TARGET_TIME = 5;
     KICK_DAMAGE = 9;
     TICKRATE_IDLE = getRandomFloat(2.5, 3.0);
-    TICKRATE = 0.02;
+    TICKRATE = 0.1;
     JUMPING_TIMEOUT = 0.5;
     FORWARD_TIMEOUT = 0.5;
     CLEANUP_TIME = 5;
@@ -1757,7 +3753,7 @@ class Soldier {
                 this.airblock = false;
                 if (!traceLine(self_origin, Vector3Utils.add(self_origin, new Vec3(0, 0, -36))).didHit) {
                     this.falling = true;
-                    EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "falling");
+                    EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "idle_alt1");
                 }
                 else if (this.falling) {
                     this.falling = false;
@@ -1804,7 +3800,7 @@ class Soldier {
         if (hlist.length > 0) {
             const target = hlist[getRandomInt(0, hlist.length - 1)];
             if (this.jumping) {
-                EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "falling");
+                EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "idle_alt1");
             }
             else {
                 EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "run");
@@ -1826,14 +3822,14 @@ class Soldier {
             this.jumping = true;
             const vel = this.SELF.GetAbsVelocity();
             this.SELF.Teleport({ velocity: new Vec3(vel.x, vel.y, 950) });
-            EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "falling");
+            EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "idle_alt1");
         }
     }
     Kick() {
         if (!this.kicking) {
             this.kicking = true;
             EntFire("i_nksoldier_s_kick" + this.PF, "StartSound");
-            EntFire("i_nksoldier_model" + this.PF, "SetAnimationNotLooping", "kick");
+            EntFire("i_nksoldier_model" + this.PF, "SetAnimationNotLooping", "idle_alt1");
             EntFire("i_nksoldier_model" + this.PF, "SetDefaultAnimationLooping", "run");
             const hp = this.target.GetHealth() - this.KICK_DAMAGE;
             EntFireTarget(this.target, "SetHealth", hp);
@@ -1853,7 +3849,7 @@ class Soldier {
                 this.target = activator;
                 EntFire("i_nksoldier_s_target" + this.PF, "StartSound");
                 if (this.jumping) {
-                    EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "falling");
+                    EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "idle_alt1");
                 }
                 else {
                     EntFire("i_nksoldier_model" + this.PF, "SetAnimationLooping", "run");
@@ -1876,8 +3872,8 @@ class Soldier {
         this.dead = true;
         EntFire("i_nksoldier_s_die" + this.PF, "StartSound");
         EntFire("i_nksoldier_s_target" + this.PF, "StopSound");
-        EntFire("i_nksoldier_model" + this.PF, "SetAnimationNotLooping", "die");
-        EntFire("i_nksoldier_model" + this.PF, "SetDefaultAnimationLooping", "dieidle");
+        EntFire("i_nksoldier_model" + this.PF, "SetAnimationNotLooping", "spawn");
+        EntFire("i_nksoldier_model" + this.PF, "SetDefaultAnimationLooping", "idle");
         const self_angle = new Euler(this.SELF.GetAbsAngles());
         self_angle.yaw += 180;
         const vec = self_angle.forward;
@@ -1923,7 +3919,7 @@ class Baby {
     TARGET_DISTANCE = 2000;
     TARGET_TIME = 5;
     TICKRATE_IDLE = getRandomFloat(2.7, 3.3);
-    TICKRATE = 0.02;
+    TICKRATE = 0.1;
     JUMPING_TIMEOUT = 0.5;
     FORWARD_TIMEOUT = 0.5;
     CLEANUP_TIME = 5;
@@ -2194,8 +4190,8 @@ class Baby {
         EntFire("i_nkbabysoldier_upright" + this.PF, "Kill", "", this.CLEANUP_TIME);
         EntFire("i_nkbabysoldier_s2" + this.PF, "Kill", "", this.CLEANUP_TIME);
         EntFire("i_nkbabysoldier_s_target" + this.PF, "Kill", "", this.CLEANUP_TIME);
-        EntFire("i_nkbabysoldier_s_die" + this.PF, "Kill", this.CLEANUP_TIME);
-        EntFire("i_nkbabysoldier_s_bomb" + this.PF, "Kill", this.CLEANUP_TIME);
+        EntFire("i_nkbabysoldier_s_die" + this.PF, "Kill", "", this.CLEANUP_TIME);
+        EntFire("i_nkbabysoldier_s_bomb" + this.PF, "Kill", "", this.CLEANUP_TIME);
         setTimeout(() => {
             this.dead_dead = true;
         }, (this.CLEANUP_TIME - 0.1) * 1000);
@@ -2325,10 +4321,11 @@ class KimJongUn {
                 EntFire("town_boss_zpushend", "Enable");
                 EntFire("babyboss_phys", "DisableMotion");
                 EntFire("babyboss_s_1", "StartSound");
-                EntFire("babyboss_model", "SetAnimationNotLooping", "dying");
-                EntFire("babyboss_model", "SetDefaultAnimationLooping", "dead");
+                EntFire("babyboss_model", "SetAnimationNotLooping", "spawn");
+                EntFire("babyboss_model", "SetDefaultAnimationLooping", "death");
                 EntFire("server", "Command", "say ***YOUNG BABY KIM IS DEAD***");
                 EntFire("server", "Command", "say ***WHAT HAVE YOU DONE...***", 1.00);
+                EntFire("babyboss_model", "kill", 1.30);
                 EntFire("town_enddoor", "Open", "", 2.00);
                 EntFire("server", "Command", "say ***TAKE SHELTER INSIDE, QUICK!***", 2.00);
                 EntFire("server", "Command", "say ***ZOMBIES RELEASE IN 5 SECONDS***", 8.00);
@@ -2351,11 +4348,11 @@ class KimJongUn {
             EntFire("babyboss_phys", "EnableMotion", "", 13.00);
             this.KICK_DAMAGE = 90;
             EntFire("babyboss_s_4", "StartSound");
-            EntFire("babyboss_model", "SetAnimationNotLooping", "hurt_sit");
-            EntFire("babyboss_model", "SetDefaultAnimationLooping", "sit_crybaby");
+            EntFire("babyboss_model", "SetAnimationNotLooping", "run");
+            EntFire("babyboss_model", "SetDefaultAnimationLooping", "spawn");
             EntFire("babyrush_anger_sound", "StartSound", "", 5.00);
-            EntFire("babyboss_model", "SetAnimationNotLooping", "sit_gotocrawl", 12);
-            EntFire("babyboss_model", "SetDefaultAnimationLooping", "crawling", 12);
+            EntFire("babyboss_model", "SetAnimationNotLooping", "idle_alt1", 12);
+            EntFire("babyboss_model", "SetDefaultAnimationLooping", "run", 12);
             setTimeout(() => {
                 this.speedanim = true;
             }, 14.5 * 1000);
@@ -2411,7 +4408,7 @@ class KimJongUn {
 let baby_kim;
 Instance.OnScriptInput("KimStart", (data) => {
     baby_kim = new KimJongUn(data.caller);
-    EntFire("babyboss_model", "SetAnimationLooping", "dance");
+    EntFire("babyboss_model", "SetAnimationLooping", "run");
     baby_kim.HP = Instance.FindEntityByName("babyboss_hp");
     baby_kim.lastpos = data.caller.GetAbsOrigin();
     baby_kim.TargetPlayer();
@@ -2543,7 +4540,7 @@ Instance.OnScriptInput("SetVelocity(385,0,300)", (data) => {
     SetVelocity(data.activator, 385, 0, 300);
 });
 Instance.OnScriptInput("SetVelocity(-5000,null,500)", (data) => {
-    SetVelocity(data.activator, -5e3, undefined, 500);
+    SetVelocity(data.activator, -5000, undefined, 500);
 });
 Instance.OnScriptInput("SetVelocity(550,0,600)", (data) => {
     SetVelocity(data.activator, 550, 0, 600);
@@ -2697,6 +4694,18 @@ function wrapDeg(a, y) {
 function distanceXY(v1, v2) {
     return Math.sqrt(Math.pow((v1.x - v2.x), 2) + Math.pow(v1.y - v2.y, 2));
 }
+function findByNameWithin(name, origin, radius) {
+    const ents = Instance.FindEntitiesByName(name);
+    const ents_filtered = [];
+    for (const ent of ents) {
+        if (!ent.IsValid())
+            continue;
+        if (Vector3Utils.distance(ent.GetAbsOrigin(), origin) <= radius) {
+            ents_filtered.push(ent);
+        }
+    }
+    return ents_filtered;
+}
 function findByClassWithin(classname, origin, radius) {
     const ents = Instance.FindEntitiesByClass(classname);
     const ents_filtered = [];
@@ -2724,12 +4733,12 @@ function findByNameNearest(name, origin, radius) {
     }
     return nearest_ent;
 }
-Instance.SetNextThink(Instance.GetGameTime());
+Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL);
 Instance.SetThink(() => {
-    Instance.SetNextThink(Instance.GetGameTime());
+    Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL);
     runSchedulerTick();
 });
 // If shit hits the fan...
 Instance.OnScriptInput("SetNextThink", () => {
-    Instance.SetNextThink(Instance.GetGameTime());
+    Instance.SetNextThink(Instance.GetGameTime() + MIN_SCHEDULER_INTERVAL);
 });
