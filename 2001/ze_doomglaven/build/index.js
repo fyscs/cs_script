@@ -477,7 +477,7 @@ const chestSettings = {
     street: {
         possibleSpawns: 24,
         heal: 1,
-        thunder: 0,
+        thunder: 1,
         quake: 0,
         key: 0,
         empty: 0,
