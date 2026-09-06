@@ -1115,7 +1115,7 @@ function findAfter(entities, previous) {
     return entities[index + 1] ?? null;
 }
 
-let HP_ADD = 75;
+let HP_ADD = 37;
 let TARGET_RANGE = 4000;
 let SPEED = 5;
 let self = null;
@@ -1158,7 +1158,7 @@ function Init() {
     scheduleScript('ze_diddle/diddlebaby', () => PrepareLaser(), 2.0);
     RunAnimation();
     TickMovement();
-    let hp = 100;
+    let hp = 150;
     let player = null;
     while (null != (player = Entities.FindByClassname(player, 'player'))) {
         if (getTeam(player) == 3)
@@ -1173,7 +1173,7 @@ function IsZombieBaby() {
         EntFireByHandle(model, 'SetScale', '1.2', 0.0, null, null);
         EntFireByHandle(model, 'Color', '255 0 0', 0.0, null, null);
         zombie = true;
-        HP_ADD = 50;
+        HP_ADD = 75;
         TARGET_RANGE = 10000;
         SPEED = 8;
     }
@@ -1218,6 +1218,21 @@ function StartLaser() {
     const baby = requireSelf(self, 'diddlebaby');
     const laserEntity = requireEntity(laser, 'StartLaser laser');
     const candidates = [];
+    // ----- 获取所有盾牌实体（墙神器） -----
+    const shieldNames = [
+        'ITEMX_qaz_item_shields1*',
+        'ITEMX_qaz_item_shields2*',
+        'ITEMX_qaz_item_shields3*',
+    ];
+    const shields = [];
+    for (const name of shieldNames) {
+        let sh = null;
+        while (null != (sh = Entities.FindByName(sh, name))) {
+            if (isValidEntity(sh))
+                shields.push(sh);
+        }
+    }
+    // ------------------------------------
     let player = null;
     while (null != (player = Entities.FindByClassname(player, 'player'))) {
         if (isValidEntity(player) &&
@@ -1226,7 +1241,9 @@ function StartLaser() {
             player.GetHealth() > 0 &&
             distance(getOrigin(player), getOrigin(baby)) <= TARGET_RANGE) {
             const playerOrigin = player.GetEyePosition();
-            if (TraceLine(playerOrigin, getOrigin(laserEntity), [baby, player]) >= 1.0) {
+            // 忽略列表：baby、玩家自己、所有盾牌墙
+            const ignoreList = [baby, player, ...shields];
+            if (TraceLine(playerOrigin, getOrigin(laserEntity), ignoreList) >= 1.0) {
                 candidates.push(player);
             }
         }
@@ -1290,7 +1307,7 @@ const EXTERNAL_INPUT_ALIASES = [
     }),
     input('Init', 'Init()', () => Init(), 'vmf'),
     input('HitBaby', 'HitBaby()', () => HitBaby(), 'vmf'),
-    input('HpAddSet_15', 'HP_ADD = 15', () => HpAddSet(15), 'stripper'),
+    input('HpAddSet_7', 'HP_ADD = 7', () => HpAddSet(7), 'stripper'),
 ];
 registerInputAliases('ze_diddle/diddlebaby', EXTERNAL_INPUT_ALIASES);
 installScheduler();

@@ -1162,10 +1162,6 @@ function findAfter(entities, previous) {
 function isNotNull(value) {
     return value != null;
 }
-// TODO: 以后可能通过ModSharp实现
-function FrameTime() {
-    return 0.015625;
-}
 
 const SCRIPT_PREFIX = 'ze_diddle/manager';
 const self = Instance.FindEntityByName('Map_Manager');
@@ -1957,9 +1953,16 @@ function PickStage() {
         let r = RandomInt(0, stagepool.length - 1);
         CheckAutoSlay(r);
         stage = stagepool[r];
+        stagepool.splice(r, 1);
     }
     else {
         stage = stageChosen;
+        for (let i = 0; i < stagepool.length; i++) {
+            if (stagepool[i] == stage) {
+                stagepool.splice(i, 1);
+                break;
+            }
+        }
     }
     if (extreme) {
         KillZombieItems();
@@ -2521,12 +2524,12 @@ function TurtleFallDownBoss(inputData) {
     if (getTeam(activator) != 3)
         return;
     if (!extreme) {
-        EntFire('X69XTurtleBossHP1', 'RemoveHealth', '9000', 0.0, activator);
-        EntFire('X69XTurtleBossHP2', 'RemoveHealth', '9000', 0.0, activator);
+        EntFire('X69XTurtleBossHP1', 'RemoveHealth', '4500', 0.0, activator);
+        EntFire('X69XTurtleBossHP2', 'RemoveHealth', '4500', 0.0, activator);
     }
     else {
-        EntFire('X69XTurtleBossHP1', 'RemoveHealth', '1500', 0.0, activator);
-        EntFire('X69XTurtleBossHP2', 'RemoveHealth', '1500', 0.0, activator);
+        EntFire('X69XTurtleBossHP1', 'RemoveHealth', '750', 0.0, activator);
+        EntFire('X69XTurtleBossHP2', 'RemoveHealth', '750', 0.0, activator);
         let pnewhealth = activator.GetHealth() - turtlefalldown_damage;
         if (pnewhealth > 0) {
             setVelocity(activator, Vector(0, 0, 0));
@@ -2731,7 +2734,7 @@ function OverrideBabyFaceHP() {
     //each: 25		(Z:50, will always be this)
     //let hp = caller
     //if (hp != null && hp.IsValid())
-    EntFire('i_diddlebaby_script*', 'RunScriptInput', 'HpAddSet_15', 0.0, null, null);
+    EntFire('i_diddlebaby_script*', 'RunScriptInput', 'HpAddSet_7', 0.0, null, null);
 }
 const cakeheal_extreme = 200;
 const cakeheal_normal = 150;
@@ -3225,6 +3228,7 @@ modify:
 const extreme_extracakes_in_weeb = 2; //3 in #3
 const extreme_shreks_in_weeb = 5;
 function ExtremeEvent(inputData, index) {
+    Instance.Msg(`[ExtremeEvent] case ${index} triggered at ${Instance.GetGameTime()}\n`);
     const { activator, caller } = inputData;
     if (!extreme && index != 71)
         //case 71 fixes a thing needed for normal as well
@@ -3728,7 +3732,7 @@ function ExtremeEvent(inputData, index) {
                 stoptick_KillDiddleDicklettEx = true;
             }, 10.0, null, null);
             //set HP on 'Ord_lvl_02_boss_break' a bit higher, RunScriptInput > AddHP(3000,1500) > at 0.10s
-            EntFire('Ord_lvl_02_boss_break', 'FireUser4', '', 0.1, null);
+            EntFire('Ord_lvl_02_boss_relay', 'FireUser4', '', 0.1, null);
             //start spawning lasers randomly, X:-14848, Y:(14976/16256), Z:13600, yaw:270, crouchheight:13544, jumpheight:13488
             exev_spawns.splice(0);
             exev_spawns.push(ExSpawn('slash_spawner', Vector(-14848, 14976, 13544), Vector(0, 270, 0)));
@@ -4742,8 +4746,7 @@ function ExevSpawnQueueTick() {
     }, 0.01, null, null);
     let cleaned = true;
     for (const q of exev_spawnqueue) {
-        q.time -= FrameTime();
-        if (q.time <= 0.0) {
+        if (Instance.GetGameTime() >= q.time) {
             cleaned = false;
             ExevSpawn(q.spawn.template, q.spawn.pos, q.spawn.rot);
         }
@@ -4751,7 +4754,7 @@ function ExevSpawnQueueTick() {
     while (!cleaned) {
         cleaned = true;
         for (let i = 0; i < exev_spawnqueue.length; i++) {
-            if (exev_spawnqueue[i].time <= 0.0) {
+            if (Instance.GetGameTime() >= exev_spawnqueue[i].time) {
                 cleaned = false;
                 exev_spawnqueue.splice(i, 1)[0];
                 break;
@@ -4763,7 +4766,8 @@ function ExevSpawn(template, pos, rot = Vector(0, 0, 0), time = 0.0) {
     if (rot == null)
         rot = Vector(0, 0, 0);
     if (time > 0.0) {
-        exev_spawnqueue.push(ExSpawnQueue(ExSpawn(template, pos, rot), time));
+        const targetTime = Instance.GetGameTime() + time; // change to abs time
+        exev_spawnqueue.push(ExSpawnQueue(ExSpawn(template, pos, rot), targetTime));
         return;
     }
     forceSpawnTemplate(template, pos, rot);

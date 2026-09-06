@@ -1389,7 +1389,7 @@ function TickHead() {
         EntFire('fb_head', 'SetAnimationNotLooping', 'hurt', 10.0, null);
         EntFire('fb_head', 'SetIdleAnimationLooping', 'freak', 4.02, null);
         EntFire('fb_body', 'SetIdleAnimationLooping', 'rage_crawl', 0.02, null);
-        EntFire('i_npc_tf_1', 'KeyValues', 'force 1000', 0.0, null);
+        EntFire('i_npc_tf_1', 'KeyValues', 'force 1200', 0.0, null);
         EntFire('i_npc_tf_1', 'Deactivate', '', 0.05, null);
         EntFire('i_npc_ts_1', 'Deactivate', '', 0.05, null);
         EntFire('npc_base_1', 'Enablemotion', '', 4.0, null);
@@ -1669,7 +1669,7 @@ const EXTERNAL_INPUT_ALIASES = [
     input('SetTargetMethod_10000_False_2_1', 'SetTargetMethod(10000,false,2,1)', () => SetTargetMethod(10000), 'vmf'),
     input('SetTargetTime_10', 'SetTargetTime(10.00)', () => SetTargetTime(10.0), 'vmf'),
     input('SetSpeed_800_80', 'SetSpeed(800,80)', () => SetSpeed(800, 80), 'vmf'),
-    input('SetHealth_3000_12000', 'SetHealth(3000,12000)', () => SetHealth(3000, 12000), 'vmf'),
+    input('SetHealth_1500_6000', 'SetHealth(1500,6000)', () => SetHealth(1500, 6000), 'vmf'),
     input('SetDrawDamageFalse', 'SetDrawDamage(false)', () => SetDrawDamage(false), 'vmf'),
 ];
 installScheduler();

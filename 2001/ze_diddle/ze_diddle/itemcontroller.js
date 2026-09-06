@@ -923,9 +923,6 @@ function requireEntity(entity, context) {
     }
     return entity;
 }
-function requireSelf(entity, scriptName) {
-    return requireEntity(entity, `${scriptName} SetSelf`);
-}
 function normalizeInputData(inputDataOrActivator = {}, nextCaller = null) {
     if (inputDataOrActivator == null ||
         (typeof inputDataOrActivator === 'object' &&
@@ -960,8 +957,11 @@ function angles(pitch = 0, yaw = 0, roll = 0) {
     }
     return new Euler(Number(pitch), yaw, roll);
 }
-function distance(a, b) {
-    return Vector3Utils.distance(a, b);
+function VectorAdd(a, b) {
+    return Vector3Utils.add(a, b);
+}
+function VectorScale(vector, scale) {
+    return Vector3Utils.scale(vector, scale);
 }
 function isValidEntity(entity) {
     if (entity == null)
@@ -978,31 +978,17 @@ function getAngles(entity) {
         return angles();
     return angles(entity.GetAbsAngles());
 }
-function setOrigin(entity, position) {
-    if (!isValidEntity(entity) || position == null)
-        return;
-    teleportEntity(entity, position, null, null);
-}
-function setAngles(entity, pitch, yaw, roll) {
-    if (!isValidEntity(entity) || pitch == null)
-        return;
-    const nextAngles = typeof pitch === 'object'
-        ? angles(pitch)
-        : angles(pitch, 0, 0);
-    teleportEntity(entity, null, nextAngles, null);
-}
 function teleportEntity(entity, position = null, nextAngles = null, velocity = null) {
     if (entity == null || !entity.IsValid())
         return;
     entity.Teleport(position == null ? null : vec(position), nextAngles == null ? null : angles(nextAngles), velocity == null ? null : vec(velocity));
 }
-function getClassname(entity) {
-    if (entity == null || !entity.IsValid())
-        return '';
-    return entity.GetClassName();
-}
-function forceSpawnTemplateEntity(templateEntity, context, position = null, rotation = null) {
-    return forceSpawnResolvedTemplate(requireEntity(templateEntity, `${context} point_template`), context, position, rotation);
+function forceSpawnTemplate(templateName, position = null, rotation = null) {
+    const template = Instance.FindEntityByName(templateName);
+    if (template == null || !template.IsValid()) {
+        throw new Error(`[ze_diddle] missing point_template '${templateName}'`);
+    }
+    return forceSpawnResolvedTemplate(template, templateName, position, rotation);
 }
 function forceSpawnResolvedTemplate(template, label, position, rotation) {
     const classname = template.GetClassName();
@@ -1031,13 +1017,8 @@ let base = null;
 let pistol = null;
 let killed = false;
 let cooldown = 0.0;
-let initwindow = true;
-let ticking = false;
-let tickingbackup = false;
-let tickingdropped = false;
 let tickingcooldown = false;
-const BACKUP_COOLDOWN_MAX = 0.5;
-const BACKUP_COOLDOWN_STEP = 0.02;
+let modelTickRunning = false;
 function SetSelf(inputData) {
     const caller = inputData.caller;
     if (caller && caller.IsValid()) {
@@ -1058,100 +1039,23 @@ function SetPistol(inputData) {
 }
 function KillItem() {
     if (!killed) {
+        StopModelTick();
         EntFireByHandle(pistol, 'Kill', '', 0.0, null, null);
         EntFireByHandle(base, 'Kill', '', 0.0, null, null);
         EntFireByHandle(distcheck, 'Kill', '', 0.0, null, null);
-        killBackupBinding(0.0);
+        EntFireByHandle(backup, 'Kill', '', 0.0, null, null);
         EntFireByHandle(self, 'Kill', '', 0.0, null, null);
     }
     killed = true;
 }
 function DoNotRespawn() {
+    StopModelTick();
     killed = true;
 }
 function UseItem(cd) {
     cooldown = cd;
     if (!tickingcooldown)
         TickCooldown();
-}
-function PickUp(inputData) {
-    player = requireEntity(inputData.activator, 'PickUp activator');
-    initwindow = false;
-    tickingdropped = false;
-    if (!ticking) {
-        ticking = true;
-        Tick();
-    }
-    if (!tickingbackup) {
-        tickingbackup = true;
-        TickBackup();
-    }
-}
-function Drop() {
-    ticking = false;
-    if (CheckNullValidity()) {
-        EntFireByHandle(base, 'ClearParent', '', 0.0, null, null);
-        tickingdropped = true;
-        TickDropped();
-    }
-    else {
-        RunBackup();
-    }
-}
-function CloseInitWindow() {
-    EntFireByHandle(pistol, 'KeyValues', 'CanBePickedUp 1', 0.0, null, null);
-    initwindow = false;
-}
-function InitBackUp(cd) {
-    if (initwindow) {
-        initwindow = false;
-        cooldown = cd;
-        if (!tickingcooldown)
-            TickCooldown();
-        EntFireByHandle(self, 'Disable', '', 0.0, null, null);
-    }
-}
-function RunBackup() {
-    if (!killed) {
-        const currentSelf = requireSelf(self, 'itemcontroller');
-        const backupTemplate = requireEntity(backup, 'RunBackup backup');
-        const controllerClass = getClassname(currentSelf);
-        const initInput = getInitBackupInputName(cooldown);
-        killed = true;
-        EntFireByHandle(base, 'Kill', '', 0.0, null, null);
-        EntFireByHandle(distcheck, 'Kill', '', 0.0, null, null);
-        scheduleScript('ze_diddle/itemcontroller', () => {
-            const spawned = forceSpawnTemplateEntity(backupTemplate, 'itemcontroller SetBackup caller', getOrigin(backupTemplate));
-            const spawnedController = requireEntity(spawned.find((entity) => isValidEntity(entity) && getClassname(entity) == controllerClass) ?? null, 'RunBackup spawned controller');
-            EntFireByHandle(spawnedController, 'RunScriptInput', initInput, 0.18);
-        }, 0.02);
-        killBackupBinding(0.1);
-        EntFireByHandle(self, 'Kill', '', 0.1, null, null);
-    }
-    else {
-        EntFireByHandle(base, 'Kill', '', 0.0, null, null);
-        EntFireByHandle(distcheck, 'Kill', '', 0.0, null, null);
-    }
-}
-function TickDropped() {
-    if (CheckNullValidity()) {
-        if (tickingdropped) {
-            setOrigin(base, getOrigin(distcheck));
-            setAngles(base, getAngles(distcheck));
-            scheduleScript('ze_diddle/itemcontroller', () => TickDropped(), 0.01);
-        }
-    }
-    else {
-        RunBackup();
-    }
-}
-function TickBackup() {
-    if (CheckNullValidity()) {
-        if (base != null && base.IsValid()) {
-            setOrigin(backup, getOrigin(base));
-            scheduleScript('ze_diddle/itemcontroller', () => TickBackup(), 0.01);
-        }
-    }
 }
 function TickCooldown() {
     if (cooldown <= 0) {
@@ -1164,52 +1068,86 @@ function TickCooldown() {
         scheduleScript('ze_diddle/itemcontroller', () => TickCooldown(), 0.01);
     }
 }
-function Tick() {
-    if (CheckNullValidity()) {
-        const dist = distance(getOrigin(player), getOrigin(distcheck));
-        if (player == null || player.GetHealth() <= 0 || dist > 100) {
-            Drop();
-        }
-        else {
-            scheduleScript('ze_diddle/itemcontroller', () => Tick(), 0.05);
-        }
+function PickUp(inputData) {
+    player = requireEntity(inputData.activator, 'PickUp activator');
+    const viewAngles = getPlayerViewAngles(player);
+    if (viewAngles && isValidEntity(base)) {
+        const parent = base.GetParent();
+        const parentAngles = parent && parent.IsValid() ? getAngles(parent) : angles(0, 0, 0);
+        // 设置世界角度：俯仰=玩家视角，偏航=父级偏航，翻滚=0
+        teleportEntity(base, null, angles(viewAngles.pitch, parentAngles.yaw, 0), null);
+    }
+    StartModelTick();
+}
+function TickModel() {
+    if (!modelTickRunning)
+        return;
+    if (!isValidEntity(base) || !isValidEntity(player) || player.GetHealth() <= 0) {
+        modelTickRunning = false;
+        return;
+    }
+    const viewAngles = getPlayerViewAngles(player);
+    if (!viewAngles)
+        return;
+    const parent = base.GetParent();
+    const parentAngles = parent && parent.IsValid() ? getAngles(parent) : angles(0, 0, 0);
+    // 每帧更新世界角度
+    teleportEntity(base, null, angles(viewAngles.pitch, parentAngles.yaw, 0), null);
+    scheduleScript('ze_diddle/itemcontroller', () => TickModel(), 0.02);
+}
+function StartModelTick() {
+    if (modelTickRunning)
+        return;
+    if (!isValidEntity(base) || !isValidEntity(player))
+        return;
+    modelTickRunning = true;
+    TickModel();
+}
+function StopModelTick() {
+    modelTickRunning = false;
+}
+function getPlayerViewAngles(playerEnt) {
+    let pawn = null;
+    if (typeof playerEnt.GetPlayerPawn === 'function') {
+        pawn = playerEnt.GetPlayerPawn();
     }
     else {
-        RunBackup();
+        pawn = playerEnt;
     }
+    if (pawn && pawn.IsValid && pawn.IsValid()) {
+        if (typeof pawn.GetEyeAngles === 'function') {
+            const ea = pawn.GetEyeAngles();
+            if (ea && ea.pitch !== undefined) {
+                return { pitch: ea.pitch, yaw: ea.yaw, roll: ea.roll || 0 };
+            }
+        }
+    }
+    if (typeof playerEnt.GetEyeAngles === 'function') {
+        const ea = playerEnt.GetEyeAngles();
+        if (ea && ea.pitch !== undefined) {
+            return { pitch: ea.pitch, yaw: ea.yaw, roll: ea.roll || 0 };
+        }
+    }
+    const ang = getAngles(playerEnt);
+    if (ang && ang.pitch !== undefined) {
+        return ang;
+    }
+    return null;
 }
-function CheckNullValidity() {
-    return (player != null &&
-        player.IsValid() &&
-        distcheck != null &&
-        distcheck.IsValid() &&
-        base != null &&
-        base.IsValid());
-}
-function killBackupBinding(delay) {
-    if (getClassname(backup) == 'point_template')
+function Launch() {
+    if (!isValidEntity(player) || player.GetHealth() <= 0) {
         return;
-    EntFireByHandle(backup, 'Kill', '', delay, null, null);
-}
-function getInitBackupInputName(value) {
-    const normalized = normalizeBackupCooldown(value);
-    const hundredths = Math.round(normalized * 100);
-    const whole = Math.floor(hundredths / 100);
-    const fraction = String(hundredths % 100).padStart(2, '0');
-    return `InitBackUp_${whole}_${fraction}`;
-}
-function normalizeBackupCooldown(value) {
-    if (value <= 0)
-        return 0;
-    const rounded = Math.round(value / BACKUP_COOLDOWN_STEP) * BACKUP_COOLDOWN_STEP;
-    return Math.min(BACKUP_COOLDOWN_MAX, Math.max(0, rounded));
-}
-function createInitBackUpInputs() {
-    const count = Math.round(BACKUP_COOLDOWN_MAX / BACKUP_COOLDOWN_STEP);
-    return Array.from({ length: count + 1 }, (_, index) => {
-        const value = Number((index * BACKUP_COOLDOWN_STEP).toFixed(2));
-        return input(getInitBackupInputName(value), `InitBackUp(${value.toFixed(2)})`, () => InitBackUp(value), 'runtime');
-    });
+    }
+    const viewAngles = getPlayerViewAngles(player);
+    if (!viewAngles) {
+        Instance.Msg('[itemcontroller] Cannot get player view angles\n');
+        return;
+    }
+    const ang = angles(viewAngles.pitch, viewAngles.yaw, viewAngles.roll);
+    const eyePos = player.GetEyePosition ? player.GetEyePosition() : getOrigin(player);
+    const forward = ang.forward;
+    const spawnPos = VectorAdd(eyePos, VectorScale(forward, 72));
+    forceSpawnTemplate('s_projectile_1', spawnPos, ang);
 }
 const EXTERNAL_INPUT_ALIASES = [
     input('SetSelf', 'SetSelf()', (inputData) => SetSelf(inputData), 'new'),
@@ -1221,9 +1159,7 @@ const EXTERNAL_INPUT_ALIASES = [
     input('DoNotRespawn', 'DoNotRespawn()', () => DoNotRespawn(), 'vmf'),
     input('UseItem_0_5', 'UseItem(0.5)', () => UseItem(0.5), 'vmf'),
     input('PickUp', 'PickUp()', (inputData) => PickUp(inputData), 'vmf'),
-    input('Drop', 'Drop()', () => Drop(), 'vmf+stripper'),
-    input('CloseInitWindow', 'CloseInitWindow()', () => CloseInitWindow(), 'vmf'),
-    ...createInitBackUpInputs(),
+    input('Launch', 'Launch()', () => Launch(), 'vmf'),
 ];
 registerInputAliases('ze_diddle/itemcontroller', EXTERNAL_INPUT_ALIASES);
 installScheduler();

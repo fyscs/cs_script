@@ -955,69 +955,64 @@ function getClassname(entity) {
     return entity.GetClassName();
 }
 
-let fade = false;
-let fadevalue = 255;
-let ticking = false;
-let FADE_TIME = 1.0;
 let visual = null;
+let ticking = false;
+let startTime = 0.0;
+const TOTAL_DURATION = 2.5; // 总时长（秒）
+const HOLD_DURATION = 1.0; // 保持全亮的时间（秒）
+const DECAY_DURATION = TOTAL_DURATION - HOLD_DURATION; // 0.5 秒
 function Initialize(inputData) {
     visual = requireEntity(inputData.caller, 'Initialize caller');
+    // 初始设为全亮
+    EntFireByHandle(visual, 'Alpha', '255', 0.0, null, null);
+    // 记录开始时间
+    startTime = Instance.GetGameTime();
+    if (!ticking) {
+        ticking = true;
+        Tick();
+    }
 }
 function Hurt(inputData) {
     const activator = inputData.activator;
     if (activator != null &&
         activator.IsValid() &&
         getClassname(activator) == 'player') {
-        EntFireByHandle(activator, 'SetHealth', String(Math.trunc(activator.GetHealth() - fadevalue / 25)), 0.0, null, null);
+        // 假设 fadevalue 当前为 0~255，伤害 = fadevalue / 25
+        const damage = Math.trunc(fadevalue / 25); // 需要获取当前 fadevalue
+        if (damage > 0) {
+            EntFireByHandle(activator, 'SetHealth', String(Math.trunc(activator.GetHealth() - damage)), 0.0, null, null);
+        }
     }
 }
-function FadeIn(time) {
-    FADE_TIME = Math.max(time, 0.0);
-    fade = false;
-    if (!ticking) {
-        //EntFireByHandle(visual, 'KeyValues', 'rendermode 1', 0.0, null, null)
-        ticking = true;
-        Tick();
-    }
-}
-function FadeOut(time) {
-    FADE_TIME = Math.max(time, 0.0);
-    fade = true;
-    if (!ticking) {
-        //EntFireByHandle(visual, 'KeyValues', 'rendermode 1', 0.0, null, null)
-        ticking = true;
-        Tick();
-    }
-}
+// 注意：由于 Tick 中会修改 fadevalue，但 Hurt 需要读取它，所以将 fadevalue 设为全局变量
+let fadevalue = 255;
 function Tick() {
-    const step = FADE_TIME <= 0 ? 255 : 255 / (50.0 * FADE_TIME);
-    if (fade) {
-        if (fadevalue > 0) {
-            fadevalue -= step;
-            scheduleScript('my-lib/build/laser', () => Tick(), 0.01);
-        }
-        else {
-            fadevalue = 0;
-            ticking = false;
-        }
+    if (!ticking)
+        return;
+    const now = Instance.GetGameTime();
+    const elapsed = now - startTime;
+    if (elapsed >= TOTAL_DURATION) {
+        // 结束
+        fadevalue = 0;
+        EntFireByHandle(visual, 'Alpha', '0', 0.0, null, null);
+        ticking = false;
+        return;
     }
-    else if (fadevalue < 255) {
-        fadevalue += step;
-        scheduleScript('my-lib/build/laser', () => Tick(), 0.01);
+    if (elapsed < HOLD_DURATION) {
+        fadevalue = 255;
     }
     else {
-        fadevalue = 255;
-        ticking = false;
+        // 衰减阶段：在 DECAY_DURATION 内从 255 线性减少到 0
+        const t = (elapsed - HOLD_DURATION) / DECAY_DURATION; // 0~1
+        fadevalue = Math.trunc(255 * (1 - t));
     }
     EntFireByHandle(visual, 'Alpha', String(fadevalue), 0.0, null, null);
+    scheduleScript('ze_diddle/laser', () => Tick(), 0.01);
 }
 const EXTERNAL_INPUT_ALIASES = [
     input('Initialize', 'Initialize()', (inputData) => Initialize(inputData), 'vmf'),
     input('Hurt', 'Hurt()', (inputData) => Hurt(inputData), 'vmf'),
-    input('FadeIn_3_0', 'FadeIn(3.0)', () => FadeIn(3.0), 'vmf'),
-    input('FadeIn_0_1', 'FadeIn(0.1)', () => FadeIn(0.1), 'vmf'),
-    input('FadeOut_1_0', 'FadeOut(1.0)', () => FadeOut(1.0), 'vmf'),
-    input('FadeOut_1_5', 'FadeOut(1.5)', () => FadeOut(1.5), 'vmf'),
+    // 已移除 FadeIn 和 FadeOut 所有输入
 ];
 registerInputAliases('ze_diddle/laser', EXTERNAL_INPUT_ALIASES);
 installScheduler();

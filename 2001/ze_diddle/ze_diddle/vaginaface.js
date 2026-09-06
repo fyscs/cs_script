@@ -1267,13 +1267,13 @@ function SearchTarget() {
     }
 }
 function SetHealth() {
-    const base_hp = 500;
-    const foreachplayer_hpadd = 300;
+    const base_hp = 750;
+    const foreachplayer_hpadd = 150;
     SetHealthByPlayerCount(base_hp, foreachplayer_hpadd);
 }
 function ExfaceHP() {
-    const base_hp = 100;
-    const foreachplayer_hpadd = 30;
+    const base_hp = 150;
+    const foreachplayer_hpadd = 15;
     SetHealthByPlayerCount(base_hp, foreachplayer_hpadd);
 }
 function SetHealthByPlayerCount(baseHp, foreachPlayerHpAdd) {
