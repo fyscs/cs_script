@@ -1565,7 +1565,7 @@ class HpLimiterSystem extends BaseSystem {
     constructor(controller) {
         super(controller);
         this.active = false;
-        this.limit = 1000;
+        this.limit = 2000;
         this.timer = 0;
         
         Instance.OnScriptInput("startsethp", () => { this.active = true; });
