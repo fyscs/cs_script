@@ -1583,6 +1583,6 @@ function traceLine(start, target) {
 }
 Instance.SetNextThink(Instance.GetGameTime());
 Instance.SetThink(() => {
-    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+    Instance.SetNextThink(Instance.GetGameTime());
     runSchedulerTick();
 });
