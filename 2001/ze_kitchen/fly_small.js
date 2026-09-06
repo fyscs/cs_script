@@ -1,14 +1,10 @@
 import { Instance } from "cs_script/point_script";
 
-const BASE_TICK_INTERVAL = 0.01;
-const THINK_INTERVAL = 0.1;
-const MAX_MOTION_SCALE = 3;
-const MAX_TURN_SCALE = 2;
-const ROTATION_SPEED_MIN = 0.015; 
-const ROTATION_SPEED_MAX = 0.035; 
+const ROTATION_SPEED_MIN = 0.013; 
+const ROTATION_SPEED_MAX = 0.030; 
 const ROTATION_SPEED_ACCELERATION = 0.002; 
 const ROTATION_ERROR = 0.03;
-const SPEED_ACCELERATION = 0.06;
+const SPEED_ACCELERATION = 0.05;
 const MAX_SPEED = 10;
 
 let myFly = null; 
@@ -25,8 +21,6 @@ let rotationSpeed = 0.015;
 let currentHoverOffset = 0; 
 let randomPhase = 0; 
 let deathStyle = "spiral"; 
-let lastThinkTime = 0;
-let tickScale = 1;
 
 const thinkQueue = [];
 
@@ -40,26 +34,6 @@ function RunThinkQueue() {
     while (thinkQueue.length > 0 && thinkQueue[0].time <= now) {
         thinkQueue.shift().callback();
     }
-}
-
-function UpdateTickScale() {
-    const now = Instance.GetGameTime();
-    if (lastThinkTime <= 0) {
-        lastThinkTime = now;
-        tickScale = THINK_INTERVAL / BASE_TICK_INTERVAL;
-        return;
-    }
-
-    tickScale = Math.max(1, Math.min((now - lastThinkTime) / BASE_TICK_INTERVAL, 20));
-    lastThinkTime = now;
-}
-
-function MotionScale() {
-    return Math.min(tickScale, MAX_MOTION_SCALE);
-}
-
-function TurnScale() {
-    return Math.min(tickScale, MAX_TURN_SCALE);
 }
 
 function vectorAdd(vec1, vec2) { return { x: vec1.x + vec2.x, y: vec1.y + vec2.y, z: vec1.z + vec2.z }; }
@@ -142,7 +116,7 @@ function IsTargetInSight(flyPos, targetPos) {
 }
 
 function ChasePlayer(flyPos) {
-    retarget -= BASE_TICK_INTERVAL * tickScale;
+    retarget -= 0.01;
     
     const playerPos = target.GetAbsOrigin();
     const dist2D = Math.sqrt(Math.pow(playerPos.x - flyPos.x, 2) + Math.pow(playerPos.y - flyPos.y, 2));
@@ -264,20 +238,19 @@ function MoveForward(blocker1, blocker2) {
     if (trace.didHit && trace.fraction < 0.99) {
         speed *= 0.5; 
     } else {
-        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * MotionScale()));
+        const newPos = vectorAdd(flyPos, vectorScale(forward, speed));
         myFly.Teleport({ position: newPos });
     }
 }
 
 function MoveDir(dir) {
-    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
-    if (speed > MAX_SPEED) speed = MAX_SPEED;
+    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION;
     if (!myFly) return;
 
     const currentForward = getForward(myFly.GetAbsAngles());
     myFly.Teleport({ angles: vectorToAngles({ x: currentForward.x, y: currentForward.y, z: 0 }) });
     
-    const newPos = vectorAdd(myFly.GetAbsOrigin(), vectorScale(dir, (speed / 4) * MotionScale()));
+    const newPos = vectorAdd(myFly.GetAbsOrigin(), vectorScale(dir, speed / 4));
     myFly.Teleport({ position: newPos });
 }
 
@@ -285,22 +258,19 @@ function GetNewDir(targetDir, currentDir, maxSpeed, maxRot) {
     const rotDir = currentDir.x * targetDir.y - currentDir.y * targetDir.x;
     
     if (Math.abs(rotDir) > 0.7) {
-        if (speed > 0) speed -= 0.1 * SPEED_ACCELERATION * MotionScale(); 
-        if (rotationSpeed < maxRot) rotationSpeed += ROTATION_SPEED_ACCELERATION * TurnScale();
+        if (speed > 0) speed -= 0.1 * SPEED_ACCELERATION; 
+        if (rotationSpeed < maxRot) rotationSpeed += ROTATION_SPEED_ACCELERATION;
     } else {
-        if (speed < maxSpeed) speed += SPEED_ACCELERATION * MotionScale();
-        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TurnScale();
+        if (speed < maxSpeed) speed += SPEED_ACCELERATION;
+        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION;
     }
     
-    if (speed < 0) speed = 0;
-    if (speed > maxSpeed) speed = maxSpeed;
-    if (rotationSpeed < ROTATION_SPEED_MIN) rotationSpeed = ROTATION_SPEED_MIN;
     if (rotationSpeed > maxRot) rotationSpeed = maxRot;
 
     if (rotDir > ROTATION_ERROR || (rotDir >= 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, rotationSpeed * TurnScale());
+        return Rotate2D(currentDir, rotationSpeed);
     } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, -rotationSpeed * TurnScale());
+        return Rotate2D(currentDir, -rotationSpeed);
     } else {
         return currentDir;
     }
@@ -317,8 +287,6 @@ Instance.OnScriptInput("Start", (data) => {
 
     randomPhase = Math.random() * 1000;
     currentHoverOffset = 0; 
-    lastThinkTime = Instance.GetGameTime();
-    tickScale = 1;
 
     const currentForward = getForward(myFly.GetAbsAngles());
     myFly.Teleport({ 
@@ -327,7 +295,7 @@ Instance.OnScriptInput("Start", (data) => {
     });
 
     started = true;
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 });
 
 Instance.OnScriptInput("Die", () => {
@@ -355,15 +323,12 @@ Instance.OnScriptInput("Die", () => {
 });
 
 Instance.SetThink(() => {
-    UpdateTickScale();
     RunThinkQueue();
 
     if (started && myFly && myFly.IsValid()) {
         Tick();
     }
-    if (started || thinkQueue.length > 0) {
-        Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
-    }
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 });
 
 function Tick() {
@@ -399,23 +364,22 @@ function Tick() {
             if (deathStyle === "spiral") {
                 const newAngles = { 
                     pitch: 45, 
-                    yaw: currentAngles.yaw + 5 * TurnScale(),   
-                    roll: currentAngles.roll + 2 * TurnScale()  
+                    yaw: currentAngles.yaw + 5,   
+                    roll: currentAngles.roll + 2  
                 };
                 const forward = getForward(newAngles);
-                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 8 * MotionScale())); 
-                novaPozice.z -= 1.5 * MotionScale(); 
+                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 8)); 
+                novaPozice.z -= 1.5; 
                 myFly.Teleport({ position: novaPozice, angles: newAngles });
             } else {
-                const smoothScale = 1 - Math.pow(0.9, MotionScale());
                 const newAngles = { 
-                    pitch: currentAngles.pitch + (20 - currentAngles.pitch) * smoothScale, 
-                    yaw: currentAngles.yaw + 0.5 * TurnScale(), 
-                    roll: currentAngles.roll * Math.pow(0.8, MotionScale()) 
+                    pitch: currentAngles.pitch + (20 - currentAngles.pitch) * 0.1, 
+                    yaw: currentAngles.yaw + 0.5, 
+                    roll: currentAngles.roll * 0.8 
                 };
                 const forward = getForward(newAngles);
-                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 3 * MotionScale())); 
-                novaPozice.z -= 4 * MotionScale(); 
+                let novaPozice = vectorAdd(flyPos, vectorScale(forward, 3)); 
+                novaPozice.z -= 4; 
                 myFly.Teleport({ position: novaPozice, angles: newAngles });
             }
         }

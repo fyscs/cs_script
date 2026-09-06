@@ -2,10 +2,6 @@ import { Instance, PointTemplate } from "cs_script/point_script";
 
 const BASE_HEALTH = 1000;
 const HP_PER_PLAYER = 415;
-const BASE_TICK_INTERVAL = 0.01;
-const THINK_INTERVAL = 0.1;
-const MAX_MOTION_SCALE = 3;
-const MAX_TURN_SCALE = 2;
 
 let target = null;
 let dead = false;
@@ -28,8 +24,7 @@ let maxSpawnedEggs = 0;
 let speed = 7;
 let rotationSpeed = 0.01;
 let currentTripId = 0;
-let lastThinkTime = 0;
-let tickScale = 1;
+let blockedTicks = 0;
 
 const ROTATION_SPEED_MIN = 0.006; 
 const ROTATION_SPEED_MAX = 0.025;       
@@ -54,26 +49,6 @@ function RunThinkQueue() {
     while (thinkQueue.length > 0 && thinkQueue[0].time <= now) {
         thinkQueue.shift().callback();
     }
-}
-
-function UpdateTickScale() {
-    const now = Instance.GetGameTime();
-    if (lastThinkTime <= 0) {
-        lastThinkTime = now;
-        tickScale = THINK_INTERVAL / BASE_TICK_INTERVAL;
-        return;
-    }
-
-    tickScale = Math.max(1, Math.min((now - lastThinkTime) / BASE_TICK_INTERVAL, 20));
-    lastThinkTime = now;
-}
-
-function MotionScale() {
-    return Math.min(tickScale, MAX_MOTION_SCALE);
-}
-
-function TurnScale() {
-    return Math.min(tickScale, MAX_TURN_SCALE);
 }
 
 function vectorAdd(vec1, vec2) { return { x: vec1.x + vec2.x, y: vec1.y + vec2.y, z: vec1.z + vec2.z }; }
@@ -196,7 +171,7 @@ function TeleportGrabbedPlayers(position) {
 }
 
 function ChasePlayer(flyPos) {
-    retarget -= BASE_TICK_INTERVAL * tickScale;
+    retarget -= 0.01;
     const targetPos = vectorAdd(target.GetAbsOrigin(), { x: 0, y: 0, z: 48 });
     currentDistanceToTarget = Math.abs(targetPos.x - flyPos.x) + Math.abs(targetPos.y - flyPos.y);
 
@@ -233,11 +208,19 @@ function GetNewTarget() {
 }
 
 function MoveTowardsTarget(flyPos, targetPos) {
-    const targetDir = vectorSub(targetPos, flyPos);
     const flyBoss = getFlyBoss();
     if (!flyBoss) return;
 
+    let targetDir = vectorSub(targetPos, flyPos);
     const currentDir = getForward(flyBoss.GetAbsAngles());
+
+    if (blockedTicks > 0) {
+        const rotDir = currentDir.x * targetDir.y - currentDir.y * targetDir.x;
+        const dodgeAngle = (rotDir >= 0) ? 1.5 : -1.5;
+        targetDir = Rotate2D(currentDir, dodgeAngle);
+        blockedTicks--;
+    }
+
     const normTargetDir = vectorNormalize(targetDir); 
     const dir = GetNewDir(normTargetDir, currentDir); 
     
@@ -261,46 +244,55 @@ function MoveForward(blocker1, blocker2) {
         ignorePlayers: true
     });
     
+    let isBlocked = false;
+
     if (trace.didHit && trace.fraction < 0.99) {
-        speed = 0;
+        isBlocked = true;
+        if (trace.hitEntity && trace.hitEntity.IsValid()) {
+            const className = trace.hitEntity.GetClassName();
+            if (className.includes("trigger") || className.includes("worldtext")) {
+                isBlocked = false;
+            }
+        }
+    }
+    
+    if (isBlocked) {
+        speed = 2;
+        blockedTicks = 15;
     } else {
-        const newPos = vectorAdd(flyPos, vectorScale(forward, speed * MotionScale()));
+        const newPos = vectorAdd(flyPos, vectorScale(forward, speed));
         flyBoss.Teleport({ position: newPos });
     }
 }
 
 function MoveDir(dir) {
-    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
-    if (speed > MAX_SPEED) speed = MAX_SPEED;
+    if (speed < MAX_SPEED) speed += SPEED_ACCELERATION;
     const flyBoss = getFlyBoss();
     if (!flyBoss) return;
 
     const currentForward = getForward(flyBoss.GetAbsAngles());
     flyBoss.Teleport({ angles: vectorToAngles({ x: currentForward.x, y: currentForward.y, z: 0 }) });
     
-    const newPos = vectorAdd(flyBoss.GetAbsOrigin(), vectorScale(dir, (speed / 4) * MotionScale()));
+    const newPos = vectorAdd(flyBoss.GetAbsOrigin(), vectorScale(dir, speed / 4));
     flyBoss.Teleport({ position: newPos });
 }
 
 function GetNewDir(targetDir, currentDir) {
+    const dotDir = currentDir.x * targetDir.x + currentDir.y * targetDir.y;
     const rotDir = currentDir.x * targetDir.y - currentDir.y * targetDir.x;
     
-    if (Math.abs(rotDir) > 0.3) {
-        if (speed > 0) speed -= 0.6 * SPEED_ACCELERATION * MotionScale();
-        if (rotationSpeed < ROTATION_SPEED_MAX) rotationSpeed += ROTATION_SPEED_ACCELERATION * TurnScale();
+    if (Math.abs(rotDir) > 0.3 || dotDir < 0) {
+        if (speed > 0) speed -= 0.6 * SPEED_ACCELERATION;
+        if (rotationSpeed < ROTATION_SPEED_MAX) rotationSpeed += ROTATION_SPEED_ACCELERATION;
     } else {
-        if (speed < MAX_SPEED) speed += SPEED_ACCELERATION * MotionScale();
-        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION * TurnScale();
+        if (speed < MAX_SPEED) speed += SPEED_ACCELERATION;
+        if (rotationSpeed > ROTATION_SPEED_MIN) rotationSpeed -= ROTATION_SPEED_ACCELERATION;
     }
-    if (speed < 0) speed = 0;
-    if (speed > MAX_SPEED) speed = MAX_SPEED;
-    if (rotationSpeed < ROTATION_SPEED_MIN) rotationSpeed = ROTATION_SPEED_MIN;
-    if (rotationSpeed > ROTATION_SPEED_MAX) rotationSpeed = ROTATION_SPEED_MAX;
     
-    if (rotDir > ROTATION_ERROR || (rotDir >= 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, rotationSpeed * TurnScale());
-    } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && previousDistanceToTarget < currentDistanceToTarget)) {
-        return Rotate2D(currentDir, -rotationSpeed * TurnScale());
+    if (rotDir > ROTATION_ERROR || (rotDir >= 0 && (previousDistanceToTarget < currentDistanceToTarget || dotDir < 0))) {
+        return Rotate2D(currentDir, rotationSpeed);
+    } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && (previousDistanceToTarget < currentDistanceToTarget || dotDir < 0))) {
+        return Rotate2D(currentDir, -rotationSpeed);
     } else {
         return currentDir;
     }
@@ -328,8 +320,7 @@ function ResetState() {
     speed = 7;
     rotationSpeed = 0.01;
     currentTripId = 0;
-    lastThinkTime = 0;
-    tickScale = 1;
+    blockedTicks = 0;
     thinkQueue.length = 0;
 
     const flyBoss = getFlyBoss();
@@ -367,13 +358,12 @@ Instance.OnScriptInput("Start", () => {
         initialAngles = flyBoss.GetAbsAngles();
     }
 
-    maxSpawnedEggs = Math.max(1, Math.floor(playersInArena / 6));
+    maxSpawnedEggs = Math.floor(playersInArena / 7);
 
     started = true;
-    lastThinkTime = Instance.GetGameTime();
     UpdateTextDisplay();
     Instance.EntFireAtName({ name: "fly_boss", input: "SetAnimationLooping", value: "fly" });
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 });
 
 Instance.OnScriptInput("SetReturn", () => {
@@ -421,7 +411,6 @@ Instance.OnScriptInput("Hit", () => {
 });
 
 Instance.SetThink(() => {
-    UpdateTickScale();
     RunThinkQueue();
 
     if (started) {
@@ -430,9 +419,7 @@ Instance.SetThink(() => {
             Tick(flyBoss);
         }
     }
-    if (started || thinkQueue.length > 0) {
-        Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
-    }
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 });
 
 function Tick(flyBoss) {
@@ -516,7 +503,7 @@ function Tick(flyBoss) {
         TeleportGrabbedPlayers(vectorAdd(flyPos, { x: 0, y: 0, z: -40 }));
     }
 
-    if (!grabbedPlayer && !spawnEggs && eggsCurrentlySpawned < maxSpawnedEggs && Math.random() < (1 - Math.pow(500 / 501, tickScale)) && distToFloor > 0.1 && isAboveValidGround) {
+    if (!grabbedPlayer && !spawnEggs && eggsCurrentlySpawned < maxSpawnedEggs && Math.floor(Math.random() * 501) === 0 && distToFloor > 0.1 && isAboveValidGround) {
         spawnEggs = true;
     }
 

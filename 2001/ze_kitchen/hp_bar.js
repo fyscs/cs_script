@@ -107,7 +107,7 @@ Instance.OnScriptInput("Start", () => {
     started = true; 
     // Reveal correct text with starting HP immediately on start
     UpdateTextDisplay(); 
-    Instance.SetNextThink(Instance.GetGameTime() + 0.5);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 });
 
 Instance.OnScriptInput("AddHealth", () => {

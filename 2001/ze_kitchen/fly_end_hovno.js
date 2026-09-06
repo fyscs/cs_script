@@ -5,12 +5,6 @@ import { Instance } from "cs_script/point_script";
 // ==========================================
 const ACTIVE_FLIES = new Map();
 const INITIAL_TRANSFORMS = new Map();
-const BASE_TICK_INTERVAL = 0.01;
-const THINK_INTERVAL = 0.1;
-const MAX_MOTION_SCALE = 3;
-const MAX_TURN_SCALE = 2;
-let lastThinkTime = 0;
-let tickScale = 1;
 
 // Golden mean for flight physics (neither too lazy nor too frantic)
 const ROTATION_SPEED_MIN = 0.02;
@@ -50,26 +44,6 @@ function Rotate2D(vector, angle) {
     return { x: vector.x * Math.cos(angle) - vector.y * Math.sin(angle), y: vector.x * Math.sin(angle) + vector.y * Math.cos(angle), z: vector.z || 0 };
 }
 
-function UpdateTickScale() {
-    const now = Instance.GetGameTime();
-    if (lastThinkTime <= 0) {
-        lastThinkTime = now;
-        tickScale = THINK_INTERVAL / BASE_TICK_INTERVAL;
-        return;
-    }
-
-    tickScale = Math.max(1, Math.min((now - lastThinkTime) / BASE_TICK_INTERVAL, 20));
-    lastThinkTime = now;
-}
-
-function MotionScale() {
-    return Math.min(tickScale, MAX_MOTION_SCALE);
-}
-
-function TurnScale() {
-    return Math.min(tickScale, MAX_TURN_SCALE);
-}
-
 // ==========================================
 // INDIVIDUAL FLY INITIALIZATION
 // ==========================================
@@ -107,8 +81,7 @@ function InitFly(num) {
     Instance.EntFireAtTarget({ target: myFly, input: "SetAnimationLooping", value: "fly" });
     Instance.EntFireAtName({ name: `fly_hovno_sound${num}`, input: "StartSound" });
     
-    lastThinkTime = Instance.GetGameTime();
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 }
 
 // ==========================================
@@ -128,7 +101,6 @@ Instance.OnScriptInput("Start_All", () => {
 // ==========================================
 Instance.SetThink(() => {
     if (ACTIVE_FLIES.size === 0) return;
-    UpdateTickScale();
 
     ACTIVE_FLIES.forEach((state, key) => {
         if (!state.fly || !state.fly.IsValid()) return;
@@ -167,22 +139,18 @@ Instance.SetThink(() => {
         
         const rotDir = currentDir.x * normTargetDir.y - currentDir.y * normTargetDir.x;
         if (Math.abs(rotDir) > 0.3) {
-            if (state.speed > 0) state.speed -= 0.6 * SPEED_ACCELERATION * MotionScale();
-            if (state.rotationSpeed < ROTATION_SPEED_MAX) state.rotationSpeed += ROTATION_SPEED_ACCELERATION * TurnScale();
+            if (state.speed > 0) state.speed -= 0.6 * SPEED_ACCELERATION;
+            if (state.rotationSpeed < ROTATION_SPEED_MAX) state.rotationSpeed += ROTATION_SPEED_ACCELERATION;
         } else {
-            if (state.speed < MAX_SPEED) state.speed += SPEED_ACCELERATION * MotionScale();
-            if (state.rotationSpeed > ROTATION_SPEED_MIN) state.rotationSpeed -= ROTATION_SPEED_ACCELERATION * TurnScale();
+            if (state.speed < MAX_SPEED) state.speed += SPEED_ACCELERATION;
+            if (state.rotationSpeed > ROTATION_SPEED_MIN) state.rotationSpeed -= ROTATION_SPEED_ACCELERATION;
         }
-        if (state.speed < 0) state.speed = 0;
-        if (state.speed > MAX_SPEED) state.speed = MAX_SPEED;
-        if (state.rotationSpeed < ROTATION_SPEED_MIN) state.rotationSpeed = ROTATION_SPEED_MIN;
-        if (state.rotationSpeed > ROTATION_SPEED_MAX) state.rotationSpeed = ROTATION_SPEED_MAX;
         
         let dir = currentDir;
         if (rotDir > ROTATION_ERROR || (rotDir >= 0 && state.prevDist < state.currDist)) {
-            dir = Rotate2D(currentDir, state.rotationSpeed * TurnScale());
+            dir = Rotate2D(currentDir, state.rotationSpeed);
         } else if (rotDir < -ROTATION_ERROR || (rotDir < 0 && state.prevDist < state.currDist)) {
-            dir = Rotate2D(currentDir, -state.rotationSpeed * TurnScale());
+            dir = Rotate2D(currentDir, -state.rotationSpeed);
         }
 
         state.fly.Teleport({ angles: vectorToAngles({ x: dir.x, y: dir.y, z: normTargetDir.z }) });
@@ -196,13 +164,13 @@ Instance.SetThink(() => {
         if (trace.didHit && trace.fraction < 0.99) {
             state.speed *= 0.5; 
         } else {
-            state.fly.Teleport({ position: vectorAdd(flyPos, vectorScale(dir, state.speed * MotionScale())) });
+            state.fly.Teleport({ position: vectorAdd(flyPos, vectorScale(dir, state.speed)) });
         }
 
         state.prevDist = state.currDist;
     });
 
-    Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 });
 
 // ==========================================
@@ -210,8 +178,6 @@ Instance.SetThink(() => {
 // ==========================================
 function ResetAll() {
     ACTIVE_FLIES.clear(); 
-    lastThinkTime = 0;
-    tickScale = 1;
     
     for (let i = 1; i <= 5; i++) {
         const num = i.toString();
