@@ -6,8 +6,8 @@ let Temp_TimeshiftResidue = undefined;
 let Temp_TimeshiftActivate = undefined;
 
 let stage_cur = 1;
+const MIN_THINK_INTERVAL_SECONDS = 0.1;
 
-const THINK_INTERVAL = 0.1;
 const PlayerInstancesMap = new Map();
 class Player {
     constructor(player, controller, name, slot)
@@ -18,32 +18,49 @@ class Player {
         this.slot = slot;
         this.shift_last = 0;
         this.next_allowed_input = 0;
-        this.input_was_down = false;
+        this.overlay = undefined;
+    }
+    SetOverlay()
+    {
+        Temp_TimeshiftOverlay = Instance.FindEntityByName("Temp_PlayerOverlay");
+        const pos = this.player.GetAbsOrigin();
+        const temp = Temp_TimeshiftOverlay.ForceSpawn({ x: pos.x, y: pos.y, z: pos.z + 40 });
+        const particle = (temp ?? []).filter(ent => ent?.IsValid() && ent.GetClassName() === "prop_dynamic")[0];
+        particle.SetParent(this.player);
+        this.overlay = particle;
+    }
+    RemoveOverlay()
+    {
+        this.overlay.Remove();
     }
     TimeShift()
     {
-        const pos = this.player.GetAbsOrigin();
         Instance.ClientCommand(this.slot, `play sounds/timeshift/items/timeshift_scr_shift_6ch_v1_0${GetRandomNumber(1, 6)}`);
-        Instance.EntFireAtTarget({ target: SCRIPT, input: "RunScriptInput", value: "SpawnOverlayAndParticleActivate", delay: THINK_INTERVAL, caller: this.player });
+        Instance.EntFireAtTarget({ target: SCRIPT, input: "RunScriptInput", value: "SpawnOverlayAndParticleActivate", delay: MIN_THINK_INTERVAL_SECONDS, caller: this.player });
     }
 }
 
 Instance.OnScriptInput("SpawnOverlayAndParticleActivate", ({ caller, activator }) => {
     const pos = caller?.GetAbsOrigin();
-    Temp_TimeshiftOverlay.ForceSpawn({ x: pos.x, y: pos.y, z: pos.z + 40 });
+    const player = caller;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if(inst)
+    {
+        Instance.EntFireAtTarget({ target: inst.overlay, input: "FireUser1" });
+    }
     Temp_TimeshiftActivate.ForceSpawn({ x: pos.x, y: pos.y, z: pos.z + 40 });
 });
 
 Instance.SetThink(function () {
     const now = Instance.GetGameTime();
-    Instance.SetNextThink(now + THINK_INTERVAL);
+    Instance.SetNextThink(now + MIN_THINK_INTERVAL_SECONDS);
 
     PlayerInstancesMap.forEach((player_class, slot) => {
         if(player_class.player?.IsValid() && player_class.player.IsAlive())
         {
-            const input_down = player_class.player.IsInputPressed(128);
-            const pressed = input_down && !player_class.input_was_down;
-            player_class.input_was_down = input_down;
+            const pressed = player_class.player.WasInputJustPressed(128);
 
             if(pressed && now >= player_class.next_allowed_input)
             {
@@ -77,7 +94,7 @@ Instance.SetThink(function () {
     });
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+Instance.SetNextThink(Instance.GetGameTime() + MIN_THINK_INTERVAL_SECONDS);
 
 Instance.OnPlayerDisconnect((event) => {
     let player_slot = event.playerSlot
@@ -102,7 +119,7 @@ Instance.OnPlayerReset((event) => {
         Instance.EntFireAtTarget({ target: player, input: "SetScale", value: "1" });
         Instance.EntFireAtTarget({ target: player, input: "SetDamageFilter" });
         Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "friction 1.0" });
-        //
+
         if(PlayerInstancesMap.has(player_slot))
         {
             const inst = PlayerInstancesMap.get(player_slot);
@@ -111,12 +128,25 @@ Instance.OnPlayerReset((event) => {
             inst.name = player_name;
             inst.shift_last = 0;
             inst.next_allowed_input = 0;
-            inst.input_was_down = false;
+            inst.SetOverlay();
         } 
         else 
         {
             PlayerInstancesMap.set(player_slot, new Player(player, player_controller, player_name, player_slot));
+            const inst = PlayerInstancesMap.get(player_slot);
+            inst.SetOverlay();
         }
+    }
+});
+
+Instance.OnPlayerKill((event) => {
+    const player = event.player;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if(inst)
+    {
+        inst.RemoveOverlay();
     }
 });
 
@@ -145,6 +175,18 @@ Instance.OnScriptInput("SetStage", () => {
     }
 });
 
+Instance.OnScriptInput("PlayersNuke", ({ caller, activator }) => {
+    const players = Instance.FindEntitiesByClass("player");
+    for(const player of players)
+    {
+        const pos = player.GetAbsOrigin();
+        if(pos.x > -3248 || pos.y > -1768)
+        {
+            player.Kill();
+        }
+    }
+});
+
 function GetRandomNumber(min, max ) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+};
