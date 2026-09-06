@@ -2,9 +2,9 @@ import { Instance, CSPlayerPawn, CSGearSlot } from "cs_script/point_script";
 
 const script_ent_name = "ps_script";
 let script_ent = null;
-let hud_ent_name = "hud_hint";
+const hud_ent_name = "hud_hint";
 let hud_ent = null;
-let bound_ent_name = "temp_boing";
+const bound_ent_name = "temp_boing";
 let bound_ent = null;
 
 let cleard = [ false, false, false, false ]; // Tollary, Hexahedron, Magic, Trampolines
@@ -57,7 +57,7 @@ Instance.OnScriptInput("AutismMovement", () => {
 
 	Instance.EntFireAtName({ name: "cyber_autism_movement", input: "PickRandom" });
 	Instance.EntFireAtName({ name: "cyber_autism_movement_sound", input: "PickRandom" });
-	let time = GetRandomFloat(1.0, 5.0);
+	const time = GetRandomFloat(1.0, 5.0);
 	Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "AutismMovement", delay: time });
 });
 
@@ -75,12 +75,12 @@ Instance.OnScriptInput("GiveAmmo", (event) => {
 
 Instance.OnGrenadeThrow((event) => {
 	const grenade = event.projectile;
-	if (event.weapon?.GetData().GetName() == "weapon_hegrenade")
+	if (event.weapon?.GetData().GetName() === "weapon_hegrenade")
 	{
 		grenade.SetModel("models/cyber/granade.vmdl");
 		Instance.EntFireAtTarget({ target: grenade, input: "spawnflags", value: "4" });
 	}
-	else if (event.weapon?.GetData().GetName() == "weapon_smokegrenade")
+	else if (event.weapon?.GetData().GetName() === "weapon_smokegrenade")
 	{
 		grenade.SetModel("models/cyber/smoke.vmdl");
 		Instance.EntFireAtTarget({ target: grenade, input: "spawnflags", value: "4" });
@@ -92,9 +92,8 @@ Instance.OnGrenadeThrow((event) => {
 
 Instance.OnGrenadeBounce((event) => {
 	const grenade = event.projectile;
-	if (grenade?.IsValid()) {
+	if (grenade?.IsValid() && bound_ent?.IsValid())
 		bound_ent.ForceSpawn(grenade.GetAbsOrigin());
-	}
 });
 
 Instance.OnScriptInput("StartIndus", () => {
@@ -103,13 +102,13 @@ Instance.OnScriptInput("StartIndus", () => {
 });
 
 Instance.OnScriptInput("TouchIndus", (event) => {
-	let client = event.activator;
+	const client = event.activator;
 	if (!(client instanceof CSPlayerPawn))
 		return;
 
-	let controller = client.GetPlayerController();
-	let slot = controller.GetPlayerSlot();
-	if (!intrigger.has(slot) || client.GetTeamNumber() == 3)
+	const controller = client.GetPlayerController();
+	const slot = controller.GetPlayerSlot();
+	if (client.GetTeamNumber() === 3 && !intrigger.has(slot))
 		intrigger.add(slot);
 });
 
@@ -149,42 +148,48 @@ Instance.OnScriptInput("BossAttackChosen", () => {
 });
 
 Instance.OnScriptInput("BossAttackExec", () => {
-	if (inboss && boss_attacking)
+	const attackReady =
+		boss_attack === 0 ||
+		(boss_attack === 1 && boss_vortex) ||
+		(boss_attack === 2 && boss_breath) ||
+		(boss_attack === 3 && boss_freezer);
+
+	if (!inboss || !boss_attacking || !attackReady)
+		return;
+
+	boss_attacking = false;
+	if (boss_attack === 0)
 	{
-		boss_attacking = false;
-		if (boss_attack == 0)
-		{
-			Instance.EntFireAtName({ name: "boss_tetris_case", input: "PickRandom" });
-			Instance.EntFireAtName({ name: "boss_exec_maker", input: "ForceSpawn", delay: 0.01 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 0.55 });
-		}
-		else if (boss_attack == 1 && boss_vortex)
-		{
-			boss_vortex = false;
-			Instance.EntFireAtName({ name: "boss_vortex", input: "Enable" });
-			Instance.EntFireAtName({ name: "boss_vortex_particles", input: "Start" });
-			Instance.EntFireAtName({ name: "boss_vortex", input: "Disable", delay: 7.1 });
-			Instance.EntFireAtName({ name: "boss_vortex_particles", input: "Stop", delay: 7.1 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 7.1 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossVortexRecast", delay: 21.0 });
-		}
-		else if (boss_attack == 2 && boss_breath)
-		{
-			boss_breath = false;
-			Instance.EntFireAtName({ name: "boss_breath_igniter", input: "Enable" });
-			Instance.EntFireAtName({ name: "boss_breath", input: "Start" });
-			Instance.EntFireAtName({ name: "boss_breath_igniter", input: "Disable", delay: 3.0 });
-			Instance.EntFireAtName({ name: "boss_breath", input: "Stop", delay: 3.0 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 3.1 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossBreathRecast", delay: 26.0 });
-		}
-		else if (boss_attack == 3 && boss_freezer)
-		{
-			boss_freezer = false;
-			Instance.EntFireAtName({ name: "boss_freezer_maker", input: "ForceSpawn", delay: 0.01 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 0.1 });
-			Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossFreezerRecast", delay: 30.0 });
-		}
+		Instance.EntFireAtName({ name: "boss_tetris_case", input: "PickRandom" });
+		Instance.EntFireAtName({ name: "boss_exec_maker", input: "ForceSpawn", delay: 0.01 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 0.55 });
+	}
+	else if (boss_attack === 1 && boss_vortex)
+	{
+		boss_vortex = false;
+		Instance.EntFireAtName({ name: "boss_vortex", input: "Enable" });
+		Instance.EntFireAtName({ name: "boss_vortex_particles", input: "Start" });
+		Instance.EntFireAtName({ name: "boss_vortex", input: "Disable", delay: 7.1 });
+		Instance.EntFireAtName({ name: "boss_vortex_particles", input: "Stop", delay: 7.1 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 7.1 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossVortexRecast", delay: 21.0 });
+	}
+	else if (boss_attack === 2 && boss_breath)
+	{
+		boss_breath = false;
+		Instance.EntFireAtName({ name: "boss_breath_igniter", input: "Enable" });
+		Instance.EntFireAtName({ name: "boss_breath", input: "Start" });
+		Instance.EntFireAtName({ name: "boss_breath_igniter", input: "Disable", delay: 3.0 });
+		Instance.EntFireAtName({ name: "boss_breath", input: "Stop", delay: 3.0 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 3.1 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossBreathRecast", delay: 26.0 });
+	}
+	else if (boss_attack === 3 && boss_freezer)
+	{
+		boss_freezer = false;
+		Instance.EntFireAtName({ name: "boss_freezer_maker", input: "ForceSpawn", delay: 0.01 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossAttackRecast", delay: 0.1 });
+		Instance.EntFireAtTarget({ target: script_ent, input: "RunScriptInput", value: "BossFreezerRecast", delay: 30.0 });
 	}
 });
 
@@ -205,8 +210,8 @@ Instance.OnScriptInput( "BossFreezerRecast", () => {
 });
 
 Instance.OnScriptInput("SetBoss", (event) => {
-	let client = event.activator;
-	let controller = client.GetPlayerController();
+	const client = event.activator;
+	const controller = client.GetPlayerController();
 
 	bossid = controller.GetPlayerSlot();
 	boss_attack = 0;
@@ -237,52 +242,48 @@ Instance.OnScriptInput( "ShowHudMessage", () => {
 });
 
 function ShowIndusHud() {
-	let players = Instance.FindEntitiesByClass("player");
+	const players = Instance.FindEntitiesByClass("player");
 	for(let i = 0; i < players.length; i++)
 	{
-		let player = players[i];
-		let controller = player.GetPlayerController();
-		let slot = controller.GetPlayerSlot();
-		if(player?.IsValid() && player.GetTeamNumber() == 3)
+		const player = players[i];
+		if (!player?.IsValid() || player.GetTeamNumber() !== 3)
+			continue;
+
+		const controller = player.GetPlayerController();
+		if (!controller)
+			continue;
+
+		const slot = controller.GetPlayerSlot();
+
+		if(player?.IsValid() && player.GetTeamNumber() === 3)
 		{
 			if (intrigger.has(slot))
 				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "You are allowed to pass now", delay: 0.00 });
 			else
 				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "You wont be able to go to the left unless you touch the source on the right", delay: 0.00 });
-			
+
 			Instance.EntFireAtTarget({ target: hud_ent, input: "ShowHudHint", activator: player, delay: 0.00 });
 		}
 	}
 }
 
 function ShowInbossHud() {
-	let players = Instance.FindEntitiesByClass("player");
-	for(let i = 0; i < players.length; i++)
-	{
-		let player = players[i];
-		let controller = player.GetPlayerController();
-		let slot = controller.GetPlayerSlot();
-		if(player?.IsValid() && player.GetTeamNumber() == 2 && slot == bossid)
-		{
-			if (boss_attack == 0)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Tetris", delay: 0.00 });
-			else if (boss_attack == 1 && boss_vortex)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Vortex", delay: 0.00 });
-			else if (boss_attack == 1 && !boss_vortex)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Vortex (Cooldown)", delay: 0.00 });
-			else if (boss_attack == 2 && boss_breath)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Fire Breath", delay: 0.00 });
-			else if (boss_attack == 2 && !boss_breath)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Fire Breath (Cooldown)", delay: 0.00 });
-			else if (boss_attack == 3 && boss_freezer)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Freeze Orb", delay: 0.00 });
-			else if (boss_attack == 3 && !boss_freezer)
-				Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Freeze Orb (Cooldown)", delay: 0.00 });
+	if (boss_attack === 0)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Tetris", delay: 0.00 });
+	else if (boss_attack === 1 && boss_vortex)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Vortex", delay: 0.00 });
+	else if (boss_attack === 1 && !boss_vortex)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Vortex (Cooldown)", delay: 0.00 });
+	else if (boss_attack === 2 && boss_breath)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Fire Breath", delay: 0.00 });
+	else if (boss_attack === 2 && !boss_breath)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Fire Breath (Cooldown)", delay: 0.00 });
+	else if (boss_attack === 3 && boss_freezer)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Freeze Orb", delay: 0.00 });
+	else if (boss_attack === 3 && !boss_freezer)
+		Instance.EntFireAtTarget({ target: hud_ent, input: "SetMessage", value: "Attack > Freeze Orb (Cooldown)", delay: 0.00 });
 
-			Instance.EntFireAtTarget({ target: hud_ent, input: "ShowHudHint", activator: player, delay: 0.00 });
-			break;
-		}
-	}
+	Instance.EntFireAtTarget({ target: hud_ent, input: "ShowHudHint", activator: bossid, delay: 0.00 });
 }
 
 // function
@@ -294,7 +295,7 @@ function WayChoice() {
 		}
 	}
 
-	if (candidates.length == 0) {
+	if (candidates.length === 0) {
 		for (let i = 0; i < cleard.length; i++) {
 			cleard[i] = false;
 			candidates.push(i);
@@ -306,12 +307,12 @@ function WayChoice() {
 
 	playing = candidates[GetRandomInt(0, candidates.length - 1)];
 	Instance.Msg(`[CyberScript] Selected Way: ${playing}`);
-	if (playing == null)
+	if (playing === null)
 	{
 		Instance.Msg(`[CyberScript] Error: number is null!`);
 		return;
 	}
-	else if (playing == 0)
+	else if (playing === 0)
 	{
 		Instance.EntFireAtName({ name: "cyber_1stway_brush", input: "Disable" });
 		Instance.EntFireAtName({ name: "cyber_2ndway_brush", input: "Enable" });
@@ -327,7 +328,7 @@ function WayChoice() {
 		KillWay2();
 		KillWay3();
 	}
-	else if(playing == 1)
+	else if(playing === 1)
 	{
 		Instance.EntFireAtName({ name: "cyber_1stway_brush", input: "Enable" });
 		Instance.EntFireAtName({ name: "cyber_2ndway_brush", input: "Disable" });
@@ -344,7 +345,7 @@ function WayChoice() {
 		KillWay2();
 		KillWay3();
 	}
-	else if(playing == 2)
+	else if(playing === 2)
 	{
 		Instance.EntFireAtName({ name: "cyber_3rd_brush", input: "Disable" });
 		Instance.EntFireAtName({ name: "cyber_3rd_stoopid", input: "Enable" });
@@ -361,7 +362,7 @@ function WayChoice() {
 		KillWay1();
 		KillWay3();
 	}
-	else if(playing == 3)
+	else if(playing === 3)
 	{
 		Instance.EntFireAtName({ name: "cyber_4th_block", input: "Enable" });
 		Instance.EntFireAtName({ name: "cyber_4th_breakable", input: "Break", delay: 45.0 });
