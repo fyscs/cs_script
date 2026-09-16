@@ -937,7 +937,8 @@ function scheduleScript(prefix, callback, delay = 0, inputDataOrActivator = {}, 
 function installScheduler() {
     Instance.SetNextThink(Instance.GetGameTime());
     Instance.SetThink(() => {
-        Instance.SetNextThink(Instance.GetGameTime());
+        const now = Instance.GetGameTime();
+        Instance.SetNextThink(now);
         runSchedulerTick();
     });
 }
@@ -1953,16 +1954,9 @@ function PickStage() {
         let r = RandomInt(0, stagepool.length - 1);
         CheckAutoSlay(r);
         stage = stagepool[r];
-        stagepool.splice(r, 1);
     }
     else {
         stage = stageChosen;
-        for (let i = 0; i < stagepool.length; i++) {
-            if (stagepool[i] == stage) {
-                stagepool.splice(i, 1);
-                break;
-            }
-        }
     }
     if (extreme) {
         KillZombieItems();
@@ -3228,7 +3222,6 @@ modify:
 const extreme_extracakes_in_weeb = 2; //3 in #3
 const extreme_shreks_in_weeb = 5;
 function ExtremeEvent(inputData, index) {
-    Instance.Msg(`[ExtremeEvent] case ${index} triggered at ${Instance.GetGameTime()}\n`);
     const { activator, caller } = inputData;
     if (!extreme && index != 71)
         //case 71 fixes a thing needed for normal as well
@@ -4694,6 +4687,8 @@ var exev_spawns = []; //ExSpawn(template,pos,!rot);
 var exev_spawnrate = 0.5; //spawn/tickrate for the spawns/spawnbounds^ (stops ticking when there's no spawns/spawnbounds)
 var exev_spawnticking = false;
 var exev_spawnqueue = []; //spawn-queue for time-based spawns
+let _lastQueueTickTime = 0;
+let _queueTickRunning = false;
 function ExevRoundStart() {
     //reset states (triggered every round start IF 'extreme' is TRUE)
     for (const sm of exev_spawnmakers) {
@@ -4718,8 +4713,9 @@ function ExevRoundStart() {
     exev_spawnqueue = [];
     exev_spawnticking = false;
     exev_spawnrate = 0.1;
+    _lastQueueTickTime = 0;
     ExevSpawnTick();
-    ExevSpawnQueueTick();
+    StartExevSpawnQueueTick();
 }
 function ExevSpawnTick() {
     if (exev_spawns.length <= 0 && exev_spawnbounds.length <= 0) {
@@ -4740,13 +4736,31 @@ function ExevSpawnTick() {
         ExevSpawn(spb.template, sp_pos, spb.rot);
     }
 }
+/**
+ * 只允许存在一个自循环的入口。
+ * 重复调用是安全的：如果已经有循环在跑，直接返回。
+ */
+function StartExevSpawnQueueTick() {
+    if (_queueTickRunning)
+        return;
+    _queueTickRunning = true;
+    ExevSpawnQueueTick();
+}
+/**
+ * 队列 tick 循环体。不要把本函数当作"启动"入口直接调用，
+ * 应当调用 StartExevSpawnQueueTick()。
+ */
 function ExevSpawnQueueTick() {
+    const now = Instance.GetGameTime();
+    const dt = _lastQueueTickTime > 0 ? now - _lastQueueTickTime : 0.0;
+    _lastQueueTickTime = now;
     scheduleInternalScript(() => {
         ExevSpawnQueueTick();
     }, 0.01, null, null);
     let cleaned = true;
     for (const q of exev_spawnqueue) {
-        if (Instance.GetGameTime() >= q.time) {
+        q.time -= dt;
+        if (q.time <= 0.0) {
             cleaned = false;
             ExevSpawn(q.spawn.template, q.spawn.pos, q.spawn.rot);
         }
@@ -4754,7 +4768,7 @@ function ExevSpawnQueueTick() {
     while (!cleaned) {
         cleaned = true;
         for (let i = 0; i < exev_spawnqueue.length; i++) {
-            if (Instance.GetGameTime() >= exev_spawnqueue[i].time) {
+            if (exev_spawnqueue[i].time <= 0.0) {
                 cleaned = false;
                 exev_spawnqueue.splice(i, 1)[0];
                 break;
@@ -4766,8 +4780,7 @@ function ExevSpawn(template, pos, rot = Vector(0, 0, 0), time = 0.0) {
     if (rot == null)
         rot = Vector(0, 0, 0);
     if (time > 0.0) {
-        const targetTime = Instance.GetGameTime() + time; // change to abs time
-        exev_spawnqueue.push(ExSpawnQueue(ExSpawn(template, pos, rot), targetTime));
+        exev_spawnqueue.push(ExSpawnQueue(ExSpawn(template, pos, rot), time));
         return;
     }
     forceSpawnTemplate(template, pos, rot);

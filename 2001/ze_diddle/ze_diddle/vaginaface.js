@@ -1114,6 +1114,7 @@ let deadscale = 1.0;
 let retarget = 14;
 let ticking = false;
 let hurtAnimSoundCooldown = false;
+let lastSearchTime = 0; // 记录上次搜索时间
 function SetSelf(inputData) {
     const caller = inputData.caller;
     if (caller && caller.IsValid()) {
@@ -1160,6 +1161,7 @@ function buildIgnoreList() {
 function Start() {
     if (!ticking) {
         ticking = true;
+        lastSearchTime = 0; // 首次搜索立即执行
         scheduleInternalScript(() => Tick(), 0.0);
     }
     SetHealth();
@@ -1181,7 +1183,7 @@ function Tick() {
         CheckDiddleCannonProjectile();
         const t1 = getOrigin(self);
         const t2 = target.GetEyePosition();
-        const ignoreList = buildIgnoreList(); // ← 动态构建忽略列表
+        const ignoreList = buildIgnoreList();
         if (retarget <= 0.0 || TraceLine(t1, t2, ignoreList, true) < 1.0) {
             SearchTarget();
         }
@@ -1212,7 +1214,12 @@ function Tick() {
         EntFireByHandle(model, 'SetScale', String(deadscale), 0.0, null, null);
     }
     else {
-        SearchTarget();
+        // 没有有效目标：每隔 2 秒搜索一次
+        const currentTime = Instance.GetGameTime();
+        if (currentTime - lastSearchTime >= 2.0) {
+            SearchTarget();
+            lastSearchTime = currentTime;
+        }
     }
     scheduleInternalScript(() => Tick(), 0.01);
 }
@@ -1249,7 +1256,7 @@ function SearchTarget() {
         target = null;
         speed = 0.0;
     }
-    const ignoreList = buildIgnoreList(); // ← 构建忽略列表
+    const ignoreList = buildIgnoreList();
     let p = null;
     const candidates = [];
     while (null != (p = Entities.FindByClassname(p, 'player'))) {
@@ -1264,6 +1271,8 @@ function SearchTarget() {
         retarget = 14;
         EntFireByHandle(s_target, 'StartSound', '', 0.0, null, null);
         target = candidates[GetRandomValue(candidates.length - 1)];
+        // 找到目标后更新时间，避免在 2 秒内重复搜索
+        lastSearchTime = Instance.GetGameTime();
     }
 }
 function SetHealth() {
