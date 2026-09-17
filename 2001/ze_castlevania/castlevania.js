@@ -155,7 +155,7 @@ const ITEM_CASE = {
     ]
 };
 
-const Map_Think_Time = 0.1; 
+const Map_Think_Time = 0.02; 
 
 Instance.SetThink(function () {
     Alucard.AlucardTick();
@@ -172,7 +172,7 @@ Instance.SetThink(function () {
     Instance.SetNextThink(Instance.GetGameTime() + Map_Think_Time);
 });
     
-Instance.SetNextThink(Instance.GetGameTime() + Map_Think_Time);
+Instance.SetNextThink(Instance.GetGameTime());
 
 Instance.OnScriptInput("SpawnItemsStage6_5_RndItems", ({caller, activator}) => {
     const item_pos = [
@@ -2162,7 +2162,7 @@ let TURN_SPEED = 1.00;
 let TARGET_DISTANCE = 3000;
 let TARGET_TIME = 7.00;
 
-const BOSS_TICKRATE = 0.1;
+const BOSS_TICKRATE = 0.05;
 let PAUSED = false;
 
 let ptarget = null;

@@ -31,7 +31,6 @@ let currentCloudColor = { r: 255, g: 255, b: 255 };
 let skyTransitionDuration = 18.0;
 let waterTransitionDuration = 18.0;
 let sunWeight = 1.0;
-const ANIMATION_UPDATE_INTERVAL = 0.1;
 
 let isSkyBusy = false;
 let skyTransitionStartTime = 0;
@@ -257,7 +256,7 @@ function updateAnimations() {
             target: SCRIPT_WEATHER,
             input: "RunScriptInput",
             value: "UpdateAnimations",
-            delay: ANIMATION_UPDATE_INTERVAL
+            delay: 0.015625
         });
     }
 }
