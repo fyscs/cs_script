@@ -6,7 +6,6 @@ let Temp_TimeshiftResidue = undefined;
 let Temp_TimeshiftActivate = undefined;
 
 let stage_cur = 1;
-const MIN_THINK_INTERVAL_SECONDS = 0.1;
 
 const PlayerInstancesMap = new Map();
 class Player {
@@ -36,7 +35,7 @@ class Player {
     TimeShift()
     {
         Instance.ClientCommand(this.slot, `play sounds/timeshift/items/timeshift_scr_shift_6ch_v1_0${GetRandomNumber(1, 6)}`);
-        Instance.EntFireAtTarget({ target: SCRIPT, input: "RunScriptInput", value: "SpawnOverlayAndParticleActivate", delay: MIN_THINK_INTERVAL_SECONDS, caller: this.player });
+        Instance.EntFireAtTarget({ target: SCRIPT, input: "RunScriptInput", value: "SpawnOverlayAndParticleActivate", delay: 0.01, caller: this.player });
     }
 }
 
@@ -55,7 +54,7 @@ Instance.OnScriptInput("SpawnOverlayAndParticleActivate", ({ caller, activator }
 
 Instance.SetThink(function () {
     const now = Instance.GetGameTime();
-    Instance.SetNextThink(now + MIN_THINK_INTERVAL_SECONDS);
+    Instance.SetNextThink(now + 0.01);
 
     PlayerInstancesMap.forEach((player_class, slot) => {
         if(player_class.player?.IsValid() && player_class.player.IsAlive())
@@ -94,7 +93,7 @@ Instance.SetThink(function () {
     });
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + MIN_THINK_INTERVAL_SECONDS);
+Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 
 Instance.OnPlayerDisconnect((event) => {
     let player_slot = event.playerSlot
