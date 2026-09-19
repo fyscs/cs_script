@@ -7,7 +7,7 @@
     - 2 bugs internes corrigés, voir commentaires [FIX].
 */
 
-import { Instance, CSWeaponBase, Entity } from 'cs_script/point_script'
+import { Instance, CSWeaponBase, Entity, CSDamageTypes } from 'cs_script/point_script'
 
 /* ── GLOBALS ─────────────────────────────────────────────── */
 
@@ -17,7 +17,7 @@ let uniqueItemTemplateList = []
 const TEAMS = { CT: 3, T: 2 }
 
 let humanItemFilter = { JAM: null, SLEEPY: null, BAC: null }
-let zombieItemFilter = { SLEEPY: null, HOOP: null, BANANA: null, BAGUETTE: null, SHIELD: null }
+let zombieItemFilter = { SLEEPY: null, HOOP: null, BANANA: null, BAGUETTE: null, SHIELD: null, SIXTYSEVEN: null, ROCKET: null, AMOGUS: null, SANDWICH: null }
 
 // templates d'items (remplis dans Init)
 let templatePizza
@@ -67,7 +67,19 @@ const ITEM_HOOP = { cooldown: 60, radius: 85, damage: 30 }
 let templateBanana
 let templateBananaExplosion
 let boingCounter = 0
-const ITEM_BANANA = { cooldown: 60, radius: 300, radius_droplets: 250, damage: 50, damage_droplets: 10 }
+const ITEM_BANANA = { cooldown: 60, radius: 300, radius_droplets: 250, damage: 70, damage_droplets: 30, throwForward: 700, throwUp: 250, spin: 720 }
+// amogus (zombie) : déguise les zombies proches en CT vivant aléatoire. radius en unités (~40 = 1m).
+const ITEM_AMOGUS = { cooldown: 120, radius: 100, effectDuration: 3, disguiseDuration: 10, disguiseDelay: 1 }
+const ITEM_SANDWICH = {
+    cooldown: 100,      // cooldown du bouton (sec)
+    radius: 216,        // rayon d'attraction
+    touchRadius: 16,    // rayon de "contact" zombie -> kill CT
+    pullForce: 300,     // force d'attraction vers le zombie
+    startDelay: 1,      // délai avant l'attraction
+    effectDuration: 6,  // durée totale de l'effet
+    tickInterval: 0.05, // mise à jour de l'attraction (réseau)
+    killInterval: 0.015,// fréquence du check de contact (chaque tick)
+}
 
 // baguette
 let templateBaguette
@@ -77,6 +89,14 @@ const ITEM_REVERSE = { cooldown: 120 }
 
 // zshield
 const ITEM_ZSHIELD = { cooldown: 35 }   // <-- CD du zshield ici
+
+// item 67 (zombie kamikaze) : rayon repris du sleepy, dégâts one-shot
+const ITEM_67 = { radius: ITEM_SLEEPY.radius * 2, particleDelay: 4.1, deathDelay: 0.1, damage: 999999 }
+
+// missile pilotable (zombie) : rayon repris du sleepy, dégâts one-shot.
+// speed = unités par tick ; tick = intervalle (s) ; maxLifetime = explosion auto (s).
+// pitchGain = sensibilité du pilotage vertical (2 = de la verticale jusqu'au sol).
+const ITEM_ROCKET = { radius: ITEM_SLEEPY.radius, damage: 120, speed: 50, tick: 0.02, maxLifetime: 10, pitchGain: 2, turnRate: 150, fireDuration: 5, bumpXY: 300, bumpZmin: 500, bumpZmax: 650 }
 
 /* ── INIT ────────────────────────────────────────────────── */
 
@@ -163,28 +183,11 @@ function filterHolder(activator, caller) {
 
 /* ── TIMING ASYNC ────────────────────────────────────────── */
 
-const thinkQueue = []
-
-function RunThinkQueue() {
-    const upperThinkTime = Instance.GetGameTime() + 1 / 128
-    while (thinkQueue.length > 0 && thinkQueue[0].time <= upperThinkTime) thinkQueue.shift().callback()
-    if (thinkQueue.length > 0) Instance.SetNextThink(thinkQueue[0].time)
-}
-
-function QueueThink(time, callback) {
-    const indexAfter = thinkQueue.findIndex((t) => t.time > time)
-    if (indexAfter === -1) thinkQueue.push({ time, callback })
-    else thinkQueue.splice(indexAfter, 0, { time, callback })
-    if (indexAfter === 0 || indexAfter === -1) Instance.SetNextThink(time)
-}
-
+// Delay natif -> géré par la VM cs_script, indépendant du think scheduling.
+// Résout les bugs de timing sous charge serveur (drops de frames).
 function Delay(delay) {
-    return new Promise((resolve) => QueueThink(Instance.GetGameTime() + delay, resolve))
+    return Instance.Delay(delay)
 }
-
-Instance.SetThink(() => {
-    RunThinkQueue()
-})
 
 /* ── SCRIPT INPUTS (core) ────────────────────────────────── */
 
@@ -606,7 +609,7 @@ Instance.OnScriptInput("PickupDestroyer", (context) => {
 // Au tir d'un destroyer : 10% de chance de faire exploser le tireur lui-même.
 Instance.OnGunFire((event) => {
     if (event.weapon.GetEntityName().indexOf("destroyer_") !== -1) {
-        if (rand(0, 100) < 10) {
+        if (rand(0, 100) < 5) {
             const tempItems = templateDestroyerExplosion.ForceSpawn(event.weapon.GetOwner().GetAbsOrigin(), QAngle(0, 0, 0))
             Instance.EntFireAtTarget({ target: tempItems[1], input: "SetSoundEventName", value: "tom_scream_1" })
             Instance.EntFireAtTarget({ target: tempItems[1], input: "StartSound", delay: 0.1 })
@@ -708,7 +711,7 @@ Instance.OnScriptInput("UseReverse", async (context) => {
 Instance.OnBeforePlayerDamage((event) => {
     if (event.player.unoReverseActive && event.attacker && event.attacker != event.player) {
         const killfeed = Instance.FindEntityByName("reverse_card_killfeed")
-        event.attacker.TakeDamage({ damage: event.damage / 4, inflictor: killfeed, attacker: event.player })
+        event.attacker.TakeDamage({ damage: event.damage, inflictor: killfeed, attacker: event.player })
         return { damage: 0 }
     }
 })
@@ -809,7 +812,21 @@ Instance.OnScriptInput("UseBananaBomb", async (context) => {
             if (i.GetClassName() == "point_soundevent" && i.GetEntityName() == "banana_boing_sfx") boingBananaSound = i
         })
         Instance.EntFireAtTarget({ target: boingBananaSound, input: "StartSound" })
-        spawnedBanana.Teleport({ velocity: Vector(rand(-5, 5), rand(-5, 5), rand(500, 750)), angles: context.activator.GetEyeAngles() })
+        // réveille le prop physique pour qu'il simule bien la vélocité
+        Instance.EntFireAtTarget({ target: spawnedBanana, input: "Wake" })
+        // lancer dans la direction de visée (avant + boost vertical) + rotation sur elle-même
+        const throwDir = getForward(context.activator.GetEyeAngles())
+        const throwVel = Vector(
+            throwDir.x * ITEM_BANANA.throwForward,
+            throwDir.y * ITEM_BANANA.throwForward,
+            throwDir.z * ITEM_BANANA.throwForward + ITEM_BANANA.throwUp
+        )
+        Instance.Msg(`[banana] dir=(${throwDir.x.toFixed(2)},${throwDir.y.toFixed(2)},${throwDir.z.toFixed(2)}) vel=(${throwVel.x.toFixed(0)},${throwVel.y.toFixed(0)},${throwVel.z.toFixed(0)})`)
+        spawnedBanana.Move({
+            velocity: throwVel,
+            angles: context.activator.GetEyeAngles(),
+            angularVelocity: { x: 0, y: ITEM_BANANA.spin, z: 0 },
+        })
         await Delay(3.5)
         const killfeed = Instance.FindEntityByName("banana_bomb_killfeed")
         findEntitiesInSphere(spawnedBanana.GetAbsOrigin(), ITEM_BANANA.radius, "player").forEach((p) => {
@@ -1051,6 +1068,292 @@ Instance.OnScriptInput("UseZshield", async (context) => {
     }
 })
 
+/* ══ ITEM : 67 (zombie kamikaze) ══════════════════════════ */
+
+// Au pickup : enregistre le porteur (seul lui pourra l'utiliser).
+Instance.OnScriptInput("Pickup67", (context) => {
+    zombieItemFilter.SIXTYSEVEN = context.activator
+    Instance.Msg("[67] Pickup67 reçu -> porteur enregistré")
+})
+
+// Gate T + porteur enregistré. Séquence : son -> 4.1s -> particule -> 0.1s ->
+// le zombie meurt + explosion de zone (rayon sleepy) : propulsion façon pizza
+// puis one-shot 999999 sur tous les joueurs touchés.
+Instance.OnScriptInput("Use67", async (context) => {
+    Instance.Msg("[67] Use67 reçu")
+    if (filterItem(zombieItemFilter.SIXTYSEVEN, context.activator, TEAMS.T)) {
+        Instance.Msg("[67] filtre OK -> séquence lancée")
+        const user = context.activator
+        // anti double-usage pendant le compte à rebours
+        Instance.EntFireAtTarget({ target: context.caller, input: "Lock" })
+
+        // téléporte l'entité proxy 67_carrier sur le zombie (+48u en Z pour éviter les pieds)
+        // le logic_measure_movement 67_mm cible 67_carrier -> les effets suivent le zombie
+        const carrierEnt = Instance.FindEntityByName("67_carrier")
+        if (carrierEnt) {
+            const uPos = user.GetAbsOrigin()
+            carrierEnt.Teleport({ position: Vector(uPos.x, uPos.y, uPos.z + 48) })
+        }
+
+        Instance.EntFireAtName({ name: "67_sfx2", input: "StartSound" })
+
+        await Delay(ITEM_67.particleDelay)          // 4.1s
+        Instance.EntFireAtName({ name: "67_particle2", input: "Start" })
+
+        await Delay(ITEM_67.deathDelay)             // +0.1s -> détonation
+        if (!user.IsValid()) return                 // le zombie est mort entre-temps
+        const origin = user.GetAbsOrigin()
+        const killfeed = Instance.FindEntityByName("67_killfeed")
+
+        // empêche tout 2e lancement + nettoie les modèles 2s après l'explosion
+        Instance.EntFireAtName({ name: "67_button", input: "Kill" })
+        Instance.EntFireAtName({ name: "67_model", input: "Kill", delay: 2 })
+        Instance.EntFireAtName({ name: "67_model2", input: "Kill", delay: 2 })
+        Instance.EntFireAtName({ name: "67_sfx", input: "Kill", delay: 2 })
+
+        // effet de zone : propulsion façon pizza (l'utilisateur est inclus, il est au centre)
+        const victims = findEntitiesInSphere(origin, ITEM_67.radius, "player")
+        victims.forEach((p) => {
+            if (p.GetHealth() > 0 && p.IsValid()) {
+                p.Teleport({ velocity: Vector(rand(-5000, 5000), rand(-5000, 5000), rand(2000, 4000)) })
+            }
+        })
+
+        // puis mort de tout le monde (les cadavres héritent de la vélocité)
+        await Delay(0.1)
+        victims.forEach((p) => {
+            if (p.IsValid()) p.TakeDamage({ damage: ITEM_67.damage, inflictor: killfeed, attacker: user })
+        })
+    }
+})
+
+/* ══ ITEM : ROCKET (missile pilotable, zombie) ════════════ */
+
+let rocketActive = false
+let rocketPilot = null
+let rocketModel = null
+let rocketHitbox = null
+let rocketStartTime = 0
+let rocketRefPitch = 0   // pitch de visée au lancement (= neutre du contrôle)
+let rocketFlightPitch = -90   // orientation courante du missile (rotation limitée)
+let rocketFlightYaw = 0
+
+// Au pickup : enregistre le pilote (seul lui pourra tirer).
+Instance.OnScriptInput("PickupRocket", (context) => {
+    zombieItemFilter.ROCKET = context.activator
+})
+
+// Lancement : gate T + pilote enregistré, un seul missile à la fois.
+Instance.OnScriptInput("UseRocket", (context) => {
+    if (!filterItem(zombieItemFilter.ROCKET, context.activator, TEAMS.T)) return
+    if (rocketActive) return
+
+    const model = Instance.FindEntityByName("rocket_model")
+    if (!model) return
+
+    rocketActive = true
+    rocketPilot = context.activator
+    rocketModel = model
+    rocketHitbox = Instance.FindEntityByName("rocket_hitbox")   // null tant que non ajoutée
+    rocketStartTime = Instance.GetGameTime()
+    rocketRefPitch = context.activator.GetEyeAngles().pitch     // visée neutre = ce moment
+    rocketFlightPitch = -90                                     // part droit vers le haut
+    rocketFlightYaw = context.activator.GetEyeAngles().yaw
+
+    // reprendre la main sur le missile : couper le logic_measure_movement
+    Instance.EntFireAtName({ name: "rocket_mm", input: "Disable" })
+    // active la hitbox autour du missile (à adapter au nom/à l'input que tu utilises)
+    Instance.EntFireAtName({ name: "rocket_hitbox", input: "Enable" })
+    // caméra du missile ON — activator = le pilote, pour que la caméra sache de qui ça vient
+    Instance.EntFireAtName({ name: "startcamer_missile", input: "EnableCamera", activator: context.activator })
+    // particule de propulsion du missile
+    Instance.EntFireAtName({ name: "missile_particle", input: "Start" })
+    // son du missile
+    Instance.EntFireAtName({ name: "missile_sound", input: "StartSound" })
+
+    // démarre la boucle de vol (léger délai pour que le Disable prenne effet)
+    Instance.Delay(0.1).then(rocketTick)
+})
+
+// Hitbox détruite en vol -> OnBreak -> RunScriptInput "ROCKETHIT" -> explosion.
+Instance.OnScriptInput("ROCKETHIT", (context) => {
+    if (rocketActive && rocketModel) explodeRocket(rocketModel.GetAbsOrigin())
+})
+
+// Boucle de vol : avance le missile dans la direction de visée du pilote.
+function rocketTick() {
+    if (!rocketActive || !rocketModel) return
+    // pilote mort ou parti -> explosion
+    if (!rocketPilot || !rocketPilot.IsValid() || rocketPilot.GetHealth() <= 0) {
+        explodeRocket(rocketModel.GetAbsOrigin()); return
+    }
+    // sécurité anti-vol-infini
+    if (Instance.GetGameTime() - rocketStartTime >= ITEM_ROCKET.maxLifetime) {
+        explodeRocket(rocketModel.GetAbsOrigin()); return
+    }
+
+    const eye = rocketPilot.GetEyeAngles()
+    // CIBLE d'orientation depuis la visée (contrôle relatif, base verticale -90)
+    let targetPitch = -90 + (eye.pitch - rocketRefPitch) * ITEM_ROCKET.pitchGain
+    if (targetPitch < -90) targetPitch = -90
+    if (targetPitch > 90) targetPitch = 90
+    // ROTATION LIMITÉE : le missile se rapproche de la cible d'au plus turnRate*tick
+    // degrés par tick (= plus lourd à manœuvrer, nerf des rotations).
+    const maxStep = ITEM_ROCKET.turnRate * ITEM_ROCKET.tick
+    rocketFlightPitch = approachAngle(rocketFlightPitch, targetPitch, maxStep)
+    rocketFlightYaw = approachAngle(rocketFlightYaw, eye.yaw, maxStep)
+    // direction de DÉPLACEMENT (convention nez +X)
+    const moveAng = { pitch: rocketFlightPitch, yaw: rocketFlightYaw, roll: 0 }
+    const fwd = forwardFromAngles(moveAng)
+    // orientation du MODÈLE : nez sur +Z -> compensation +90 sur le pitch
+    const modelAng = { pitch: rocketFlightPitch + 90, yaw: rocketFlightYaw, roll: 0 }
+    const pos = rocketModel.GetAbsOrigin()
+    const next = Vector(
+        pos.x + fwd.x * ITEM_ROCKET.speed,
+        pos.y + fwd.y * ITEM_ROCKET.speed,
+        pos.z + fwd.z * ITEM_ROCKET.speed
+    )
+
+    // impact monde (mur/sol) ? on ignore le missile, sa hitbox et les joueurs
+    const ignore = [rocketModel, rocketHitbox].filter((e) => e)
+    const tr = Instance.TraceLine({ start: pos, end: next, ignoreEntity: ignore, ignorePlayers: true })
+    if (tr.didHit) { explodeRocket(tr.end); return }
+
+    rocketModel.Teleport({ position: next, angles: modelAng })
+    Instance.Delay(ITEM_ROCKET.tick).then(rocketTick)
+}
+
+// Explosion centralisée : une seule fois, quelle que soit la cause (impact,
+// timeout, pilote mort, hitbox détruite). Coupe le pilotage et nettoie.
+function explodeRocket(pos) {
+    if (!rocketActive) return
+    rocketActive = false
+    const pilot = rocketPilot
+    // position de l'explosion = origine du physbox
+    const boomPos = (rocketModel && rocketModel.IsValid()) ? rocketModel.GetAbsOrigin() : pos
+
+    // caméra du missile OFF — activator = le pilote
+    if (pilot && pilot.IsValid()) Instance.EntFireAtName({ name: "startcamer_missile", input: "DisableCamera", activator: pilot })
+    // coupe le son de vol du missile
+    Instance.EntFireAtName({ name: "missile_sound", input: "StopSound" })
+
+    // le maker est parenté au missile -> il est déjà à la bonne position, simple ForceSpawn
+    Instance.EntFireAtName({ name: "rocket_projectile_maker", input: "ForceSpawn" })
+
+    // zone de dégâts (rayon sleepy) : propulsion façon pizza puis one-shot, comme le 67
+    const killfeed = Instance.FindEntityByName("rocket_killfeed")
+    const victims = findEntitiesInSphere(boomPos, ITEM_ROCKET.radius, "player")
+
+    // pré-calcul des dégâts DÉGRESSIFS (distance au centre AU MOMENT de l'explosion),
+    // propulsion façon pizza, et mise à feu des CT touchés.
+    const hits = []
+    victims.forEach((p) => {
+        if (!p.IsValid() || p.GetHealth() <= 0) return
+        const o = p.GetAbsOrigin()
+        const dx = o.x - boomPos.x, dy = o.y - boomPos.y, dz = o.z - boomPos.z
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+        let dmg = ITEM_ROCKET.damage * (1 - dist / ITEM_ROCKET.radius)
+        if (dmg < 0) dmg = 0
+        hits.push({ p, dmg })
+        p.Teleport({ velocity: Vector(rand(-ITEM_ROCKET.bumpXY, ITEM_ROCKET.bumpXY), rand(-ITEM_ROCKET.bumpXY, ITEM_ROCKET.bumpXY), rand(ITEM_ROCKET.bumpZmin, ITEM_ROCKET.bumpZmax)) })
+        if (p.GetTeamNumber() === TEAMS.CT) Instance.EntFireAtTarget({ target: p, input: "IgniteLifetime", value: ITEM_ROCKET.fireDuration })
+    })
+    // dégâts appliqués après la propulsion (les cadavres héritent de la vélocité)
+    Instance.Delay(0.1).then(() => {
+        hits.forEach((h) => {
+            if (h.p.IsValid() && h.dmg > 0) {
+                h.p.TakeDamage({ damage: h.dmg, damageTypes: CSDamageTypes.BLAST, inflictor: killfeed, attacker: pilot })
+            }
+        })
+    })
+
+    // nettoyage : missile + hitbox disparaissent (léger délai pour laisser le maker
+    // lire l'origine du missile avant qu'il ne soit détruit)
+    Instance.EntFireAtName({ name: "rocket_model", input: "Kill", delay: 0.1 })
+    Instance.EntFireAtName({ name: "rocket_hitbox", input: "Kill", delay: 0.1 })
+    // empêche tout 2e lancement (la fusée a pété -> plus aucun visuel)
+    Instance.EntFireAtName({ name: "rocket_button", input: "Kill" })
+
+    rocketModel = null
+    rocketHitbox = null
+    rocketPilot = null
+}
+
+// rapproche un angle 'cur' de 'target' d'au plus 'maxStep' degrés (gère le wrap du yaw)
+function approachAngle(cur, target, maxStep) {
+    let diff = target - cur
+    while (diff > 180) diff -= 360
+    while (diff < -180) diff += 360
+    if (diff > maxStep) diff = maxStep
+    if (diff < -maxStep) diff = -maxStep
+    let r = cur + diff
+    while (r > 180) r -= 360
+    while (r < -180) r += 360
+    return r
+}
+
+// vecteur "avant" unitaire depuis des angles de vue (pitch/yaw en degrés)
+function forwardFromAngles(ang) {
+    const p = ang.pitch * Math.PI / 180
+    const y = ang.yaw * Math.PI / 180
+    const cp = Math.cos(p)
+    return Vector(cp * Math.cos(y), cp * Math.sin(y), -Math.sin(p))
+}
+
+/* ══ ITEM : AMOGUS (déguisement zombie -> CT) ═════════════ */
+
+// Au pickup : enregistre le porteur.
+Instance.OnScriptInput("PickupAmogus", (context) => {
+    zombieItemFilter.AMOGUS = context.activator
+})
+
+// Gate T + porteur + cooldown 120s. Effet : particule + son (stop à 3s), puis
+// les zombies dans ~1m prennent le skin d'un CT vivant aléatoire, rendu 10s après.
+Instance.OnScriptInput("UseAmogus", (context) => {
+    if (filterItem(zombieItemFilter.AMOGUS, context.activator, TEAMS.T)) {
+        const user = context.activator
+
+        // cooldown : lock du bouton
+        Instance.EntFireAtTarget({ target: context.caller, input: "Lock" })
+        Instance.EntFireAtTarget({ target: context.caller, input: "Unlock", delay: ITEM_AMOGUS.cooldown })
+
+        // masque le modèle de l'item pendant le cooldown, puis le réaffiche
+        Instance.EntFireAtName({ name: "amogus_model", input: "Alpha", value: "0" })
+        Instance.EntFireAtName({ name: "amogus_model", input: "Alpha", value: "255", delay: ITEM_AMOGUS.cooldown })
+
+        // particule + son, coupés après effectDuration
+        Instance.EntFireAtName({ name: "amogus_particle", input: "Start" })
+        Instance.EntFireAtName({ name: "amogus_sound", input: "StartSound" })
+        Instance.EntFireAtName({ name: "amogus_particle", input: "Stop", delay: ITEM_AMOGUS.effectDuration })
+        Instance.EntFireAtName({ name: "amogus_sound", input: "StopSound", delay: ITEM_AMOGUS.effectDuration })
+
+        // liste des modèles de CT VIVANTS
+        const ctModels = []
+        Instance.FindEntitiesByClass("player").forEach((p) => {
+            if (p.IsValid() && p.GetTeamNumber() === TEAMS.CT && p.GetHealth() > 0) {
+                ctModels.push(p.GetModelName())
+            }
+        })
+        if (ctModels.length === 0) return   // aucun CT vivant -> pas de déguisement
+
+        // le déguisement s'applique disguiseDelay seconde(s) après l'appui
+        Instance.Delay(ITEM_AMOGUS.disguiseDelay).then(() => {
+            if (!user.IsValid()) return
+            // zombies dans le rayon autour du porteur (le porteur inclus car au centre)
+            const zombies = findEntitiesInSphere(user.GetAbsOrigin(), ITEM_AMOGUS.radius, "player")
+            zombies.forEach((z) => {
+                if (!z.IsValid() || z.GetHealth() <= 0 || z.GetTeamNumber() !== TEAMS.T) return
+                const original = z.GetModelName()
+                z.SetModel(ctModels[rand(0, ctModels.length)])
+                // retour au skin d'origine après disguiseDuration
+                Instance.Delay(ITEM_AMOGUS.disguiseDuration).then(() => {
+                    if (z.IsValid()) z.SetModel(original)
+                })
+            })
+        })
+    }
+})
+
 /* ── HELPERS ─────────────────────────────────────────────── */
 
 function QAngle(p = 0, y = 0, r = 0) { return { pitch: p, yaw: y, roll: r } }
@@ -1162,3 +1465,105 @@ function acumulateVector(vec1, vec2, amount) {
     finalVector = (vec1.z - vec2.z < 0 ? vectorAdd(finalVector, Vector(0, 0, amount)) : vectorAdd(finalVector, Vector(0, 0, -amount)))
     return finalVector
 }
+/* ══ ITEM : SANDWICH (attraction des humains proches vers le zombie) ══════════════════ */
+// Templates dans le spawner : sandwich_weapon, sandwich_mm, sandwich_dummy,
+// sandwich_button, sandwich_particle, sandwich_model, sandwich_sound, sandwich_soundB
+
+// incrémente sandwichLife à chaque respawn -> stoppe les boucles de la vie précédente
+// et remet le scale à 1.0 (efface les gains du sandwich)
+Instance.OnPlayerReset((event) => {
+    const p = event.player
+    if (!p || !p.IsValid()) return
+    p.sandwichLife = (p.sandwichLife || 0) + 1
+    if (p.GetTeamNumber() === TEAMS.T) p.SetModelScale(1.0)
+})
+
+// reset du scale au début de chaque round (efface les gains du sandwich)
+Instance.OnRoundStart(() => {
+    Instance.FindEntitiesByClass("player").forEach((p) => {
+        if (!p || !p.IsValid()) return
+        p.sandwichLife = (p.sandwichLife || 0) + 1   // stoppe les boucles actives
+        if (p.GetTeamNumber() === TEAMS.T) p.SetModelScale(1.0)
+    })
+})
+
+Instance.OnScriptInput("PickupSandwich", (context) => {
+    zombieItemFilter.SANDWICH = context.activator
+})
+
+// boucle de kill : check contact à chaque tick (0.015s) pour ne jamais rater
+async function sandwichKillLoop(user, endTime, life) {
+    if (!user.IsValid() || user.GetHealth() <= 0) return
+    if (Instance.GetGameTime() >= endTime) return
+    if ((user.sandwichLife || 0) !== life) return   // joueur respawné -> stop
+
+    const zPos = user.GetAbsOrigin()
+    const humans = findEntitiesInSphere(zPos, ITEM_SANDWICH.touchRadius, "player")
+    const killfeed = Instance.FindEntityByName("sandwich_killfeed")
+    humans.forEach((p) => {
+        if (!p.IsValid() || p.GetHealth() <= 0 || p.GetTeamNumber() !== TEAMS.CT) return
+        const soundB = Instance.FindEntityByName("sandwich_soundB*")
+        if (soundB && soundB.IsValid()) Instance.EntFireAtTarget({ target: soundB, input: "StartSound" })
+        p.TakeDamage({ damage: 99999, attacker: user, inflictor: killfeed || user })
+        // grandit de 10% à chaque humain mangé
+        const currentScale = user.GetModelScale ? user.GetModelScale() : 1.0
+        user.SetModelScale(currentScale * 1.1)
+    })
+
+    await Instance.Delay(ITEM_SANDWICH.killInterval)
+    sandwichKillLoop(user, endTime, life)
+}
+
+// boucle d'attraction : tire les CT vers le zombie toutes les 0.05s (moins de réseau)
+async function sandwichPullLoop(user, endTime, life) {
+    if (!user.IsValid() || user.GetHealth() <= 0) return
+    if (Instance.GetGameTime() >= endTime) return
+    if ((user.sandwichLife || 0) !== life) return   // joueur respawné -> stop
+
+    const zPos = user.GetAbsOrigin()
+    const humans = findEntitiesInSphere(zPos, ITEM_SANDWICH.radius, "player")
+    humans.forEach((p) => {
+        if (!p.IsValid() || p.GetHealth() <= 0 || p.GetTeamNumber() !== TEAMS.CT) return
+        const pull = acumulateVector(p.GetAbsOrigin(), zPos, ITEM_SANDWICH.pullForce)
+        p.Teleport({ velocity: pull })
+    })
+
+    await Instance.Delay(ITEM_SANDWICH.tickInterval)
+    sandwichPullLoop(user, endTime, life)
+}
+
+Instance.OnScriptInput("UseSandwich", (context) => {
+    if (!filterItem(zombieItemFilter.SANDWICH, context.activator, TEAMS.T)) return
+    const user = context.activator
+
+    // cooldown du bouton
+    Instance.EntFireAtTarget({ target: context.caller, input: "Lock" })
+    Instance.EntFireAtTarget({ target: context.caller, input: "Unlock", delay: ITEM_SANDWICH.cooldown })
+
+    // couleur : sandwich_model noir immédiatement, blanc après cooldown
+    const sandwichModel = Instance.FindEntityByName("sandwich_model*")
+    if (sandwichModel && sandwichModel.IsValid()) {
+        Instance.EntFireAtTarget({ target: sandwichModel, input: "Color", value: "0 0 0" })
+        Instance.EntFireAtTarget({ target: sandwichModel, input: "Color", value: "255 255 255", delay: ITEM_SANDWICH.cooldown })
+    }
+
+    // son d'activation
+    Instance.EntFireAtName({ name: "sandwich_sound", input: "StartSound" })
+
+    // délai avant attraction + particule
+    Instance.Delay(ITEM_SANDWICH.startDelay).then(() => {
+        if (!user.IsValid() || user.GetHealth() <= 0) return
+        // lancer la particule
+        Instance.EntFireAtName({ name: "sandwich_particle", input: "Start" })
+        // démarrer les deux boucles : kill (chaque tick) + attraction (0.05s)
+        const endTime = Instance.GetGameTime() + (ITEM_SANDWICH.effectDuration - ITEM_SANDWICH.startDelay)
+        const myLife = user.sandwichLife || 0
+        sandwichKillLoop(user, endTime, myLife)
+        sandwichPullLoop(user, endTime, myLife)
+    })
+
+    // arrêter la particule après effectDuration
+    Instance.Delay(ITEM_SANDWICH.effectDuration).then(() => {
+        Instance.EntFireAtName({ name: "sandwich_particle", input: "Stop" })
+    })
+})
