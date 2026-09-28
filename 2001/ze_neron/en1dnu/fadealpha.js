@@ -109,30 +109,23 @@ Instance.OnScriptInput("ScaleFromCurrentDown", (_input) => {
 // Alpha 漸變
 // ========================================
 
-// 按地图的 step 计算更新间隔，保持原版动画节奏。
 function FadeAlphaByEntity(_ent, duration, startAlpha, endAlpha, step) {
 
-    const steps = Math.abs((endAlpha - startAlpha) / step);
+    if (duration < 0.1) {
+        Instance.EntFireAtTarget(_ent, "Alpha", endAlpha, 0);
+        return;
+    }
+
+    const steps = Math.max(1, Math.floor(duration / 0.1));
     const interval = duration / steps;
 
     for (let i = 0; i <= steps; i++) {
 
-        let alpha;
+        const progress = i / steps;
+        let alpha = Math.round(startAlpha + ((endAlpha - startAlpha) * progress));
 
-        if (startAlpha < endAlpha) {
-
-            alpha = startAlpha + (i * step);
-
-            if (alpha > endAlpha)
-                alpha = endAlpha;
-
-        } else {
-
-            alpha = startAlpha - (i * step);
-
-            if (alpha < endAlpha)
-                alpha = endAlpha;
-        }
+        if (i === steps)
+            alpha = endAlpha;
 
         Instance.EntFireAtTarget(
             _ent,
@@ -150,14 +143,20 @@ function FadeAlphaByEntity(_ent, duration, startAlpha, endAlpha, step) {
 
 function ScaleEntity(_ent, duration, maxScale, step) {
 
-    const steps = maxScale / step;
+    if (duration < 0.1) {
+        Instance.EntFireAtTarget(_ent, "SetScale", maxScale, 0);
+        return;
+    }
+
+    const steps = Math.max(1, Math.floor(duration / 0.1));
     const interval = duration / steps;
 
     for (let i = 0; i <= steps; i++) {
 
-        let scale = i * step;
+        const progress = i / steps;
+        let scale = maxScale * progress;
 
-        if (scale > maxScale)
+        if (i === steps)
             scale = maxScale;
 
         Instance.EntFireAtTarget(
@@ -176,14 +175,20 @@ function ScaleEntity(_ent, duration, maxScale, step) {
 
 function ScaleEntityDown(_ent, duration, maxScale, step) {
 
-    const steps = maxScale / step;
+    if (duration < 0.1) {
+        Instance.EntFireAtTarget(_ent, "SetScale", 0, 0);
+        return;
+    }
+
+    const steps = Math.max(1, Math.floor(duration / 0.1));
     const interval = duration / steps;
 
     for (let i = 0; i <= steps; i++) {
 
-        let scale = maxScale - i * step;
+        const progress = i / steps;
+        let scale = maxScale * (1 - progress);
 
-        if (scale < 0)
+        if (i === steps)
             scale = 0;
 
         Instance.EntFireAtTarget(
@@ -204,29 +209,21 @@ function ScaleEntityDown(_ent, duration, maxScale, step) {
 
 function ScaleEntityFromCurrent(_ent, duration, startScale, endScale, step) {
 
-    const scaleDiff = Math.abs(endScale - startScale);
+    if (duration < 0.1) {
+        Instance.EntFireAtTarget(_ent, "SetScale", endScale, 0);
+        return;
+    }
 
-    const steps = scaleDiff / step;
+    const steps = Math.max(1, Math.floor(duration / 0.1));
     const interval = duration / steps;
 
     for (let i = 0; i <= steps; i++) {
 
-        let scale;
+        const progress = i / steps;
+        let scale = startScale + ((endScale - startScale) * progress);
 
-        if (startScale < endScale) {
-
-            scale = startScale + (i * step);
-
-            if (scale > endScale)
-                scale = endScale;
-
-        } else {
-
-            scale = startScale - (i * step);
-
-            if (scale < endScale)
-                scale = endScale;
-        }
+        if (i === steps)
+            scale = endScale;
 
         Instance.EntFireAtTarget(
             _ent,
