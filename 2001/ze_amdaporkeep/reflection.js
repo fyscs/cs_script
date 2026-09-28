@@ -70,7 +70,10 @@ Instance.OnScriptInput("hyw", (pl) => {
     const player = pl.activator;
     if (!player || !player.IsValid()) return;
     Ball.StartTime = Instance.GetGameTime();
-    const ignoreButton = Instance.FindEntitiesByClass("func_button");
+    const ignoreEntities = [
+        ...Instance.FindEntitiesByClass("func_button"),
+        ...Instance.FindEntitiesByClass("func_physbox"),
+    ];
     Ball.StartPos = player.GetEyePosition();
     const Angle = player.GetEyeAngles();
     Angle.pitch = 0;
@@ -82,7 +85,7 @@ Instance.OnScriptInput("hyw", (pl) => {
     const TraceResult = Instance.TraceLine({
         start: Ball.StartPos,
         end: EndP,
-        ignoreEntity: ignoreButton,
+        ignoreEntity: ignoreEntities,
         ignorePlayers: true
     });
 
@@ -109,11 +112,14 @@ function Bounce(){
     Maker.Teleport({ position: Ball.StartPos, angles: Angle});
     Instance.EntFireAtName({name: "ZM_C_O_D_Magic_Maker", input: "ForceSpawn"});
     const EndP = VectorAdd(Ball.StartPos, VectorScale(Ball.FVec, 2400));
-    const ignoreButton = Instance.FindEntitiesByClass("func_button");
+    const ignoreEntities = [
+        ...Instance.FindEntitiesByClass("func_button"),
+        ...Instance.FindEntitiesByClass("func_physbox"),
+    ];
     const TraceResult = Instance.TraceLine({
         start: Ball.StartPos,
         end: EndP,
-        ignoreEntity: ignoreButton,
+        ignoreEntity: ignoreEntities,
         ignorePlayers: true
     });
     if (!TraceResult.didHit) return;

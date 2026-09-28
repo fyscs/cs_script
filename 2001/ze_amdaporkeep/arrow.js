@@ -55,37 +55,47 @@
 import { Instance } from "cs_script/point_script";
 
 
-const MBoss = Instance.FindEntityByName("Boss_Physbox");
+let BossEntity = null;
 let DK = null;
 let TG = null;
 let StartTime = 0;
 
-Instance.SetThink(UpdatePosition);
-
 Instance.OnScriptInput("Omega_M_Arrow", (pl) => {
     TG = pl.activator;
     if (!TG || !TG.IsValid()) return;
-    if (DK && DK.GetTeamNumber() == 3) {
-        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Trigger2",input: "Enable"});
-    }
-    else {
-        Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Text",input: "ShowHudHint", activator: TG});
-    }
+    DK = Instance.FindEntityByName("Player_Dark_Knight");
+    if (DK && DK.GetTeamNumber() == 3) TG = DK;
+    Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Text",input: "ShowHudHint",activator: TG});
+    Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Screen",input: "SetParent",value: "!activator",delay: 0,activator: TG});
+    Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Screen",input: "SetParentAttachment",value: "primary",delay: 0.02});
+    Instance.EntFireAtName({name: "Omega_Sagittarius_Arrow_Screen",input: "kill",delay: 8.5});
     StartTime = Instance.GetGameTime();
     Instance.SetNextThink(StartTime);
 });
 
+Instance.SetThink(UpdatePosition);
+
 function UpdatePosition() {
     const Time = Instance.GetGameTime();
     if (Time - StartTime > 8.5) return;
+    const boss = GetBoss();
+    if (!boss) return;
     DK = Instance.FindEntityByName("Player_Dark_Knight");
-    if (DK && DK.IsValid() && DK.GetTeamNumber() == 3) TG = DK;
+    if (DK && DK.GetTeamNumber() == 3) TG = DK;
+    if (!TG) return;
     const TGpos = TG.GetAbsOrigin();
-    const Mpos = MBoss.GetAbsOrigin();
-    const Evec = Normalization2d(TGpos, Mpos);
+    const Bosspos = boss.GetAbsOrigin();
+    const Evec = Normalization2d(TGpos, Bosspos);
     const theangles = ReturnAngles(Evec);
-    MBoss.Teleport({ angles: theangles });
+    boss.Teleport({ angles: theangles });
     Instance.SetNextThink(Time);
+}
+
+function GetBoss() {
+    if (!BossEntity) {
+        BossEntity = Instance.FindEntityByName("Boss_Physbox");
+    }
+    return BossEntity;
 }
 
 function ReturnAngles(vec) {
