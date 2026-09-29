@@ -2,10 +2,10 @@ import { Instance } from 'cs_script/point_script';
 
 /* eslint-disable @typescript-eslint/no-unsafe-function-type */
 let idPool = 0;
-let tasks = [];
+const tasks = [];
 function setTimeout(callback, ms) {
     const id = idPool++;
-    tasks.unshift({
+    tasks.push({
         id,
         atSeconds: Instance.GetGameTime() + ms / 1000,
         callback,
@@ -14,7 +14,7 @@ function setTimeout(callback, ms) {
 }
 function setInterval(callback, ms) {
     const id = idPool++;
-    tasks.unshift({
+    tasks.push({
         id,
         everyNSeconds: ms / 1000,
         atSeconds: Instance.GetGameTime() + ms / 1000,
@@ -23,18 +23,27 @@ function setInterval(callback, ms) {
     return id;
 }
 function clearTimeout(id) {
-    tasks = tasks.filter((task) => task.id !== id);
+    const index = tasks.findIndex((task) => task.id === id);
+    if (index !== -1)
+        tasks.splice(index, 1);
 }
 const clearInterval = clearTimeout;
 function runSchedulerTick() {
-    for (let i = tasks.length - 1; i >= 0; i--) {
-        const task = tasks[i];
-        if (Instance.GetGameTime() < task.atSeconds)
+    const now = Instance.GetGameTime();
+    const due = [];
+    for (const task of tasks) {
+        if (now >= task.atSeconds)
+            due.push(task);
+    }
+    due.sort((a, b) => a.atSeconds - b.atSeconds);
+    for (const task of due) {
+        const index = tasks.indexOf(task);
+        if (index === -1)
             continue;
         if (task.everyNSeconds === undefined)
-            tasks.splice(i, 1);
+            tasks.splice(index, 1);
         else
-            task.atSeconds = Instance.GetGameTime() + task.everyNSeconds;
+            task.atSeconds = now + task.everyNSeconds;
         try {
             task.callback();
         }
@@ -54,6 +63,574 @@ const DEG_TO_RAD = Math.PI / 180;
 class MathUtils {
     static clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
+    }
+}
+
+class ColorUtils {
+    static equals(a, b, epsilon = 0) {
+        return (Math.abs(a.r - b.r) <= epsilon
+            && Math.abs(a.g - b.g) <= epsilon
+            && Math.abs(a.b - b.b) <= epsilon
+            && Math.abs(a.a - b.a) <= epsilon);
+    }
+    static add(a, b) {
+        return new Color4(a.r + b.r, a.g + b.g, a.b + b.b, a.a + b.a);
+    }
+    static subtract(a, b) {
+        return new Color4(a.r - b.r, a.g - b.g, a.b - b.b, a.a - b.a);
+    }
+    static scale(color, scale) {
+        return new Color4(color.r * scale, color.g * scale, color.b * scale, color.a * scale);
+    }
+    static multiply(a, b) {
+        return new Color4(a.r * b.r, a.g * b.g, a.b * b.b, a.a * b.a);
+    }
+    static divide(color, divider) {
+        if (typeof divider === 'number') {
+            if (divider === 0)
+                throw Error('Division by zero');
+            return new Color4(color.r / divider, color.g / divider, color.b / divider, color.a / divider);
+        }
+        else {
+            if (divider.r === 0 || divider.g === 0 || divider.b === 0 || divider.a === 0)
+                throw Error('Division by zero');
+            return new Color4(color.r / divider.r, color.g / divider.g, color.b / divider.b, color.a / divider.a);
+        }
+    }
+    static inverse(color) {
+        return new Color4(255 - color.r, 255 - color.g, 255 - color.b, color.a);
+    }
+    /**
+     * Clamps each component to [0, 255]
+     */
+    static clamp(color) {
+        return new Color4(MathUtils.clamp(color.r, 0, 255), MathUtils.clamp(color.g, 0, 255), MathUtils.clamp(color.b, 0, 255), MathUtils.clamp(color.a, 0, 255));
+    }
+    /**
+     * Rounds each component to the nearest integer and clamps it to [0, 255]
+     */
+    static round(color) {
+        return ColorUtils.clamp(new Color4(Math.round(color.r), Math.round(color.g), Math.round(color.b), Math.round(color.a)));
+    }
+    // uses oklab to get better gradients when interpolating
+    static lerp(a, b, fraction, clamp = true) {
+        let t = fraction;
+        if (clamp) {
+            t = MathUtils.clamp(t, 0, 1);
+        }
+        const alab = ColorUtils.LinearSrgbToOklab(ColorUtils.srgbToLinear(a));
+        const blab = ColorUtils.LinearSrgbToOklab(ColorUtils.srgbToLinear(b));
+        const resultlab = {
+            l: alab.l + (blab.l - alab.l) * t,
+            a: alab.a + (blab.a - alab.a) * t,
+            b: alab.b + (blab.b - alab.b) * t,
+        };
+        // interpolating in oklab can land slightly outside the srgb gamut
+        return ColorUtils.clamp(ColorUtils.linearToSrgb(ColorUtils.OklabToLinearSrgb(resultlab, a.a + (b.a - a.a) * t)));
+    }
+    /**
+     * Samples a multi-stop gradient at a 0.0-1.0 fraction, interpolating in oklab
+     */
+    static gradient(colors, fraction, clamp = true) {
+        if (colors.length === 0)
+            throw Error('Gradient requires at least one color');
+        if (colors.length === 1)
+            return new Color4(colors[0]);
+        const t = clamp ? MathUtils.clamp(fraction, 0, 1) : fraction;
+        const scaled = t * (colors.length - 1);
+        const index = MathUtils.clamp(Math.floor(scaled), 0, colors.length - 2);
+        return ColorUtils.lerp(colors[index], colors[index + 1], scaled - index, clamp);
+    }
+    /**
+     * Rotates the hue by the given angle in degrees, preserving lightness and alpha
+     */
+    static hueShift(color, degrees) {
+        const lch = ColorUtils.OklabToOklch(ColorUtils.LinearSrgbToOklab(ColorUtils.srgbToLinear(color)));
+        lch.h += degrees;
+        return ColorUtils.clamp(ColorUtils.linearToSrgb(ColorUtils.OklabToLinearSrgb(ColorUtils.OklchToOklab(lch), color.a)));
+    }
+    /**
+     * Mixes the color towards white in oklab, amount 0-1
+     */
+    static lighten(color, amount) {
+        return ColorUtils.lerp(color, new Color4(255, 255, 255, color.a), amount);
+    }
+    /**
+     * Mixes the color towards black in oklab, amount 0-1
+     */
+    static darken(color, amount) {
+        return ColorUtils.lerp(color, new Color4(0, 0, 0, color.a), amount);
+    }
+    /**
+     * Scales the chroma (colorfulness) by 1 + amount, e.g. 0.5 for 50% more saturated
+     */
+    static saturate(color, amount) {
+        const lch = ColorUtils.OklabToOklch(ColorUtils.LinearSrgbToOklab(ColorUtils.srgbToLinear(color)));
+        lch.c = Math.max(lch.c * (1 + amount), 0);
+        return ColorUtils.clamp(ColorUtils.linearToSrgb(ColorUtils.OklabToLinearSrgb(ColorUtils.OklchToOklab(lch), color.a)));
+    }
+    /**
+     * Scales the chroma (colorfulness) by 1 - amount, 1 gives a gray of the same lightness
+     */
+    static desaturate(color, amount) {
+        return ColorUtils.saturate(color, -amount);
+    }
+    /**
+     * Relative luminance 0-255 (Rec. 709 weights applied in linear light,
+     * 0 for black, 255 for white)
+     */
+    static luminance(color) {
+        const linear = ColorUtils.srgbToLinear(color);
+        return 0.2126 * linear.r + 0.7152 * linear.g + 0.0722 * linear.b;
+    }
+    /**
+     * Converts the color to a gray of the same perceived brightness, keeping alpha
+     */
+    static grayscale(color) {
+        const gray = ColorUtils.channelToSrgb(ColorUtils.luminance(color));
+        return new Color4(gray, gray, gray, color.a);
+    }
+    /**
+     * Returns a random opaque color
+     */
+    static random() {
+        return new Color4(Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), 255);
+    }
+    static withR(color, x) {
+        return new Color4(x, color.g, color.b, color.a);
+    }
+    static withG(color, x) {
+        return new Color4(color.r, x, color.b, color.a);
+    }
+    static withB(color, x) {
+        return new Color4(color.r, color.g, x, color.a);
+    }
+    static withA(color, x) {
+        return new Color4(color.r, color.g, color.b, x);
+    }
+    static fromRgba(rgba) {
+        return Color4.fromRgba(rgba);
+    }
+    /**
+     * Packs the color into a 0xRRGGBBAA integer (components rounded and clamped)
+     */
+    static toRgba(color) {
+        const c = ColorUtils.round(color);
+        return ((c.r << 24) | (c.g << 16) | (c.b << 8) | c.a) >>> 0;
+    }
+    /**
+     * Creates a Color from a hex string: #rgb, #rgba, #rrggbb or #rrggbbaa
+     * (leading # optional)
+     */
+    static fromHex(hex) {
+        let digits = hex.startsWith('#') ? hex.slice(1) : hex;
+        if (digits.length === 3 || digits.length === 4) {
+            digits = [...digits].map((digit) => digit + digit).join('');
+        }
+        if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(digits)) {
+            throw Error(`Invalid hex color: ${hex}`);
+        }
+        return new Color4(parseInt(digits.slice(0, 2), 16), parseInt(digits.slice(2, 4), 16), parseInt(digits.slice(4, 6), 16), digits.length === 8 ? parseInt(digits.slice(6, 8), 16) : 255);
+    }
+    /**
+     * Formats the color as a hex string, e.g. #ff8800 (alpha appended when not 255)
+     */
+    static toHex(color) {
+        const c = ColorUtils.round(color);
+        const hex = (component) => component.toString(16).padStart(2, '0');
+        return `#${hex(c.r)}${hex(c.g)}${hex(c.b)}${c.a === 255 ? '' : hex(c.a)}`;
+    }
+    static channelToLinear(value) {
+        const n = value / 255;
+        return (n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4) * 255;
+    }
+    static channelToSrgb(value) {
+        const n = value / 255;
+        return (n <= 0.0031308 ? n * 12.92 : 1.055 * n ** (1 / 2.4) - 0.055) * 255;
+    }
+    /**
+     * Converts a gamma-encoded srgb color to linear light
+     * (alpha is coverage, not light, so it stays untouched)
+     */
+    static srgbToLinear(color) {
+        return new Color4(ColorUtils.channelToLinear(color.r), ColorUtils.channelToLinear(color.g), ColorUtils.channelToLinear(color.b), color.a);
+    }
+    /**
+     * Converts a linear light color back to gamma-encoded srgb, alpha untouched
+     */
+    static linearToSrgb(color) {
+        return new Color4(ColorUtils.channelToSrgb(color.r), ColorUtils.channelToSrgb(color.g), ColorUtils.channelToSrgb(color.b), color.a);
+    }
+    // https://bottosson.github.io/posts/oklab/
+    static LinearSrgbToOklab(c) {
+        const l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
+        const m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
+        const s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
+        const l_ = Math.cbrt(l);
+        const m_ = Math.cbrt(m);
+        const s_ = Math.cbrt(s);
+        return {
+            l: 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+            a: 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+            b: 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+        };
+    }
+    static OklabToLinearSrgb(c, a) {
+        const l_ = c.l + 0.3963377774 * c.a + 0.2158037573 * c.b;
+        const m_ = c.l - 0.1055613458 * c.a - 0.0638541728 * c.b;
+        const s_ = c.l - 0.0894841775 * c.a - 1.2914855480 * c.b;
+        const l = l_ * l_ * l_;
+        const m = m_ * m_ * m_;
+        const s = s_ * s_ * s_;
+        return new Color4(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s, a ?? 255);
+    }
+    static OklabToOklch(c) {
+        const hue = Math.atan2(c.b, c.a) * RAD_TO_DEG;
+        return {
+            l: c.l,
+            c: Math.hypot(c.a, c.b),
+            h: hue < 0 ? hue + 360 : hue,
+        };
+    }
+    static OklchToOklab(c) {
+        return {
+            l: c.l,
+            a: c.c * Math.cos(c.h * DEG_TO_RAD),
+            b: c.c * Math.sin(c.h * DEG_TO_RAD),
+        };
+    }
+}
+class Color4 {
+    r;
+    g;
+    b;
+    a;
+    constructor(rOrColor, g, b, a) {
+        if (typeof rOrColor === 'object') {
+            this.r = rOrColor.r;
+            this.g = rOrColor.g;
+            this.b = rOrColor.b;
+            this.a = rOrColor.a ?? 255;
+        }
+        else {
+            this.r = rOrColor;
+            this.g = g;
+            this.b = b;
+            this.a = a ?? 255;
+        }
+    }
+    /**
+     * Creates a Color from a packed 0xRRGGBBAA integer, e.g. 0x00FF00FF for opaque green
+     */
+    static fromRgba(rgba) {
+        return new Color4((rgba >>> 24) & 0xff, (rgba >>> 16) & 0xff, (rgba >>> 8) & 0xff, rgba & 0xff);
+    }
+    /**
+     * Creates a Color from a hex string: #rgb, #rgba, #rrggbb or #rrggbbaa
+     * (leading # optional)
+     */
+    static fromHex(hex) {
+        return ColorUtils.fromHex(hex);
+    }
+    /**
+     * Samples a multi-stop gradient at a 0.0-1.0 fraction, interpolating in oklab
+     */
+    static gradient(colors, fraction, clamp = true) {
+        return ColorUtils.gradient(colors, fraction, clamp);
+    }
+    /**
+     * Returns a random opaque color
+     */
+    static random() {
+        return ColorUtils.random();
+    }
+    // web colors
+    static Transparent = Color4.fromRgba(0xFFFFFF00);
+    static AliceBlue = Color4.fromRgba(0xF0F8FFFF);
+    static AntiqueWhite = Color4.fromRgba(0xFAEBD7FF);
+    static Aqua = Color4.fromRgba(0x00FFFFFF);
+    static Aquamarine = Color4.fromRgba(0x7FFFD4FF);
+    static Azure = Color4.fromRgba(0xF0FFFFFF);
+    static Beige = Color4.fromRgba(0xF5F5DCFF);
+    static Bisque = Color4.fromRgba(0xFFE4C4FF);
+    static Black = Color4.fromRgba(0x000000FF);
+    static BlanchedAlmond = Color4.fromRgba(0xFFEBCDFF);
+    static Blue = Color4.fromRgba(0x0000FFFF);
+    static BlueViolet = Color4.fromRgba(0x8A2BE2FF);
+    static Brown = Color4.fromRgba(0xA52A2AFF);
+    static BurlyWood = Color4.fromRgba(0xDEB887FF);
+    static CadetBlue = Color4.fromRgba(0x5F9EA0FF);
+    static Chartreuse = Color4.fromRgba(0x7FFF00FF);
+    static Chocolate = Color4.fromRgba(0xD2691EFF);
+    static Coral = Color4.fromRgba(0xFF7F50FF);
+    static CornflowerBlue = Color4.fromRgba(0x6495EDFF);
+    static Cornsilk = Color4.fromRgba(0xFFF8DCFF);
+    static Crimson = Color4.fromRgba(0xDC143CFF);
+    static Cyan = Color4.fromRgba(0x00FFFFFF);
+    static DarkBlue = Color4.fromRgba(0x00008BFF);
+    static DarkCyan = Color4.fromRgba(0x008B8BFF);
+    static DarkGoldenrod = Color4.fromRgba(0xB8860BFF);
+    static DarkGray = Color4.fromRgba(0xA9A9A9FF);
+    static DarkGreen = Color4.fromRgba(0x006400FF);
+    static DarkKhaki = Color4.fromRgba(0xBDB76BFF);
+    static DarkMagenta = Color4.fromRgba(0x8B008BFF);
+    static DarkOliveGreen = Color4.fromRgba(0x556B2FFF);
+    static DarkOrange = Color4.fromRgba(0xFF8C00FF);
+    static DarkOrchid = Color4.fromRgba(0x9932CCFF);
+    static DarkRed = Color4.fromRgba(0x8B0000FF);
+    static DarkSalmon = Color4.fromRgba(0xE9967AFF);
+    static DarkSeaGreen = Color4.fromRgba(0x8FBC8FFF);
+    static DarkSlateBlue = Color4.fromRgba(0x483D8BFF);
+    static DarkSlateGray = Color4.fromRgba(0x2F4F4FFF);
+    static DarkTurquoise = Color4.fromRgba(0x00CED1FF);
+    static DarkViolet = Color4.fromRgba(0x9400D3FF);
+    static DeepPink = Color4.fromRgba(0xFF1493FF);
+    static DeepSkyBlue = Color4.fromRgba(0x00BFFFFF);
+    static DimGray = Color4.fromRgba(0x696969FF);
+    static DodgerBlue = Color4.fromRgba(0x1E90FFFF);
+    static Firebrick = Color4.fromRgba(0xB22222FF);
+    static FloralWhite = Color4.fromRgba(0xFFFAF0FF);
+    static ForestGreen = Color4.fromRgba(0x228B22FF);
+    static Fuchsia = Color4.fromRgba(0xFF00FFFF);
+    static Gainsboro = Color4.fromRgba(0xDCDCDCFF);
+    static GhostWhite = Color4.fromRgba(0xF8F8FFFF);
+    static Gold = Color4.fromRgba(0xFFD700FF);
+    static Goldenrod = Color4.fromRgba(0xDAA520FF);
+    static Gray = Color4.fromRgba(0x808080FF);
+    static Green = Color4.fromRgba(0x00FF00FF);
+    static GreenYellow = Color4.fromRgba(0xADFF2FFF);
+    static Honeydew = Color4.fromRgba(0xF0FFF0FF);
+    static HotPink = Color4.fromRgba(0xFF69B4FF);
+    static IndianRed = Color4.fromRgba(0xCD5C5CFF);
+    static Indigo = Color4.fromRgba(0x4B0082FF);
+    static Ivory = Color4.fromRgba(0xFFFFF0FF);
+    static Khaki = Color4.fromRgba(0xF0E68CFF);
+    static Lavender = Color4.fromRgba(0xE6E6FAFF);
+    static LavenderBlush = Color4.fromRgba(0xFFF0F5FF);
+    static LawnGreen = Color4.fromRgba(0x7CFC00FF);
+    static LemonChiffon = Color4.fromRgba(0xFFFACDFF);
+    static LightBlue = Color4.fromRgba(0xADD8E6FF);
+    static LightCoral = Color4.fromRgba(0xF08080FF);
+    static LightCyan = Color4.fromRgba(0xE0FFFFFF);
+    static LightGoldenrodYellow = Color4.fromRgba(0xFAFAD2FF);
+    static LightGray = Color4.fromRgba(0xD3D3D3FF);
+    static LightGreen = Color4.fromRgba(0x90EE90FF);
+    static LightPink = Color4.fromRgba(0xFFB6C1FF);
+    static LightSalmon = Color4.fromRgba(0xFFA07AFF);
+    static LightSeaGreen = Color4.fromRgba(0x20B2AAFF);
+    static LightSkyBlue = Color4.fromRgba(0x87CEFAFF);
+    static LightSlateGray = Color4.fromRgba(0x778899FF);
+    static LightSteelBlue = Color4.fromRgba(0xB0C4DEFF);
+    static LightYellow = Color4.fromRgba(0xFFFFE0FF);
+    static Lime = Color4.fromRgba(0x008000FF);
+    static LimeGreen = Color4.fromRgba(0x32CD32FF);
+    static Linen = Color4.fromRgba(0xFAF0E6FF);
+    static Magenta = Color4.fromRgba(0xFF00FFFF);
+    static Maroon = Color4.fromRgba(0x800000FF);
+    static MediumAquamarine = Color4.fromRgba(0x66CDAAFF);
+    static MediumBlue = Color4.fromRgba(0x0000CDFF);
+    static MediumOrchid = Color4.fromRgba(0xBA55D3FF);
+    static MediumPurple = Color4.fromRgba(0x9370DBFF);
+    static MediumSeaGreen = Color4.fromRgba(0x3CB371FF);
+    static MediumSlateBlue = Color4.fromRgba(0x7B68EEFF);
+    static MediumSpringGreen = Color4.fromRgba(0x00FA9AFF);
+    static MediumTurquoise = Color4.fromRgba(0x48D1CCFF);
+    static MediumVioletRed = Color4.fromRgba(0xC71585FF);
+    static MidnightBlue = Color4.fromRgba(0x191970FF);
+    static MintCream = Color4.fromRgba(0xF5FFFAFF);
+    static MistyRose = Color4.fromRgba(0xFFE4E1FF);
+    static Moccasin = Color4.fromRgba(0xFFE4B5FF);
+    static NavajoWhite = Color4.fromRgba(0xFFDEADFF);
+    static Navy = Color4.fromRgba(0x000080FF);
+    static OldLace = Color4.fromRgba(0xFDF5E6FF);
+    static Olive = Color4.fromRgba(0x808000FF);
+    static OliveDrab = Color4.fromRgba(0x6B8E23FF);
+    static Orange = Color4.fromRgba(0xFFA500FF);
+    static OrangeRed = Color4.fromRgba(0xFF4500FF);
+    static Orchid = Color4.fromRgba(0xDA70D6FF);
+    static PaleGoldenrod = Color4.fromRgba(0xEEE8AAFF);
+    static PaleGreen = Color4.fromRgba(0x98FB98FF);
+    static PaleTurquoise = Color4.fromRgba(0xAFEEEEFF);
+    static PaleVioletRed = Color4.fromRgba(0xDB7093FF);
+    static PapayaWhip = Color4.fromRgba(0xFFEFD5FF);
+    static PeachPuff = Color4.fromRgba(0xFFDAB9FF);
+    static Peru = Color4.fromRgba(0xCD853FFF);
+    static Pink = Color4.fromRgba(0xFFC0CBFF);
+    static Plum = Color4.fromRgba(0xDDA0DDFF);
+    static PowderBlue = Color4.fromRgba(0xB0E0E6FF);
+    static Purple = Color4.fromRgba(0x800080FF);
+    static RebeccaPurple = Color4.fromRgba(0x663399FF);
+    static Red = Color4.fromRgba(0xFF0000FF);
+    static RosyBrown = Color4.fromRgba(0xBC8F8FFF);
+    static RoyalBlue = Color4.fromRgba(0x4169E1FF);
+    static SaddleBrown = Color4.fromRgba(0x8B4513FF);
+    static Salmon = Color4.fromRgba(0xFA8072FF);
+    static SandyBrown = Color4.fromRgba(0xF4A460FF);
+    static SeaGreen = Color4.fromRgba(0x2E8B57FF);
+    static SeaShell = Color4.fromRgba(0xFFF5EEFF);
+    static Sienna = Color4.fromRgba(0xA0522DFF);
+    static Silver = Color4.fromRgba(0xC0C0C0FF);
+    static SkyBlue = Color4.fromRgba(0x87CEEBFF);
+    static SlateBlue = Color4.fromRgba(0x6A5ACDFF);
+    static SlateGray = Color4.fromRgba(0x708090FF);
+    static Snow = Color4.fromRgba(0xFFFAFAFF);
+    static SpringGreen = Color4.fromRgba(0x00FF7FFF);
+    static SteelBlue = Color4.fromRgba(0x4682B4FF);
+    static Tan = Color4.fromRgba(0xD2B48CFF);
+    static Teal = Color4.fromRgba(0x008080FF);
+    static Thistle = Color4.fromRgba(0xD8BFD8FF);
+    static Tomato = Color4.fromRgba(0xFF6347FF);
+    static Turquoise = Color4.fromRgba(0x40E0D0FF);
+    static Violet = Color4.fromRgba(0xEE82EEFF);
+    static Wheat = Color4.fromRgba(0xF5DEB3FF);
+    static White = Color4.fromRgba(0xFFFFFFFF);
+    static WhiteSmoke = Color4.fromRgba(0xF5F5F5FF);
+    static Yellow = Color4.fromRgba(0xFFFF00FF);
+    static YellowGreen = Color4.fromRgba(0x9ACD32FF);
+    /**
+     * Returns the complement color (255 - component), leaving alpha untouched
+     */
+    get inverse() {
+        return ColorUtils.inverse(this);
+    }
+    toString() {
+        return `Color: [r: ${this.r}, g: ${this.g}, b: ${this.b}, a:${this.a}]`;
+    }
+    equals(color, epsilon = 0) {
+        return ColorUtils.equals(this, color, epsilon);
+    }
+    add(color) {
+        return ColorUtils.add(this, color);
+    }
+    subtract(color) {
+        return ColorUtils.subtract(this, color);
+    }
+    /**
+     * Divides all components uniformly by a number (inverse of scale) or
+     * component-wise by a Color, throws on division by zero
+     */
+    divide(color) {
+        return ColorUtils.divide(this, color);
+    }
+    scale(scaleOrColor) {
+        return typeof scaleOrColor === 'number'
+            ? ColorUtils.scale(this, scaleOrColor)
+            : ColorUtils.multiply(this, scaleOrColor);
+    }
+    multiply(scaleOrColor) {
+        return typeof scaleOrColor === 'number'
+            ? ColorUtils.scale(this, scaleOrColor)
+            : ColorUtils.multiply(this, scaleOrColor);
+    }
+    /**
+     * Linearly interpolates the color to a point based on a 0.0-1.0 fraction
+     * Uses the perceptual colorspace OKLAB in order to give smoother color gradients.
+     * Clamp limits the fraction to [0,1]
+     */
+    lerpTo(color, fraction, clamp = true) {
+        return ColorUtils.lerp(this, color, fraction, clamp);
+    }
+    /**
+     * Alias for {@link Color4.lerpTo}
+     */
+    mix(color, fraction, clamp = true) {
+        return this.lerpTo(color, fraction, clamp);
+    }
+    /**
+     * Packs the color into a 0xRRGGBBAA integer (components rounded and clamped)
+     */
+    toRgba() {
+        return ColorUtils.toRgba(this);
+    }
+    /**
+     * Formats the color as a hex string, e.g. #ff8800 (alpha appended when not 255)
+     */
+    toHex() {
+        return ColorUtils.toHex(this);
+    }
+    /**
+     * assuming this is an srgb encoded color, convert it to linear
+     */
+    get linear() {
+        return ColorUtils.srgbToLinear(this);
+    }
+    /**
+     * assuming this is a linear encoded color, convert it to srgb
+     */
+    get srgb() {
+        return ColorUtils.linearToSrgb(this);
+    }
+    /**
+     * Rotates the hue by the given angle in degrees, preserving lightness and alpha
+     */
+    hueShift(degrees) {
+        return ColorUtils.hueShift(this, degrees);
+    }
+    /**
+     * Mixes the color towards white, amount 0-1
+     */
+    lighten(amount) {
+        return ColorUtils.lighten(this, amount);
+    }
+    /**
+     * Mixes the color towards black, amount 0-1
+     */
+    darken(amount) {
+        return ColorUtils.darken(this, amount);
+    }
+    /**
+     * Scales the chroma (colorfulness) by 1 + amount, e.g. 0.5 for 50% more saturated
+     */
+    saturate(amount) {
+        return ColorUtils.saturate(this, amount);
+    }
+    /**
+     * Scales the chroma (colorfulness) by 1 - amount, 1 gives a gray of the same lightness
+     */
+    desaturate(amount) {
+        return ColorUtils.desaturate(this, amount);
+    }
+    /**
+     * Relative luminance 0-255 (0 for black, 255 for white)
+     */
+    get luminance() {
+        return ColorUtils.luminance(this);
+    }
+    /**
+     * The color converted to a gray of the same perceived brightness, keeping alpha
+     */
+    get grayscale() {
+        return ColorUtils.grayscale(this);
+    }
+    /**
+     * Each component rounded to the nearest integer and clamped to [0, 255]
+     */
+    get rounded() {
+        return ColorUtils.round(this);
+    }
+    /**
+     * Returns the same color but with a supplied R component
+     */
+    withR(r) {
+        return ColorUtils.withR(this, r);
+    }
+    /**
+     * Returns the same color but with a supplied G component
+     */
+    withG(g) {
+        return ColorUtils.withG(this, g);
+    }
+    /**
+     * Returns the same color but with a supplied B component
+     */
+    withB(b) {
+        return ColorUtils.withB(this, b);
+    }
+    /**
+     * Returns the same color but with a supplied A component
+     */
+    withA(a) {
+        return ColorUtils.withA(this, a);
     }
 }
 
@@ -187,11 +764,20 @@ class Vec3 {
     static get Forward() {
         return new Vec3(1, 0, 0);
     }
+    static get Backward() {
+        return new Vec3(-1, 0, 0);
+    }
     static get Right() {
+        return new Vec3(0, -1, 0);
+    }
+    static get Left() {
         return new Vec3(0, 1, 0);
     }
     static get Up() {
         return new Vec3(0, 0, 1);
+    }
+    static get Down() {
+        return new Vec3(0, 0, -1);
     }
     constructor(xOrVector, y, z) {
         if (typeof xOrVector === 'object') {
@@ -751,20 +1337,20 @@ class Matrix3x4 {
     set up(vec) {
         // normalise because users can not be trusted
         const up = vec.normal;
-        let right;
+        let left;
         if (Math.abs(up.dot(Vec3.Forward)) > 0.999) {
-            right = Vec3.Right.cross(up).normal;
+            left = Vec3.Left.cross(up).normal;
         }
         else {
-            right = up.cross(Vec3.Forward).normal;
+            left = up.cross(Vec3.Forward).normal;
         }
-        const fwd = right.cross(up).normal;
+        const fwd = left.cross(up).normal;
         this.m[0] = fwd.x;
         this.m[4] = fwd.y;
         this.m[8] = fwd.z;
-        this.m[1] = right.x;
-        this.m[5] = right.y;
-        this.m[9] = right.z;
+        this.m[1] = left.x;
+        this.m[5] = left.y;
+        this.m[9] = left.z;
         this.m[2] = up.x;
         this.m[6] = up.y;
         this.m[10] = up.z;
@@ -1693,6 +2279,7 @@ function RoundStart() {
         clearInterval(shopDefendTimer);
         shopDefendTimer = null;
     }
+    ShowCoinsHudForAllPlayers();
     exmvote_voteallowed = false;
     finale_curseorbcheese_tick = true;
     zombe_item_users.splice(0);
@@ -1747,7 +2334,7 @@ function RoundStart() {
     else {
         coins = 0 + coins_lastround;
         if (checkpoint) {
-            EntFire('stage_manager', 'InValue', 'finale', 0.0, self);
+            EntFire('stage_manager', 'InValue', '6.0', 0.0, self);
             scheduleInternalScript(() => {
                 Mapor();
             }, 15.0, null, null);
@@ -1866,19 +2453,36 @@ function RoundStart() {
         }
     }
 }
+const COINS_HUD_ENTITY_NAME = 'Diddle_Coins_Hud';
+let cachedCoinsHud = null;
+function GetCoinsHud() {
+    if (cachedCoinsHud && cachedCoinsHud.IsValid())
+        return cachedCoinsHud;
+    const entities = Instance.FindEntitiesByName(COINS_HUD_ENTITY_NAME);
+    if (entities.length > 0) {
+        cachedCoinsHud = entities[0];
+        return cachedCoinsHud;
+    }
+    return null;
+}
+function ShowCoinsHudForAllPlayers() {
+    const hud = GetCoinsHud();
+    if (!hud)
+        return;
+    // 'diddle_coins_root' 对应 XML 中内部 Panel 的 id
+    hud.SetHasClass('diddle_coins_root', 'hidden', false);
+}
+function HideCoinsHudForAllPlayers() {
+    const hud = GetCoinsHud();
+    if (!hud)
+        return;
+    hud.SetHasClass('diddle_coins_root', 'hidden', true);
+}
 function RenderCoinCount() {
-    const hundreds = Math.floor(coins / 100);
-    const tens = Math.floor((coins % 100) / 10);
-    const units = coins % 10;
-    const maxHundreds = Math.floor(coins_max / 100);
-    const maxTens = Math.floor((coins_max % 100) / 10);
-    const maxUnits = coins_max % 10;
-    EntFire('coin_text', 'SetDataControlPointX', String(hundreds), 0.0, self);
-    EntFire('coin_text', 'SetDataControlPointY', String(tens), 0.0, self);
-    EntFire('coin_text', 'SetDataControlPointZ', String(units), 0.0, self);
-    EntFire('coin_text_max', 'SetDataControlPointX', String(maxHundreds), 0.0, self);
-    EntFire('coin_text_max', 'SetDataControlPointY', String(maxTens), 0.0, self);
-    EntFire('coin_text_max', 'SetDataControlPointZ', String(maxUnits), 0.0, self);
+    const hud = GetCoinsHud();
+    if (hud) {
+        hud.SetDialogVariableString('diddle_coins_label', 'diddle_coins_text', `Coins: ${coins} / ${coins_max}`);
+    }
     scheduleInternalScript(() => RenderCoinCount(), 0.2, null, null);
 }
 function CheckStageState() {
@@ -1967,7 +2571,7 @@ function PickStage() {
     if (stage == 0) {
         EntFire('ExtremeShoot*', 'SetHealth', '999999', 0.0, self);
         EntFire('ExtremeShootShrek', 'Kill', '', 0.0, self);
-        EntFire('stage_manager', 'InValue', 'shrek', 0.0, self);
+        EntFire('stage_manager', 'InValue', '1.0', 0.0, self);
         EntFire('fog', 'SetFogStartDistance', '0', 0.2, self);
         EntFire('fog', 'SetFogEndDistance', '40000', 0.2, self);
         EntFire('fog', 'SetFogColor', '0 255 0', 0.2, self);
@@ -1982,7 +2586,7 @@ function PickStage() {
     else if (stage == 1) {
         EntFire('ExtremeShoot*', 'SetHealth', '999999', 0.0, self);
         EntFire('ExtremeShootTurtle', 'Kill', '', 0.0, self);
-        EntFire('stage_manager', 'InValue', 'turtle', 0.0, self);
+        EntFire('stage_manager', 'InValue', '2.0', 0.0, self);
         EntFire('fog', 'SetFogStartDistance', '-500', 0.2, self);
         EntFire('fog', 'SetFogEndDistance', '25000', 0.2, self);
         EntFire('fog', 'SetFogColor', '255 255 100', 0.2, self);
@@ -1997,7 +2601,7 @@ function PickStage() {
     else if (stage == 2) {
         EntFire('ExtremeShoot*', 'SetHealth', '999999', 0.0, self);
         EntFire('ExtremeShootBeach', 'Kill', '', 0.0, self);
-        EntFire('stage_manager', 'InValue', 'beach', 0.0, self);
+        EntFire('stage_manager', 'InValue', '3.0', 0.0, self);
         EntFire('fog', 'SetFogStartDistance', '-500', 0.2, self);
         EntFire('fog', 'SetFogEndDistance', '8000', 0.2, self);
         EntFire('fog', 'SetFogColor', '255 255 255', 0.2, self);
@@ -2009,7 +2613,7 @@ function PickStage() {
     else if (stage == 3) {
         EntFire('ExtremeShoot*', 'SetHealth', '999999', 0.0, self);
         EntFire('ExtremeShootDiglett', 'Kill', '', 0.0, self);
-        EntFire('stage_manager', 'InValue', 'diglett', 0.0, self);
+        EntFire('stage_manager', 'InValue', '4.0', 0.0, self);
         EntFire('fog', 'SetFogStartDistance', '40', 0.2, self);
         EntFire('fog', 'SetFogEndDistance', '800', 0.2, self);
         EntFire('fog', 'SetFogColor', '0 0 0', 0.2, self);
@@ -2023,7 +2627,7 @@ function PickStage() {
     else if (stage == 4) {
         EntFire('ExtremeShoot*', 'SetHealth', '999999', 0.0, self);
         EntFire('ExtremeShootWeeaboo', 'Kill', '', 0.0, self);
-        EntFire('stage_manager', 'InValue', 'weaboo', 0.0, self);
+        EntFire('stage_manager', 'InValue', '5.0', 0.0, self);
         EntFire('fog', 'SetFogStartDistance', '1000', 0.2, self);
         EntFire('fog', 'SetFogEndDistance', '2500', 0.2, self);
         EntFire('fog', 'SetFarz', '2750', 0.2, self);
@@ -2116,7 +2720,7 @@ function CheckMaxedCoinsCheckpoint() {
 function ReachedCheckpoint() {
     coins_lastround = 0 + coins;
     checkpoint = true;
-    EntFire('stage_manager', 'InValue', 'finale', 0.0, self);
+    EntFire('stage_manager', 'InValue', '6.0', 0.0, self);
     SpawnBlobElements();
 }
 var ddicktimeout = 1.2;
@@ -2300,7 +2904,7 @@ function SkipStage(stageindex) {
     stageskip.push(stageindex);
 }
 function Initialize() {
-    EntFire('stage_manager', 'InValue', 'warmup', 0.0, self);
+    EntFire('stage_manager', 'InValue', '7.0', 0.0, self);
     ResetMap(true); //warmup, reset all shop bias score
     WarnVoteShowMessage();
 }
@@ -2671,8 +3275,8 @@ function YellowLaserSpawned(inputData) {
     while (null !=
         (p = Entities.FindByClassnameWithin(p, 'player', getOrigin(caller), yellowlaserspawn_warningindicator_distance))) {
         if (p != null && p.IsValid() && getTeam(p) == 3 && p.GetHealth() > 0) {
-            EntFire('extreme_yellowlaser_gtext', 'Start', '', 0.0, p);
-            EntFire('extreme_yellowlaser_gtext', 'Stop', '', 5.0, p);
+            EntFire('extreme_yellowlaser_gtext', 'FireUser1', '', 0.0, p);
+            EntFire('extreme_yellowlaser_gtext', 'FireUser2', '', 5.0, p);
         }
     }
 }
@@ -2917,6 +3521,9 @@ function GateOpenCheck() {
 }
 function BuyItem(inputData, itemindex) {
     const { activator, caller } = inputData;
+    printl(`[BuyItem] idx=${itemindex} price=${items[itemindex]} coins=${coins} ` +
+        `buyers=${buyers.length} activator=${activator ? activator.GetEntityName() : 'null'} ` +
+        `caller=${caller ? caller.GetEntityName() : 'null'}`);
     //HOW TO USE:
     //> in the store, add one buy-button for each item
     //> OnPressed > manager > RunScriptInput > BuyItem(itemindex);    (SEE LIST OF ITEMS ABOVE)
@@ -2955,6 +3562,9 @@ function BuyItem(inputData, itemindex) {
                 EntFire('server', 'Command', 'say ***SHOP IS SOLD OUT***', 0.0, self);
                 EntFire('server', 'Command', 'say ***COME IN TO PICK UP LEFTOVERS (IF ANY)***', 1.0, self);
             }
+        }
+        else {
+            EntFireByHandle(caller, 'FireUser2', '', 0.0, activator, activator);
         }
     }
 }
@@ -3703,8 +4313,8 @@ function ExtremeEvent(inputData, index) {
             //spawn a shrek at pos:(-14182,15624,13593)
             scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(-14182, 15624, 13593));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
             }, 60.0, null, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 60.55, null);
             //spawn a couple vaginafaces at pos:(-14206,15437,13704),(-14239,15867,13705)
             ExevSpawn('s_vaginaface', Vector(-14206, 15437, 13704));
             ExevSpawn('s_vaginaface', Vector(-14239, 15867, 13705));
@@ -3864,11 +4474,9 @@ function ExtremeEvent(inputData, index) {
             //spawn 2 shreks at pos:(-12960,12967,14157),(-11623,13996,14418)
             scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(-12960, 12967, 14157));
-            }, 20.0, null, null);
-            scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(-11623, 13996, 14418));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
             }, 20.0, null, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 20.55, null);
             //'Ord_lvl_01_door_03' opens at 10s, close it at 11, then open it at 12, also print some server message about it
             EntFire('Ord_lvl_01_door_03', 'Close', '', 11.0, null);
             EntFire('Ord_lvl_01_door_03', 'Open', '', 12.0, null);
@@ -4093,11 +4701,9 @@ function ExtremeEvent(inputData, index) {
             //spawn shreks at pos:(-13710,9620,14147),(-11959,9716,14168)
             scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(-13710, 9620, 14147));
-            }, 25.0, null, null);
-            scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(-11959, 9716, 14168));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
             }, 25.0, null, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 25.55, null);
             //spawn vaginafaces at pos:(-13728,9745,14195),(-11980,9033,14176),(-11695,8838,14193),(-12827,7848,14240)
             ExevSpawn('s_vaginaface', Vector(-13728, 9745, 14195));
             ExevSpawn('s_vaginaface', Vector(-11980, 9033, 14176));
@@ -4204,7 +4810,7 @@ function ExtremeEvent(inputData, index) {
                 exev_spawns.splice(0);
             }, 18.0, null, null);
             scheduleInternalScript(() => {
-                exev_spawns.push(ExSpawn('slash_spawner', Vector(8000, 3840, -696), Vector(0, 90, 0)));
+                exev_spawns.push(ExSpawn('Slash_Spawner_No_Script', Vector(8000, 3840, -696), Vector(0, 90, 0)));
             }, 18.5, null, null);
             scheduleInternalScript(() => {
                 exev_spawnrate = 0.1;
@@ -4228,14 +4834,10 @@ function ExtremeEvent(inputData, index) {
             //spawn shreks at pos:(13608,6987,-1511),(11540,7006,-73),(13180,6767,2224)
             scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(13608, 6987, -1511));
-            }, 85.0, null, null);
-            scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(11540, 7006, -73));
-            }, 85.0, null, null);
-            scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(13180, 6767, 2224));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
             }, 85.0, null, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 85.55, null);
             //start spawning jump/crouchlasers after 20s until 50s at pos:(14208,6432,-2288/-2232),Y:90
             exev_spawns.splice(0);
             exev_spawns.push(ExSpawn('slash_spawner', Vector(14350, 6432, -2288), Vector(0, 90, 0)));
@@ -4257,8 +4859,8 @@ function ExtremeEvent(inputData, index) {
             //spawn a shrek at pos:(15415,2229,1908)
             scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(15415, 2229, 1908));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
             }, 55.0, null, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 55.55, null);
             //break 'finale_breakladder2' at 60.0s (a bit earlier than usual)
             EntFire('finale_breakladder2', 'Break', '', 60.0, null);
             break;
@@ -4277,9 +4879,11 @@ function ExtremeEvent(inputData, index) {
             ExevSpawn('s_vaginaface', Vector(13977, -2292, 6241));
             ExevSpawn('s_vaginaface', Vector(14095, -2826, 7359));
             //spawn a shrek after 15.0s at pos:(13067,-1213,6219)
-            ExevSpawn('X69Xluff_shrekspawn', Vector(13067, -1213, 6219), null, 15.0);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 15.55, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 16.0, null);
+            scheduleInternalScript(() => {
+                ExevSpawn('X69Xluff_shrekspawn', Vector(13067, -1213, 6219));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 1.0, null);
+            }, 15.0, null, null);
             //spawn a vaginaface after 8.0s at pos:(15817,-3188,6738)
             ExevSpawn('s_vaginaface', Vector(15817, -3188, 6738), null, 8.0);
             break;
@@ -4522,8 +5126,8 @@ function ExtremeEvent(inputData, index) {
             //spawn shrek at pos:(-14598,-10906,2631)
             scheduleInternalScript(() => {
                 ExevSpawn('X69Xluff_shrekspawn', Vector(-14598, -10906, 2631));
+                EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 0.55, null);
             }, 40.0, null, null);
-            EntFire('X69Xluff_npc_phys2gg*', 'FireUser2', '', 40.55, null);
             //spawn a yellow laser at 17.0s at pos:(-11291,-7753,1731)
             ExevSpawn('blobblaser_tem1', Vector(-11291, -7753, 1731), null, 17.0);
             break;
@@ -5283,12 +5887,15 @@ const EXTERNAL_INPUT_ALIASES = [
     input('SetTurtleFallDownPlatformGoneFalse', 'turtlefalldown_platformgone = false', () => {
         turtlefalldown_platformgone = false;
     }, 'stripper'),
+    input('ShowCoinsHud', 'ShowCoinsHud()', () => ShowCoinsHudForAllPlayers(), 'vmf'),
+    input('HideCoinsHud', 'HideCoinsHud()', () => HideCoinsHudForAllPlayers(), 'vmf'),
 ];
 function OnRoundEnd(reason) {
     if (shopDefendTimer !== null) {
         clearInterval(shopDefendTimer);
         shopDefendTimer = null;
     }
+    HideCoinsHudForAllPlayers();
     EntFire('killstuff', 'Trigger', '', 0.0, null);
     //EntFire('trigger_teleport', 'Kill', '', 0.0, null);       //dont work in cs2
     EntFire('Map_Manager', 'RunScriptInput', 'ExtremeCheck', 0.0, null);
