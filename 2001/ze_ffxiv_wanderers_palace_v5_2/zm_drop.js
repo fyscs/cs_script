@@ -1,0 +1,16 @@
+import { Instance } from "cs_script/point_script";
+
+Instance.OnScriptInput("DropWeapon", ({activator}) => {
+    
+    if(activator?.IsValid())
+    {
+        const player = activator;
+        const player_c = player?.GetPlayerController();
+        const player_p = player_c?.GetPlayerPawn();
+        const active_weapon = player_p?.GetActiveWeapon();
+        if(active_weapon)
+        {
+            player_p?.DropWeapon(active_weapon);
+        }
+    }
+});
