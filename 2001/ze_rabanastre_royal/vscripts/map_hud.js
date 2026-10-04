@@ -67,13 +67,12 @@ if (kwPlaying) {
     }
 
 if (nextT > 0) {
-        // 按仓库要求，Think 间隔至少为 0.1 秒。
-        Instance.SetNextThink(nextT > gt + 0.1 ? nextT : gt + 0.1);
+        Instance.SetNextThink(nextT > gt + 0.02 ? nextT : gt + 0.02);
     }
 }
 
 function kickThink() {
-    Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+    Instance.SetNextThink(Instance.GetGameTime() + 0.02);
 }
 
 function startFade(target) {
