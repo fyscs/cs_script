@@ -92,7 +92,8 @@ function UpdatePosition() {
 }
 
 function GetBoss() {
-    if (!BossEntity) {
+    // 实体重建后旧引用仍然存在, 失效时需要重新查找.
+    if (!BossEntity || !BossEntity.IsValid()) {
         BossEntity = Instance.FindEntityByName("Boss_Physbox");
     }
     return BossEntity;
