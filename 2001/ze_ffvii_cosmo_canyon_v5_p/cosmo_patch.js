@@ -1086,43 +1086,41 @@ Instance.OnScriptInput("ItemPoison", (data) => {
 Instance.OnScriptInput("ItemConfuse", (data) => {
     data.caller.SetEntityName("Item_Z_Confuse");
 });
-// KOEN EDIT:
-// CHANGE RELAYS TO BUTTONS THEN FIRE PRESS INPUT INSTEAD OF TRIGGER
-const button_name_array = {
-    "Weapon_Heal": "Item_Heal_Button",
-    "Weapon_Fire": "Item_Fire_Button",
-    "Weapon_Electro": "Item_Electro_Button",
-    "Weapon_Bio": "Item_Bio_Button",
-    "Weapon_Gravity": "Item_Gravity_Button",
-    "Weapon_Wind": "Item_Wind_Button",
-    "Weapon_Earth": "Item_Earth_Button",
-    "Weapon_Ultima": "Item_Ultima_Button",
-    "Weapon_Sleep": "Item_Sleep_Button",
-    "Weapon_Potion": "Potion_Button",
-    "Weapon_Z_Ice": "Item_Z_Ice_Button",
-    "Weapon_Z_Fire": "Item_Z_Fire_Button",
-    "Weapon_Z_Poison": "Item_Z_Poison_Button",
-    "Item_Z_Confuse": "Item_Z_Confuse_button"
+const relay_names = {
+    "Weapon_Heal": "Item_Relay_Heal",
+    "Weapon_Fire": "Item_Relay_Fire",
+    "Weapon_Electro": "Item_Relay_Electro",
+    "Weapon_Bio": "Item_Relay_Bio",
+    "Weapon_Gravity": "Item_Relay_Gravity",
+    "Weapon_Wind": "Item_Relay_Wind",
+    "Weapon_Earth": "Item_Relay_Earth",
+    "Weapon_Ultima": "Item_Relay_Ultima",
+    "Weapon_Sleep": "Item_Relay_Sleep",
+    "Weapon_Potion": "Item_Relay_Potion",
+    "Weapon_Z_Ice": "Item_Z_Ice_Relay",
+    "Weapon_Z_Fire": "Item_Z_Fire_Relay",
+    "Weapon_Z_Poison": "Item_Z_Poison_Relay",
+    "Item_Z_Confuse": "Item_Z_Confuse_relay"
 };
 Instance.OnScriptInput("ItemTick", (data) => {
     const parent = data.caller.GetParent();
     if (parent !== undefined && parent instanceof CSPlayerPawn) {
         const item_name = data.caller.GetEntityName();
         if (parent.WasInputJustPressed(CSInputs.USE)) {
-            const button_name = button_name_array[item_name];
+            const relay_name = relay_names[item_name];
             if (parent.GetTeamNumber() === Team.CT) {
-                if (button_name === "Item_Ultima_Button" && shinra_tp) {
+                if (relay_name === "Item_Relay_Ultima" && shinra_tp) {
                     return;
                 }
                 if (!gi_nattak_silence) {
-                    EntFire(button_name, "Press");
+                    EntFire(relay_name, "Trigger");
                 }
             }
             if (parent.GetTeamNumber() === Team.T) {
-                if (button_name === "Item_Z_Ice_Button" && shinra_elevator) {
+                if (relay_name === "Item_Z_Ice_Relay" && shinra_elevator) {
                     return;
                 }
-                EntFire(button_name, "Press");
+                EntFire(relay_name, "Trigger");
             }
         }
         if (item_name === "Weapon_Z_Ice" || item_name === "Weapon_Z_Fire") {
