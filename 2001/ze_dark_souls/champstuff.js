@@ -136,9 +136,8 @@ function AddWinners() {
 {
     "name"      "string"             // player name
     "userid"    "player_controller"  // player slot
-    "networkid" "string"             // steamid3
-    "xuid"      "uint64"             // steamid64 (json parse breaks it i think)
-    "bot"        "bool"
+    "steam_id"  "string"             // steamid64 string
+    "bot"       "bool"
 }
 */
 function OnPlayerConnect(input) {
@@ -148,12 +147,10 @@ function OnPlayerConnect(input) {
         const event = JSON.parse(input.value);
         if (!event || !Number.isSafeInteger(event.userid) || event.userid < 0)
             return;
-        const slot = event.userid & 0xff;
-        if (slot >= 64)
-            return;
-        const steamid = event.networkid;
-        mapSid.delete(slot);
-        if (typeof steamid === "string" && /^(\[U:1:\d+\]|STEAM_[0-5]:[01]:\d+)$/.test(steamid)) {
+        Instance.Msg(`player_connect event JSON: ${JSON.stringify(event)}`);
+        const slot = event.userid % 64;
+        const steamid = event.steam_id ?? undefined;
+        if (typeof steamid === "string") {
             mapSid.set(slot, steamid);
             Instance.Msg(`Got steamid: ${steamid} for slot ${slot}`);
         }
