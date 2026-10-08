@@ -16,7 +16,6 @@ const PLATFORM_CLASS = "func_rotating";
 const ATTACK_NAME    = "CannonMissileAttack";
 const ATTACK_CLASS   = "logic_relay";
 const DETACH_DIST = 150;
-const THINK_INTERVAL = 0.1;
 
 // --- Bits d'input (valeurs de l'enum CSInputs, en dur pour éviter tout import) ---
 const IN_LEFT   = 1 << 2;   // A (move left)
@@ -56,7 +55,7 @@ function slotOfPawn(pawn) {
 function ensureThink() {
   if (thinkStarted) return;
   Instance.SetThink(tick);
-  Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+  Instance.SetNextThink(Instance.GetGameTime());
   thinkStarted = true;
 }
 function disconnect(slot) {
@@ -88,9 +87,6 @@ Instance.OnScriptInput("useTurret", (io) => {
     seat: pawn.GetAbsOrigin(),
     rot: 0,      // -1 back / 0 stop / +1 forward (dernier état envoyé)
     last: 0,     // dernière direction pressée (départage A+D)
-    leftHeld: false,
-    rightHeld: false,
-    attackHeld: false,
   });
   ensureThink();
 });
@@ -104,18 +100,16 @@ function tick() {
     if (dist(s.pawn.GetAbsOrigin(), s.platform.GetAbsOrigin()) > DETACH_DIST) { disconnect(slot); continue; }
 
     // saut -> déconnexion
-    if (s.pawn.IsInputPressed(IN_JUMP)) { disconnect(slot); continue; }
+    if (s.pawn.WasInputJustPressed(IN_JUMP)) { disconnect(slot); continue; }
 
     // GEL : on épingle la position + vélocité nulle
     s.pawn.Teleport({ position: s.seat, velocity: { x: 0, y: 0, z: 0 } });
 
     // A / D -> rotation (dernière pressée gagne si les deux sont tenues)
+    if (s.pawn.WasInputJustPressed(IN_LEFT))  s.last = 1;
+    if (s.pawn.WasInputJustPressed(IN_RIGHT)) s.last = -1;
     const left  = s.pawn.IsInputPressed(IN_LEFT);
     const right = s.pawn.IsInputPressed(IN_RIGHT);
-    if (left && !s.leftHeld) s.last = 1;
-    if (right && !s.rightHeld) s.last = -1;
-    s.leftHeld = left;
-    s.rightHeld = right;
     let want = 0;
     if (left && right) want = s.last;
     else if (left)  want = 1;
@@ -127,13 +121,11 @@ function tick() {
     }
 
     // clic gauche -> tir (une fois par clic)
-    const attack = s.pawn.IsInputPressed(IN_ATTACK);
-    if (attack && !s.attackHeld && s.attack && s.attack.IsValid()) {
+    if (s.pawn.WasInputJustPressed(IN_ATTACK) && s.attack && s.attack.IsValid()) {
       Instance.EntFireAtTarget({ target: s.attack, input: "Trigger" });
     }
-    s.attackHeld = attack;
   }
-  if (active.size > 0) Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+  if (active.size > 0) Instance.SetNextThink(Instance.GetGameTime());
   else thinkStarted = false;
 }
 

@@ -1,14 +1,30 @@
 import { Instance } from "cs_script/point_script";
 
-const model_skin = "jill";
-Instance.OnScriptInput("ChangeSkin", ({activator}) => {
-    
-    if(activator?.IsValid())
-    {
-        const player = activator;
-        const player_c = player?.GetPlayerController();
+const model_jill = "characters/models/microrost/jill_val.vmdl";
+const model_claire = "characters/models/microrost/claire_redfild.vmdl";
+
+
+Instance.OnScriptInput("ChangeSkinJill", ({ activator }) => {
+
+    if (activator?.IsValid()) {
+
+        const player_c = activator.GetPlayerController();
         const player_p = player_c?.GetPlayerPawn();
-        player_p?.SetModel("characters/models/microrost/jill_val.vmdl");
-    }   
+
+        player_p?.SetModel(model_jill);
+    }
+
 });
 
+
+Instance.OnScriptInput("ChangeSkinClaire", ({ activator }) => {
+
+    if (activator?.IsValid()) {
+
+        const player_c = activator.GetPlayerController();
+        const player_p = player_c?.GetPlayerPawn();
+
+        player_p?.SetModel(model_claire);
+    }
+
+});
