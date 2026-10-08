@@ -1,4 +1,4 @@
-import { Instance } from 'cs_script/point_script'
+import { Instance, CSInputs } from 'cs_script/point_script'
 
 function Vector(x, y, z) { return { x: x, y: y, z: z } }
 
@@ -56,16 +56,52 @@ Instance.OnScriptInput("SpawnNuke", (context) => {
 
 // Bouton géant au-dessus de l'arène -> OnPressed -> RunScriptInput "SpawnNukeUnderPlayer"
 // Spawn une nuke au X/Y du zombie qui appuie, à la hauteur standard des nukes.
-Instance.OnScriptInput("SpawnNukeUnderPlayer", (context) => {
-    const p = context.activator
-    if (!p || !p.IsValid()) return
-    if (p.GetTeamNumber() != 2) return   // réservé aux zombies (T) ; enlève si inutile
-    const o = p.GetAbsOrigin()
-    const maker = Instance.FindEntityByName("nuke_maker")
-    if (!maker) return
-    maker.Teleport({ position: Vector(o.x, o.y, RING_Z) })
-    Instance.EntFireAtTarget({ target: maker, input: "ForceSpawn" })
+// Cooldown PAR joueur (1s) : un spammeur ne bloque plus le bouton pour les autres
+// (mettre DelayBeforeReset du bouton à 0 côté Hammer).
+const NUKE_COOLDOWN = 1.0
+let nukeLastUse = new Map()   // pawn -> GetGameTime() du dernier usage
+
+// Détection du +use des zombies (remplace le func_button).
+// Activé/désactivé via RunScriptInput "EnableDodgeball" / "DisableDodgeball".
+const NUKE_THINK_INTERVAL = 0.015
+let dodgeballActive = false
+
+Instance.OnScriptInput("EnableDodgeball", () => { dodgeballActive = true })
+Instance.OnScriptInput("DisableDodgeball", () => { dodgeballActive = false })
+
+// reset en début de manche : le dodgeball repart désactivé
+Instance.OnRoundStart(() => {
+    dodgeballActive = false
+    nukeLastUse.clear()
 })
+
+function nukeThink() {
+    if (dodgeballActive) {
+        Instance.FindEntitiesByClass("player").forEach((p) => {
+            if (!p.IsValid() || p.GetHealth() <= 0) return
+            if (p.GetTeamNumber() !== 2) return   // zombies seulement
+            const pressed = p.WasInputJustPressed(CSInputs.USE)
+            if (pressed) Instance.Msg(`[dodge] USE détecté sur un zombie`)
+            if (!pressed) return
+
+            // cooldown par joueur
+            const now = Instance.GetGameTime()
+            const last = nukeLastUse.get(p)
+            if (last !== undefined && now - last < NUKE_COOLDOWN) return
+            nukeLastUse.set(p, now)
+
+            // spawn la nuke à la position du zombie
+            const maker = Instance.FindEntityByName("nuke_maker")
+            if (!maker) return
+            const o = p.GetAbsOrigin()
+            maker.Teleport({ position: Vector(o.x, o.y, RING_Z) })
+            Instance.EntFireAtTarget({ target: maker, input: "ForceSpawn" })
+        })
+    }
+    Instance.SetNextThink(Instance.GetGameTime() + NUKE_THINK_INTERVAL)
+}
+Instance.SetThink(nukeThink)
+Instance.SetNextThink(Instance.GetGameTime() + NUKE_THINK_INTERVAL)
 
 function randomPointInZone() {
     for (let i = 0; i < 30; i++) {

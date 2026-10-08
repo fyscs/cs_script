@@ -14,6 +14,10 @@ Instance.OnScriptInput("MegaBoost", (context) => {
     context.activator.Teleport({ velocity: Vector(context.activator.GetAbsVelocity().x * 3, context.activator.GetAbsVelocity().y * 3, context.activator.GetAbsVelocity().z) })
 })
 
+Instance.OnScriptInput("BulldogBoost", (context) => {
+    context.activator.Teleport({ velocity: Vector(context.activator.GetAbsVelocity().x, - 2000, context.activator.GetAbsVelocity().z) })
+})
+
 Instance.OnScriptInput("StopBoost", (context) => {
     context.activator.Teleport({ velocity: Vector(0, 0, 0) })
 })
@@ -24,6 +28,10 @@ Instance.OnScriptInput("Frozen", (context) => {
 
 Instance.OnScriptInput("StarterSpeed", (context) => {
     context.activator.Teleport({ velocity: Vector(context.activator.GetAbsVelocity().x + 300, context.activator.GetAbsVelocity().y, context.activator.GetAbsVelocity().z) })
+})
+
+Instance.OnScriptInput("StarterSpeedSpawn", (context) => {
+    context.activator.Teleport({ velocity: Vector(context.activator.GetAbsVelocity().x, context.activator.GetAbsVelocity().y + 1000, context.activator.GetAbsVelocity().z) })
 })
 
 Instance.OnScriptInput("StarterSpeed2", (context) => {
