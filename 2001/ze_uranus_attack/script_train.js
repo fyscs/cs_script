@@ -14,7 +14,7 @@ const PROPS = [
   { name: "p1_mdltrain03", flip: false, offset: { yaw: -90 }, rollSign: -1 },
 ];
 
-const TICK     = 0.1;    // 10 Hz
+const TICK     = 0.02;   // 50 Hz
 const MIN_MOVE = 0.01;   // garde-fou anti-jitter a l'arret
 
 // ---- etat independant par prop ----

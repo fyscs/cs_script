@@ -77,10 +77,10 @@ Instance.SetThink(function ()
             DelayedCalls.splice(i, 1);
         }
     }
-    Instance.SetNextThink(now + 0.1);
+    Instance.SetNextThink(now + 0.01);
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 
 Instance.OnRoundStart(() => {
     ITEMS_SET.clear();
@@ -456,6 +456,16 @@ Instance.OnScriptInput("StripKnifeZm", ({caller, activator}) => {
     caller?.Remove();
 });
 
+Instance.OnScriptInput("UseItem", ({caller, activator}) => {
+    if(caller?.IsValid())
+    {
+        if(caller?.GetParent()?.GetOwner() == activator)
+        {
+            Instance.EntFireAtTarget({ target: caller, input: "FireUser1", activator: activator });
+        }
+    }
+});
+
 ///////////////////////////////////////////////////////////////////////
 let ZM_SKIN_1 = null;
 const ZM_SKIN1_JUMP_CD = 40;
@@ -505,7 +515,7 @@ Instance.OnKnifeAttack((event) => {
 
                 ZM_SKIN1_lastUseTime = now;
 
-                M_SetAbsVelocity(player, {x: 0, y: 0, z: 650});
+                M_SetBaseVelocity(player, {x: 0, y: 0, z: 650});
             }
             else if(player === ZM_SKIN_2)
             {
@@ -531,8 +541,7 @@ Instance.OnScriptInput("UltimaDoDamage", ({caller, activator}) => {
     for(let i = 0; i < players.length; i++)
     {
         let p = players[i];
-        if(p?.IsValid() && p?.IsAlive() && p.GetTeamNumber() == 2 &&
-           VectorDistance(p.GetAbsOrigin(), rage_pos) <= Ultimate_Radius)
+        if(p?.IsValid() && p?.IsAlive() && p.GetTeamNumber() == 2 && VectorDistance(p.GetAbsOrigin(), rage_pos) <= Ultimate_Radius)
         {
             validPlayers.push(p);
         }
@@ -547,7 +556,26 @@ Instance.OnScriptInput("UltimaDoDamage", ({caller, activator}) => {
             let p = validPlayers[i];
             if(p !== survivor)
             {
-                p.TakeDamage({ damage: 1, damageTypes: 0, damageFlags: 16 | 32, inflictor: player_weapon?.IsValid() ? player_weapon : null, attacker: player?.IsValid() ? player : null });
+                let sameTeam = false;
+
+                if(player && player.IsValid())
+                {
+                    sameTeam = player.GetTeamNumber() === p.GetTeamNumber();
+                }
+
+                let damageData = {
+                    damage: 1,
+                    damageTypes: 0,
+                    damageFlags: 16
+                };
+
+                if(player && player.IsValid() && player.IsAlive() && !sameTeam)
+                {
+                    damageData.inflictor = player_weapon || null;
+                    damageData.attacker = player || null;
+                }
+
+                p.TakeDamage(damageData);
             }
         }
     }

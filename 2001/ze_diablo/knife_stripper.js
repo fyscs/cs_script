@@ -1,0 +1,9 @@
+import { Instance, CSGearSlot } from "cs_script/point_script";
+
+Instance.OnScriptInput("strip", (inputData) => {
+    const activator = inputData.activator;
+    const knife = activator.FindWeaponBySlot(CSGearSlot.KNIFE);
+    if (knife) {
+        activator.DestroyWeapon(knife);
+    }
+});

@@ -30,6 +30,13 @@ Instance.OnScriptInput("vote_add", (stuff) => {
     }
 });
 
+Instance.OnScriptInput("set_chiffon", (stuff) => {
+    const player = stuff.activator;
+    if (player?.IsValid() && player.GetTeamNumber() == 3) {
+        player.SetModel("agents/models/kianya/vrc/chiffon_marshmallow/chiffon_marshmallow.vmdl");
+    }
+});
+
 /*
 Instance.OnScriptInput("vote_remove", (stuff) => {
     const player = stuff.activator;

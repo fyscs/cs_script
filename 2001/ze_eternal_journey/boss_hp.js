@@ -1,317 +1,615 @@
 import { Instance } from "cs_script/point_script";
-const InPuts = [
-    ["Glasgavelen_boss_start", "OnTrigger", "stg2_mutant_hitbox,bosshp_script,boss_hud,Glasgavelen,50,10", StartBoss],
-    ["Glasgavelen_boss_addhp", "OnTrigger", "0,200", AddHealth],
-    ["stg2_mutant_hitbox", "OnUser4", "100000", ChangeHealthIt],
-    ["stg2_mutant_grenade_multi", "OnStartTouch", "50", GrenadeDamage],
-    ["boss_firedamage", "OnTrigger", "Fire,300", ItemDamage],
-    ["Cromcruach_boss_start", "OnTrigger", "stg3_mutant2_hitbox,bosshp_script,boss_hud,Cromcruach,50,10", StartBoss],
-    ["Cromcruach_boss_addhp", "OnTrigger", "0,220", AddHealth],
-    ["stg3_mutant2_hitbox", "OnUser4", "100000", ChangeHealthIt],
-    ["stg3_mutant2_grenade_multi", "OnStartTouch", "50", GrenadeDamage],
-    ["Braha_boss_start", "OnTrigger", "stg5_mutant_hitbox,bosshp_script,boss_hud,Braha,50,10,boss_phase_case", StartBoss],
-    ["Braha_boss_addhp", "OnTrigger", "0,450", AddHealth]
+
+const BOSS_HP_MAP = new Map();
+const BOSS_HP_TICK = 0.10;
+const MAX_BOSS_SLOTS = 5;
+let BOSS_HP_HUD = null;
+
+const MAX_TOP_DAMAGE_SLOTS = 10;
+const TOP_DAMAGE_DISPLAY_TIME = 10.00;
+let TOP_DAMAGE_HIDE_AT = null;
+
+const BOSS_HUD_COLORS = [
+    "Red",
+    "Green",
+    "Orange",
+    "Yellow",
+    "Blue",
+    "Cyan",
+    "Purple",
+    "Pink",
+    "White",
+    "Gray",
+    "Gold",
+    "Lime",
+    "Teal",
+    "Violet"
 ];
 
-let BOSS_HEALTH = 0.00;
-let BOSS_MAX_HEALTH = 0.00;
-let HP_BAR_MAX_FRAME = 15;
-let HP_BAR_FRAME = 0;
-let HP_PER_FRAME = 0;
-
-let BOSS_NAME = "BOSS: ";
-let BOSS_ENT = "";
-let BOSS_SCRIPT = "";
-let BOSS_HUD_ENT = "";
-let BOSS_HUD_TEXT = "";
-let BOSS_PERCENT_C = ""; 
-
-let BOSS_HUD_IND = true; 
-let BOSS_HUD_ST = "◼";
-let BOSS_HUD_ST2 = "◻";
-
-let TICKRATE_B = 0.01;
-let IS_BOSS_FIGHT = false;
-
-let ITEM_DAMAGE = "";
-let ITEM_DAMAGE_TICK = 2.00;
-let SAVE_ITEM_DAMAG_T = ITEM_DAMAGE_TICK;
-
-let GRENADE_DAMAGE = 0;
-let GRENADE_DAMAGE_TICK = 2.00;
-let SAVE_GRENADE_DAMAG_T = GRENADE_DAMAGE_TICK;
-
-Instance.OnRoundStart(() => {
-    ResetBossS();
-    if(InPuts.length > 0)
+Instance.OnRoundStart(() =>{
+    BOSS_HP_HUD = Instance.FindEntityByName("boss_hp_layout");
+    BOSS_HP_MAP.clear();
+    for(let i = 1; i <= MAX_BOSS_SLOTS; i++)
     {
-        for (let i = 0; i < InPuts.length; i++) 
+        BOSS_HP_HUD.SetHasClass(`boss_slot_${i}`, "BossSlotHidden", true);
+    }
+
+    TOP_DAMAGE_HIDE_AT = null;
+    BOSS_HP_HUD.SetHasClass("boss_top_damage_container", "TopDamageHidden", true);
+    for(let i = 1; i <= MAX_TOP_DAMAGE_SLOTS; i++)
+    {
+        BOSS_HP_HUD.SetHasClass(`top_damage_slot_${i}`, "TopDamageSlotHidden", true);
+        for(const rank_class of TOP_DAMAGE_RANK_COLORS)
         {
-            const [entName, outputName, param, handlerFn] = InPuts[i];
-
-            const ent = Instance.FindEntityByName(entName);
-            if(!ent || !ent?.IsValid())
-            {
-                Instance.Msg("Can't Find: "+entName);
-                continue;
-            } 
-
-            Instance.Msg(`Add Output to: ${entName} | OutputName: ${outputName} | Param: ${param} | Func: ${handlerFn.name}`);
-
-            Instance.ConnectOutput(ent, outputName, ({value = param, caller, activator}) => {
-                handlerFn(value);
-            });
+            BOSS_HP_HUD.SetHasClass(`top_damage_slot_${i}`, rank_class, false);
         }
     }
-})
-
-function StartBoss(arg) 
-{
-    ITEM_DAMAGE = "";
-    GRENADE_DAMAGE = 0;
-    let arg_s = arg;
-    let arg_rs = arg_s.replace(/\s+/g, '');
-    const arr = arg_rs.split(",");
-    BOSS_ENT = arr[0];
-    BOSS_SCRIPT = arr[1];
-    BOSS_HUD_ENT = arr[2];
-    BOSS_NAME = arr[3];
-    if (BOSS_NAME.includes('$')) 
-    {
-        BOSS_NAME = BOSS_NAME.replace('$', ' ');
-    }
-    BOSS_HEALTH = BOSS_HEALTH + Number(arr[4]);
-    HP_BAR_MAX_FRAME = Number(arr[5]);
-    HP_BAR_FRAME = Number(arr[5]);
-    if(Number(arr[5]) === 1)
-    {
-        BOSS_HUD_IND = false;
-    }
-    BOSS_PERCENT_C = arr[6];
-    if(BOSS_PERCENT_C == null)
-    {
-        BOSS_PERCENT_C = "";
-    }
-    IS_BOSS_FIGHT = true;
-    Instance.EntFireAtName({ name: BOSS_SCRIPT, input: "RunScriptInput", value: "CheckHealth", delay: 0.00 });
-}
-
-function AddHealth(arg)
-{
-    let arg_s = arg;
-    let arg_rs = arg_s.replace(/\s+/g, '');
-    const arr = arg_rs.split(",");
-    if(arr[0] == "0")
-    {
-        let players = Instance.FindEntitiesByClass("player");
-        if(players.length > 0)
-        {
-            for (let i = 0; i < players.length; i++) 
-            {
-                if(IsValidEntity(players[i]))
-                {
-                    BOSS_HEALTH = BOSS_HEALTH + Number(arr[1]);
-                }
-            }
-        }
-    }
-    else
-    {
-        BOSS_HEALTH = BOSS_HEALTH + Number(arr[1]);
-    }
-}
-
-Instance.OnScriptInput("CheckHealth", () => {
-    if(!IS_BOSS_FIGHT)
-    {
-        return;
-    }
-
-    if(HP_PER_FRAME == 0)
-    {
-        HP_PER_FRAME = BOSS_HEALTH / HP_BAR_MAX_FRAME;
-        BOSS_MAX_HEALTH = BOSS_HEALTH;
-    }
-
-    if(BOSS_HEALTH > BOSS_MAX_HEALTH)
-    {
-        HP_PER_FRAME = BOSS_HEALTH / HP_BAR_MAX_FRAME;
-        BOSS_MAX_HEALTH = BOSS_HEALTH;
-    }
-
-    HP_BAR_FRAME = BOSS_HEALTH / HP_PER_FRAME;
-    if(HP_BAR_FRAME > HP_BAR_MAX_FRAME)
-    {
-        HP_BAR_FRAME = HP_BAR_MAX_FRAME;
-    }
-
-    if(BOSS_HEALTH <= 0)
-    {
-        BOSS_HEALTH = 0;
-        BossKill();
-        return;
-    }
-    BuildHud();
-    Instance.EntFireAtName({ name: BOSS_SCRIPT, input: "RunScriptInput", value: "CheckHealth", delay: TICKRATE_B });
 });
 
-function BuildHud()
+let lastThinkTime = Instance.GetGameTime();
+
+Instance.SetThink(function () {
+    const now = Instance.GetGameTime();
+    const delta = now - lastThinkTime;
+
+    lastThinkTime = now;
+
+    for(const boss_hp of BOSS_HP_MAP.values()) 
+    {
+        boss_hp.onTick(delta);
+    }
+
+    if(TOP_DAMAGE_HIDE_AT !== null && now >= TOP_DAMAGE_HIDE_AT) 
+    {
+        HideTopDamage();
+    }
+
+    Instance.SetNextThink(now + BOSS_HP_TICK);
+});
+
+Instance.SetNextThink(Instance.GetGameTime());
+
+class BossHp
 {
-    if(!IS_BOSS_FIGHT)
+    constructor(_physbox_name, _physbox_ent, _bossname, _health, _hud_slot, _boss_color)
     {
-        return;
-    }
-    BOSS_HUD_TEXT = "";
-    let GrenadeDamage_String = "";
-    if(ITEM_DAMAGE != "")
-    {
-        ITEM_DAMAGE_TICK = ITEM_DAMAGE_TICK - TICKRATE_B;
-    }
-    if(ITEM_DAMAGE_TICK <= 0)
-    {
-        ITEM_DAMAGE = "";
-        ITEM_DAMAGE_TICK = SAVE_ITEM_DAMAG_T;
-    }
+        this.boss_physbox_name = _physbox_name;
+        this.boss_physbox_ent = _physbox_ent;
+        this.boss_name = _bossname;
+        this.boss_hud_slot = _hud_slot;
+        this.boss_color = _boss_color;
 
-    if(GRENADE_DAMAGE != 0)
-    {
-        GrenadeDamage_String = " [HE: -" + GRENADE_DAMAGE + " HP] ";
-        GRENADE_DAMAGE_TICK = GRENADE_DAMAGE_TICK - TICKRATE_B;
-    }
-    if(GRENADE_DAMAGE_TICK <= 0)
-    {
-        GRENADE_DAMAGE = 0;
-        GRENADE_DAMAGE_TICK = SAVE_GRENADE_DAMAG_T;
-    }
-    if(BOSS_HEALTH < 0)
-    {
-        BOSS_HEALTH = 0;
-    }
-    let PERCENT_HP = Math.ceil(BOSS_HEALTH / BOSS_MAX_HEALTH * 100);
-    BOSS_HUD_TEXT += `${BOSS_NAME}: ${BOSS_HEALTH} (${PERCENT_HP}%)${GrenadeDamage_String}${ITEM_DAMAGE}`;
-    if(BOSS_PERCENT_C.length > 0)
-    {
-        Instance.EntFireAtName({ name: BOSS_PERCENT_C, input: "InValue", value: ""+PERCENT_HP, delay: 0.00 });
-    }
-    if(BOSS_HUD_IND)
-    {
-        BOSS_HUD_TEXT += "\n[";
-        let hp_bar_int = Math.ceil(HP_BAR_FRAME);
-        if(hp_bar_int < 1)
-        {
-            hp_bar_int = 1;
-        }
-        for(let c = 0; c < hp_bar_int; c++)
-        {
-            BOSS_HUD_TEXT = BOSS_HUD_TEXT + BOSS_HUD_ST;
-        }
-        if(hp_bar_int < HP_BAR_MAX_FRAME)
-        {
-            for(let a = hp_bar_int; a < HP_BAR_MAX_FRAME; a++)
-            {
-                BOSS_HUD_TEXT = BOSS_HUD_TEXT + BOSS_HUD_ST2;
-            }
-        }
-        BOSS_HUD_TEXT = BOSS_HUD_TEXT + "]";
-    }
-    Instance.EntFireAtName({ name: BOSS_HUD_ENT, input: "SetMessage", value: BOSS_HUD_TEXT, delay: 0.00 });
-    // Instance.Msg(BOSS_HUD_TEXT);
-}
-
-Instance.OnScriptInput("SubtractHealth", () => {
-    if(!IS_BOSS_FIGHT)
-    {
-        return;
-    }
+        this.boss_fireuser = 1;
+        this.item_damage_obj = {};
+        this.boss_nade_damage = 0;
+        this.top_damage = false;
         
-    if(BOSS_HEALTH >= 0)
+        this.damage_map = new Map();
+
+        this.boss_hp = _health;
+        this.boss_max_health = _health;
+
+        this.boss_hud_text = "";
+
+        this.IS_BOSS_FIGHT = true;
+
+        this.ITEM_DAMAGE = "";
+        this.ITEM_DAMAGE_COLOR = "White";
+        this.ITEM_DAMAGE_TICK = 4.00;
+        this.SAVE_ITEM_DAMAG_T = this.ITEM_DAMAGE_TICK;
+
+        this.GRENADE_DAMAGE = 0;
+        this.GRENADE_DAMAGE_TICK = 2.00;
+        this.SAVE_GRENADE_DAMAG_T = this.GRENADE_DAMAGE_TICK;
+
+        this.BAR_SIZE = 20;
+
+        this.BOSS_TIMER_ENABLED = false;
+        this.BOSS_TIMER_REMAINING = 0;
+        this.BOSS_TIMER_COLOR = "White";
+
+        this.boss_stages = [];
+    }
+    onTick(delta)
     {
-        BOSS_HEALTH = BOSS_HEALTH - 1
+        if(!this.IS_BOSS_FIGHT) return;
+
+        if(!this.boss_physbox_ent?.IsValid())
+        {
+            this.BossKill();
+            return;
+        }
+
+        if(this.boss_hp <= 0)
+        {
+            this.boss_hp = 0;
+            this.BossKill();
+            return;
+        }
+        this.BuildHud(delta);
+    }
+    BuildHud(delta)
+    {
+        if(!this.IS_BOSS_FIGHT) return;
+
+        if(this.ITEM_DAMAGE != "")
+        {
+            this.ITEM_DAMAGE_TICK -= delta;
+        }
+
+        if(this.ITEM_DAMAGE_TICK <= 0)
+        {
+            this.ITEM_DAMAGE = "";
+            this.ITEM_DAMAGE_COLOR = "White";
+            this.ITEM_DAMAGE_TICK = this.SAVE_ITEM_DAMAG_T;
+        }
+
+        if(this.GRENADE_DAMAGE != 0)
+        {
+            this.GRENADE_DAMAGE_TICK -= delta;
+        }
+
+        if(this.GRENADE_DAMAGE_TICK <= 0)
+        {
+            this.GRENADE_DAMAGE = 0;
+            this.GRENADE_DAMAGE_TICK = this.SAVE_GRENADE_DAMAG_T;
+        }
+
+        if(this.boss_hp < 0)
+        {
+            this.boss_hp = 0;
+        }
+
+        if(this.BOSS_TIMER_ENABLED && this.BOSS_TIMER_REMAINING > 0)
+        {
+            this.BOSS_TIMER_REMAINING -= delta;
+            if(this.BOSS_TIMER_REMAINING < 0)
+            {
+                this.BOSS_TIMER_REMAINING = 0;
+            }
+        }
+
+        const stage_percent = this.boss_max_health > 0 ? (this.boss_hp / this.boss_max_health * 100) : 0;
+        this.CheckBossStages(stage_percent);
+
+        if(this.boss_hud_slot <= MAX_BOSS_SLOTS)
+        {
+            this.UpdateHud(this.boss_hud_slot);
+        }
+    }
+    UpdateHud(slot)
+    {
+        if(!BOSS_HP_HUD?.IsValid()) return;
+        if(!this.IS_BOSS_FIGHT) return;
+
+        BOSS_HP_HUD.SetHasClass(`boss_slot_${slot}`, "BossSlotHidden", false);
+
+        const percent = Math.ceil(this.boss_hp / this.boss_max_health * 100);
+
+        if(percent > 70)
+        {
+            SetBossHudColor(`boss_bar_${slot}`, "Green");
+        }
+        else if(percent > 30)
+        {
+            SetBossHudColor(`boss_bar_${slot}`, "Orange");
+        }
+        else
+        {
+            SetBossHudColor(`boss_bar_${slot}`, "Red");
+        }
+
+        const filled = this.boss_hp > 0 ? Math.max(1, Math.round(this.BAR_SIZE * percent / 100)) : 0;
+        const empty = this.BAR_SIZE - filled;
+
+        const hp_bar = "■".repeat(filled) + "□".repeat(empty);
+
+        SetBossHudColor(`boss_name_${slot}`, this.boss_color);
+        SetBossHudColor(`boss_percent_${slot}`, "White");
+
+        BOSS_HP_HUD.SetDialogVariableString(`boss_name_${slot}`, `boss_name_${slot}`, this.boss_name+`:`);
+        BOSS_HP_HUD.SetDialogVariableString(`boss_hp_${slot}`, `boss_hp_${slot}`, `${this.boss_hp}`);
+        BOSS_HP_HUD.SetDialogVariableString(`boss_percent_${slot}`, `boss_percent_${slot}`, `(${percent}%)`);
+
+        let grenade_text = "";
+        if(this.GRENADE_DAMAGE !== 0)
+        {
+            grenade_text = `[HE: -${this.GRENADE_DAMAGE} HP]`;
+        }
+
+        BOSS_HP_HUD.SetDialogVariableString(`boss_grenade_${slot}`, `boss_grenade_${slot}`, grenade_text);
+
+        let timer_text = "";
+        if(this.BOSS_TIMER_ENABLED)
+        {
+            timer_text = `(${FormatBossTime(this.BOSS_TIMER_REMAINING)})`;
+        }
+        BOSS_HP_HUD.SetDialogVariableString(`boss_timer_${slot}`, `boss_timer_${slot}`, timer_text);
+        SetBossHudColor(`boss_timer_${slot}`, this.BOSS_TIMER_COLOR);
+
+        BOSS_HP_HUD.SetDialogVariableString(`boss_item_${slot}`, `boss_item_${slot}`, this.ITEM_DAMAGE);
+        SetBossHudColor(`boss_item_${slot}`, this.ITEM_DAMAGE_COLOR);
+        BOSS_HP_HUD.SetDialogVariableString(`boss_bar_${slot}`, `boss_bar_${slot}`, hp_bar);
+    }
+    SubtractHealth(damage)
+    {
+        if(!this.IS_BOSS_FIGHT) return;
+        this.boss_hp -= damage;
+    }
+    AddDamage(player_pawn, damage)
+    {
+        if(!this.top_damage) return;
+        if(!this.IS_BOSS_FIGHT) return;
+        if(damage <= 0) return;
+        if(!player_pawn?.IsValid()) return;
+        if(typeof player_pawn.GetPlayerController !== "function") return;
+
+        const current = this.damage_map.get(player_pawn) || 0;
+        this.damage_map.set(player_pawn, current + damage);
+    }
+    ChangeHealth(arg)
+    {
+        if(!this.IS_BOSS_FIGHT) return;
+        if(this.boss_hp >= 0)
+        {
+            this.boss_hp = this.boss_hp - arg;
+        }
+    }
+    GrenadeDamage(arg)
+    {
+        if(!this.IS_BOSS_FIGHT) return;
+        if(this.boss_hp >= 0)
+        {
+            this.boss_hp = this.boss_hp - arg;
+        }
+        this.GRENADE_DAMAGE = this.GRENADE_DAMAGE + arg;
+        this.GRENADE_DAMAGE_TICK = 2.00;
+    }
+    ItemDamage(item)
+    {
+        if(!this.IS_BOSS_FIGHT) return;
+        const item_data = this.item_damage_obj[item];
+        if(item_data === undefined) return;
+        const damage = item_data.damage;
+        let subs = "-";
+        if(this.boss_hp >= 0)
+        {
+            this.boss_hp -= damage;
+        }
+
+        if(damage < 0)
+        {
+            subs = "+";
+        }
+
+        this.ITEM_DAMAGE = `${item}: ${subs}${Math.abs(damage)} HP`;
+        this.ITEM_DAMAGE_COLOR = item_data.color;
+    }
+    EnableTopDamage()
+    {
+        this.top_damage = true;
+        return this;
+    }
+    SetNadeDamage(damage)
+    {
+        this.boss_nade_damage = damage;
+        return this;
+    }
+    SetItemDamage(obj)
+    {
+        this.item_damage_obj = obj;
+        return this;
+    }
+    SetKillFireUser(arg)
+    {
+        this.boss_fireuser = arg;
+        return this;
+    }
+    SetBossTimer(time)
+    {
+        this.BOSS_TIMER_ENABLED = true;
+        this.BOSS_TIMER_REMAINING = time;
+        return this;
+    }
+    SetBossTimerColor(color)
+    {
+        this.BOSS_TIMER_COLOR = color;
+        return this;
+    }
+    SetBossStages(...stages)
+    {
+        for(const stage of stages)
+        {
+            if(!stage || !stage.name || !stage.input || stage.percent === undefined) continue;
+            this.boss_stages.push({ name: stage.name, input: stage.input, percent: Number(stage.percent) });
+        }
+        this.boss_stages.sort((a, b) => b.percent - a.percent);
+        return this;
+    }
+    CheckBossStages(percent)
+    {
+        if(this.boss_stages.length === 0) return;
+
+        const remaining_stages = [];
+        for(const stage of this.boss_stages)
+        {
+            if(percent <= stage.percent)
+            {
+                Instance.EntFireAtName({ name: stage.name, input: stage.input });
+            }
+            else
+            {
+                remaining_stages.push(stage);
+            }
+        }
+        this.boss_stages = remaining_stages;
+    }
+    BossKill()
+    {
+        this.IS_BOSS_FIGHT = false;
+
+        Instance.EntFireAtTarget({ target: this.boss_physbox_ent, input: `FireUser${this.boss_fireuser}` });
+
+        if(this.top_damage)
+        {
+            ShowTopDamage(this.boss_name, this.damage_map);
+        }
+
+        const old_slot = this.boss_hud_slot;
+
+        BOSS_HP_MAP.delete(this.boss_physbox_name);
+
+        for(const boss of BOSS_HP_MAP.values())
+        {
+            if(boss.boss_hud_slot > old_slot)
+            {
+                boss.boss_hud_slot--;
+            }
+        }
+        this.HideBossHpBar();
+    }
+    HideBossHpBar()
+    {
+        for(let slot = 1; slot <= MAX_BOSS_SLOTS; slot++)
+        {
+            BOSS_HP_HUD.SetDialogVariableString(`boss_name_${slot}`, `boss_name_${slot}`, "");
+            BOSS_HP_HUD.SetDialogVariableString(`boss_hp_${slot}`, `boss_hp_${slot}`, "");
+            BOSS_HP_HUD.SetDialogVariableString(`boss_percent_${slot}`, `boss_percent_${slot}`, "");
+            BOSS_HP_HUD.SetDialogVariableString(`boss_grenade_${slot}`, `boss_grenade_${slot}`, "");
+            BOSS_HP_HUD.SetDialogVariableString(`boss_timer_${slot}`, `boss_timer_${slot}`, "");
+            BOSS_HP_HUD.SetDialogVariableString(`boss_item_${slot}`, `boss_item_${slot}`, "");
+            BOSS_HP_HUD.SetDialogVariableString(`boss_bar_${slot}`, `boss_bar_${slot}`, "");
+
+            BOSS_HP_HUD.SetHasClass(`boss_slot_${slot}`, "BossSlotHidden", true);
+        }
+    }
+}
+
+function FormatBossTime(seconds)
+{
+    const total = Math.max(0, Math.ceil(seconds));
+    const minutes = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function SetBossHudColor(panelId, color)
+{
+    for(const colorName of BOSS_HUD_COLORS)
+    {
+        BOSS_HP_HUD.SetHasClass(panelId, `BossHud${colorName}`, false);
+    }
+    BOSS_HP_HUD.SetHasClass(panelId, `BossHud${color}`, true);
+}
+
+function ShowTopDamage(boss_name, damage_map)
+{
+    if(!BOSS_HP_HUD?.IsValid()) return;
+
+    const sorted = [...damage_map.entries()].filter(([player]) => player?.IsValid()).sort((a, b) => b[1] - a[1]).slice(0, MAX_TOP_DAMAGE_SLOTS);
+
+    BOSS_HP_HUD.SetDialogVariableString("top_damage_title", "top_damage_title", `Top Damage: ${boss_name}`);
+
+    for(let i = 1; i <= MAX_TOP_DAMAGE_SLOTS; i++)
+    {
+        const slot_id = `top_damage_slot_${i}`;
+        const entry = sorted[i - 1];
+
+        if(!entry)
+        {
+            BOSS_HP_HUD.SetHasClass(slot_id, "TopDamageSlotHidden", true);
+            ApplyTopDamageRankColor(slot_id, 0);
+            continue;
+        }
+
+        const [player_pawn, damage] = entry;
+        const controller = player_pawn.GetPlayerController?.();
+        const player_name = controller?.IsValid() ? controller.GetPlayerName() : "Unknown";
+
+        BOSS_HP_HUD.SetHasClass(slot_id, "TopDamageSlotHidden", false);
+        ApplyTopDamageRankColor(slot_id, i);
+        BOSS_HP_HUD.SetDialogVariableString(`top_damage_name_${i}`, `top_damage_name_${i}`, `${i}. ${player_name}`);
+        BOSS_HP_HUD.SetDialogVariableString(`top_damage_value_${i}`, `top_damage_value_${i}`, `${damage} HP`);
+    }
+
+    BOSS_HP_HUD.SetHasClass("boss_top_damage_container", "TopDamageHidden", false);
+    TOP_DAMAGE_HIDE_AT = Instance.GetGameTime() + TOP_DAMAGE_DISPLAY_TIME;
+}
+
+function HideTopDamage()
+{
+    TOP_DAMAGE_HIDE_AT = null;
+    if(!BOSS_HP_HUD?.IsValid()) return;
+    BOSS_HP_HUD.SetHasClass("boss_top_damage_container", "TopDamageHidden", true);
+}
+
+const TOP_DAMAGE_RANK_COLORS = ["TopDamageGold", "TopDamageSilver", "TopDamageBronze"];
+
+function ApplyTopDamageRankColor(slot_id, rank)
+{
+    for(const rank_class of TOP_DAMAGE_RANK_COLORS)
+    {
+        BOSS_HP_HUD.SetHasClass(slot_id, rank_class, false);
+    }
+
+    const rank_class = TOP_DAMAGE_RANK_COLORS[rank - 1];
+    if(rank_class)
+    {
+        BOSS_HP_HUD.SetHasClass(slot_id, rank_class, true);
+    }
+}
+
+Instance.OnScriptInput("DisableBossFight", () => {
+    if(BOSS_HP_MAP.size > 0)
+    {
+        BOSS_HP_MAP.forEach((boss) => { boss.IS_BOSS_FIGHT = false; boss.HideBossHpBar(); });
     }
 });
 
-function ChangeHealthIt(arg)
-{
-    if(!IS_BOSS_FIGHT )
+Instance.OnScriptInput("EnableBossFight", () => {
+    if(BOSS_HP_MAP.size > 0)
     {
-        return;
+        BOSS_HP_MAP.forEach((boss) => { boss.IS_BOSS_FIGHT = true; });
     }
-    if(BOSS_HEALTH >= 0)
-    {
-        BOSS_HEALTH = BOSS_HEALTH - arg;
-    }
-}
+});
 
-function GrenadeDamage(arg)
-{
-    if(!IS_BOSS_FIGHT )
+Instance.OnScriptInput("DisableBossFightBraha", () => {
+    if(BOSS_HP_MAP.size > 0)
     {
-        return;
+        BOSS_HP_MAP.forEach((boss) => { 
+            if(boss.boss_name === "Braha")
+            {
+                boss.IS_BOSS_FIGHT = false; boss.HideBossHpBar();
+            }
+        });
     }
-    if(BOSS_HEALTH >= 0)
-    {
-        BOSS_HEALTH = BOSS_HEALTH - arg;
-    }
-   GRENADE_DAMAGE = Number(GRENADE_DAMAGE) + Number(arg);
-   GRENADE_DAMAGE_TICK = 2.00;
-}
+});
 
-function ItemDamage(arg)
-{
-    if(!IS_BOSS_FIGHT )
+Instance.OnScriptInput("EnableBossFightBraha", () => {
+    if(BOSS_HP_MAP.size > 0)
     {
-        return;
+        BOSS_HP_MAP.forEach((boss) => { 
+            if(boss.boss_name === "Braha") boss.IS_BOSS_FIGHT = true; 
+        });
     }
-    let arg_s = arg;
-    let arg_rs = arg_s.replace(/\s+/g, '');
-    const arr = arg_rs.split(",");
-    let damage = Number(arr[1]);
-    let subs = "-";
-    if(BOSS_HEALTH >= 0)
+});
+
+Instance.OnScriptInput("StartBossHpMutant", ({activator, caller}) => {
+    if(caller?.IsValid())
     {
-        BOSS_HEALTH = BOSS_HEALTH - damage;
+        const boss_physbox_name = caller.GetEntityName();
+        const boss_physbox_ent = caller;
+        const boss_name = "Glasgavelen";
+        const boss_health = GetPlayerCtCount() * 200;
+        const boss_color = "Gray";
+        const item_damage_obj = {"Fire": {damage: 300, color: "Orange"}};
+        const boss_instance = new BossHp(boss_physbox_name, boss_physbox_ent, boss_name, boss_health, BOSS_HP_MAP.size + 1, boss_color);
+        boss_instance.EnableTopDamage().SetNadeDamage(50).SetItemDamage(item_damage_obj).SetKillFireUser(3).SetBossTimer(183);
+        BOSS_HP_MAP.set(boss_physbox_name, boss_instance);
     }
-    if(damage < 0)
+});
+
+Instance.OnScriptInput("StartBossHpMutant2", ({activator, caller}) => {
+    if(caller?.IsValid())
     {
-        subs = "+";
+        const boss_physbox_name = caller.GetEntityName();
+        const boss_physbox_ent = caller;
+        const boss_name = "Cromcruach";
+        const boss_health = GetPlayerCtCount() * 220;
+        const boss_color = "Pink";
+        const item_damage_obj = {"Fire": {damage: 300, color: "Orange"}};
+        const boss_instance = new BossHp(boss_physbox_name, boss_physbox_ent, boss_name, boss_health, BOSS_HP_MAP.size + 1, boss_color);
+        boss_instance.EnableTopDamage().SetNadeDamage(50).SetItemDamage(item_damage_obj).SetKillFireUser(3).SetBossTimer(185);
+        BOSS_HP_MAP.set(boss_physbox_name, boss_instance);
     }
-    ITEM_DAMAGE = " (" + arr[0] + ": "+subs+""+ Math.abs(damage) + " HP) ";
-}
+});
 
+Instance.OnScriptInput("StartBossHpMutant3", ({activator, caller}) => {
+    if(caller?.IsValid())
+    {
+        const boss_physbox_name = caller.GetEntityName();
+        const boss_physbox_ent = caller;
+        const boss_name = "Braha";
+        const boss_health = GetPlayerCtCount() * 450;
+        const boss_color = "Orange";
+        const boss_instance = new BossHp(boss_physbox_name, boss_physbox_ent, boss_name, boss_health, BOSS_HP_MAP.size + 1, boss_color);
+        boss_instance.EnableTopDamage().SetKillFireUser(3).SetBossStages({name: "mutant_hp_iterations5_2", input: "Trigger", percent: 50});
+        BOSS_HP_MAP.set(boss_physbox_name, boss_instance);
+    }
+});
 
-function BossKill()
+Instance.OnScriptInput("StartBossHpCrystal", ({activator, caller}) => {
+    if(caller?.IsValid())
+    {
+        const boss_physbox_name = caller.GetEntityName();
+        const boss_physbox_ent = caller;
+        const boss_name = "Crystal";
+        const boss_health = GetPlayerCtCount() * 25;
+        const boss_color = "Cyan";
+        const boss_instance = new BossHp(boss_physbox_name, boss_physbox_ent, boss_name, boss_health, BOSS_HP_MAP.size + 1, boss_color);
+        boss_instance.SetKillFireUser(3);
+        BOSS_HP_MAP.set(boss_physbox_name, boss_instance);
+    }
+});
+
+Instance.OnScriptInput("SubtractHealth", ({activator, caller}) => {
+    if(caller?.IsValid())
+    {
+        const boss_physbox_name = caller.GetEntityName();
+        const boss_instance = BOSS_HP_MAP.get(boss_physbox_name);
+        if(boss_instance)
+        {
+            boss_instance.SubtractHealth(1);
+            boss_instance.AddDamage(activator, 1);
+        }
+    }
+});
+
+Instance.OnScriptInput("GrenadeDamage", ({activator, caller}) => {        
+    if(caller?.IsValid())
+    {
+        const boss_physbox_name = caller.GetParent().GetEntityName();
+        const boss_instance = BOSS_HP_MAP.get(boss_physbox_name);
+        if(boss_instance)
+        {
+            if(boss_instance.boss_nade_damage === 0) return;
+            boss_instance.GrenadeDamage(boss_instance.boss_nade_damage);
+            boss_instance.AddDamage(activator?.GetThrower?.() ?? null, boss_instance.boss_nade_damage);
+        }
+    }
+});
+
+Instance.OnScriptInput("ItemDamage", ({activator, caller}) => {        
+    if(activator?.IsValid() && caller?.IsValid())
+    {
+        const physbox_name = activator?.GetEntityName();
+        const item_name = caller?.GetEntityName();
+        const boss_instance = BOSS_HP_MAP.get(physbox_name);
+        if(boss_instance)
+        {
+            if(item_name === "boss_firedamage")
+            {
+                boss_instance.ItemDamage("Fire");
+            }
+        }
+    }
+});
+
+function IsValidCt(ent)
 {
-    BOSS_HEALTH = 0.00;
-    IS_BOSS_FIGHT = false;
-    Instance.EntFireAtName({ name: BOSS_ENT, input: "FireUser3", delay: 0.10 });
-    Instance.EntFireAtName({ name: BOSS_HUD_ENT, input: "SetMessage", value: BOSS_NAME+": 0" });
-    Instance.EntFireAtName({ name: BOSS_HUD_ENT, input: "HideHudHint", delay: 0.02 });
-    ResetBossS();
-}
-
-function IsValidEntity(ent)
-{
-    if(ent?.IsValid() && ent?.IsAlive() && ent?.GetTeamNumber() == 3)
+    if(ent?.IsValid() && ent?.IsAlive() && ent?.GetTeamNumber() === 3)
     {
         return true;
     }
     return false;
 }
 
-function ResetBossS()
+function GetPlayerCtCount()
 {
-    BOSS_HEALTH = 0.00;
-    BOSS_MAX_HEALTH = 0.00;
-    HP_BAR_MAX_FRAME = 15;
-    HP_BAR_FRAME = 0;
-    HP_PER_FRAME = 0;
-    BOSS_NAME = "BOSS: ";
-    BOSS_ENT = "";
-    BOSS_SCRIPT = "";
-    BOSS_HUD_ENT = "";
-    BOSS_HUD_TEXT = "";
-    IS_BOSS_FIGHT = false;
-    BOSS_HUD_IND = true;
-    ITEM_DAMAGE = "";
-    GRENADE_DAMAGE = 0;
+    let players = Instance.FindEntitiesByClass("player");
+    if(players.length > 0)
+    {
+        players = players.filter(player => IsValidCt(player));
+    }
+    return players.length;
 }

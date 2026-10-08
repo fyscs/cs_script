@@ -3019,7 +3019,7 @@ Instance.OnRoundStart(() => {
     clearAllText();
     if (sg_loaded) {
         warmup = false;
-        EntFire("Level_Case", "InValue", level);
+        EntFire("Level_Case", "InValue", String(level));
     }
     else {
         EntFire("sg*", "StartSpawnGroupUnload");
@@ -3153,7 +3153,7 @@ const hint5 = {
     size: 42,
     duration: 2.4,
     posX: 0.5,
-    posY: 0.8,
+    posY: 0.88,
     fadeInTime: 0.2,
     fadeOutTime: 0.2,
     showBox: true
@@ -3347,7 +3347,7 @@ Instance.OnScriptInput("ShowADPText", ({ activator }) => {
 const timer_text = {
     duration: 0,
     posX: 0.5,
-    posY: 0.8,
+    posY: 0.88,
     size: 40,
     fadeOutTime: 0,
     color: 'yellow'

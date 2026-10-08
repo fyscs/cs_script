@@ -20,11 +20,10 @@ const SHIP_MODEL_NAME = "ship_model";    // sous-chaîne du nom du modèle spawn
 const SHIP_OFFSET = { x: 0, y: -160, z: -50 }; // offset monde vaisseau<-joueur (à régler)
 const SHIP_ANGLE  = { pitch: 0, yaw: 270, roll: 0 };  // angle FIXE du vaisseau
 const MOVE_EPS = 0.5;   // seuil (units) : en dessous on ne re-téléporte pas le vaisseau
-const THINK_INTERVAL = 0.1;
 
 // ---------------- Config météores ----------------
 // Zone de spawn aléatoire (coins : -10248 -180 -320  et  -12280 -180 504)
-const MET_X = [-12280, -10248];   // plage X
+const MET_X = [-12536, -9992];   // plage X
 const MET_Y = -180;               // Y fixe
 const MET_Z = [-320, 504];        // plage Z
 const FADE_DUR = 1.0;             // durée du fade-in alpha (sec)
@@ -77,7 +76,7 @@ function killShip(slot) {
 function ensureThink() {
   if (thinkStarted) return;
   Instance.SetThink(tick);
-  Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+  Instance.SetNextThink(Instance.GetGameTime());
   thinkStarted = true;
 }
 
@@ -105,7 +104,7 @@ function tick() {
     if (t >= 1) fades.splice(i, 1);   // fade fini -> on lâche la référence
   }
 
-  if (active.size > 0 || fades.length > 0) Instance.SetNextThink(Instance.GetGameTime() + THINK_INTERVAL);
+  if (active.size > 0 || fades.length > 0) Instance.SetNextThink(Instance.GetGameTime());
   else thinkStarted = false;
 }
 

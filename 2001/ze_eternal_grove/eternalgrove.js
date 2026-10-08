@@ -133,7 +133,7 @@ Instance.OnModifyPlayerDamage((event) => {
 
 Instance.SetThink(function () {
     const now = Instance.GetGameTime();
-    Instance.SetNextThink(now + 0.1);
+    Instance.SetNextThink(now + 0.01);
 
     // Because I don't want to fix all func_doors and func_movelinears
     ITEMS_LIST.forEach((item, id) => {
@@ -164,7 +164,7 @@ Instance.SetThink(function () {
     // Instance.Msg(PatronTrail_List[0])
 });
 
-Instance.SetNextThink(Instance.GetGameTime() + 0.1);
+Instance.SetNextThink(Instance.GetGameTime() + 0.01);
 
 let ITEMS_LIST = [];
 
@@ -497,7 +497,6 @@ Instance.OnScriptInput("RunNextEvent", () => {
     {
         Instance.EntFireAtName({ name: "shortcut0", input: "Open", delay: 1.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE OPENING IN 40 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***MAP by Luffaren. Port by Waffel***" });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE OPENING IN 20 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE OPENING IN 5 SECONDS***", delay: 35.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***GROVE ENTRANCE IS OPENING***", delay: 40.00 });
@@ -520,7 +519,7 @@ Instance.OnScriptInput("RunNextEvent", () => {
     }
     else if(event == 2)
     {
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR1 WILL OPEN IN 30 SECONDS***", delay: 0.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 30 SECONDS***", delay: 0.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 10 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR IS OPENING***", delay: 30.00 });
         Instance.EntFireAtName({ name: "doorwood1", input: "Open", delay: 30.00 });
@@ -534,7 +533,7 @@ Instance.OnScriptInput("RunNextEvent", () => {
     {
         Instance.EntFireAtName({ name: "teleport_destination", input: "SetAbsOrigin", value: "-10055 1820 -7300" });
         Instance.EntFireAtName({ name: "teleport_destination", input: "KeyValue", value: "angles 0 90 0" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR2 WILL OPEN IN 40 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 40 SECONDS***" });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 10 SECONDS***", delay: 30.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR IS OPENING***", delay: 40.00 });
         Instance.EntFireAtName({ name: "doorwood2", input: "Open", delay: 40.00 });
@@ -619,8 +618,8 @@ Instance.OnScriptInput("RunNextEvent", () => {
     }
     else if(event == 10)
     {
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR6 OPENING IN 30 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR6 OPENING IN 10 SECONDS***", delay: 20.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 30 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 10 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR IS OPEN***", delay: 30.00 });
         Instance.EntFireAtName({ name: "door6", input: "Open", delay: 30.00 });
         Instance.EntFireAtName({ name: "levermodel_auto_11", input: "SetGlowRange", value: "1000", delay: 30.00 });
@@ -637,8 +636,8 @@ Instance.OnScriptInput("RunNextEvent", () => {
         Instance.EntFireAtName({ name: "trap_roller", input: "FireUser1", delay: trand + 1.70 });
         Instance.EntFireAtName({ name: "trap_hurt", input: "FireUser1", delay: trand + 1.95 });
         Instance.EntFireAtName({ name: "trap_roller", input: "Break", delay: trand + 2.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR7 OPENING IN 30 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR7 OPENING IN 10 SECONDS***", delay: 20.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 30 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR OPENING IN 10 SECONDS***", delay: 20.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***DOOR IS OPEN***", delay: 30.00 });
         Instance.EntFireAtName({ name: "door7", input: "Open", delay: 30.00 });
         Instance.EntFireAtName({ name: "levermodel_auto_12", input: "SetGlowRange", value: "1000", delay: 30.00 });
@@ -659,10 +658,10 @@ Instance.OnScriptInput("RunNextEvent", () => {
     else if(event == 12)
     {
         Instance.EntFireAtName({ name: "zombienooo", input: "FireUser1", delay: 10.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 40 SECONDS***" });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 20 SECONDS***", delay: 20.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 10 SECONDS***", delay: 30.00 });
-        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***doorwood3 WILL OPEN IN 5 SECONDS***", delay: 35.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 40 SECONDS***" });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 20 SECONDS***", delay: 20.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 10 SECONDS***", delay: 30.00 });
+        Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR WILL OPEN IN 5 SECONDS***", delay: 35.00 });
         Instance.EntFireAtName({ name: "server", input: "Command", value: "say ***WOODEN DOOR IS OPENING***", delay: 40.00 });
         Instance.EntFireAtName({ name: "levermodel_auto_13", input: "SetGlowRange", value: "1000", delay: 40.00 });
         Instance.EntFireAtName({ name: "doorwood3", input: "Open", delay: 40.00 });
@@ -795,19 +794,18 @@ Instance.OnScriptInput("TeleportItemsGoToBoss", () => {
     Instance.EntFireAtName({ name: "item_holder_2", input: "SetAbsOrigin", value: "8490 -12170 13350" });
     Instance.EntFireAtName({ name: "item_holder_1", input: "SetAbsOrigin", value: "8645 -11900 13350" });
 });
-//// Remove DICK SKINS
-//
-//Instance.OnScriptInput("SkinJarJarBinks", ({ caller, activator }) => {
-//    const player = activator;
-//    const player_controller = player?.GetPlayerController();
-//    const player_slot = player_controller?.GetPlayerSlot();
-//    const inst = PlayerInstancesMap.get(player_slot);
-//    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
-//    {
-//        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/jarjarbinks.vmdl" });
-//        player.SetModel("agents/models/luffaren/jarjarbinks.vmdl");
-//    }
-//});
+
+Instance.OnScriptInput("SkinJarJarBinks", ({ caller, activator }) => {
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
+    {
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/jarjarbinks.vmdl" });
+        player.SetModel("agents/models/luffaren/jarjarbinks.vmdl");
+    }
+});
 
 Instance.OnScriptInput("SkinPizzaPlayer", ({ caller, activator }) => {
     const player = activator;
@@ -832,19 +830,18 @@ Instance.OnScriptInput("SkinSanta", ({ caller, activator }) => {
         player.SetModel("agents/models/luffaren/santa.vmdl");
     }
 });
-//Remove Muscle Man
-//
-//Instance.OnScriptInput("SkinMisterMuscle", ({ caller, activator }) => {
-//    const player = activator;
-//    const player_controller = player?.GetPlayerController();
-//    const player_slot = player_controller?.GetPlayerSlot();
-//    const inst = PlayerInstancesMap.get(player_slot);
-//    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
-//    {
-//        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/mister_muscle.vmdl" });
-//        player.SetModel("agents/models/luffaren/mister_muscle.vmdl");
-//    }
-//});
+
+Instance.OnScriptInput("SkinMisterMuscle", ({ caller, activator }) => {
+    const player = activator;
+    const player_controller = player?.GetPlayerController();
+    const player_slot = player_controller?.GetPlayerSlot();
+    const inst = PlayerInstancesMap.get(player_slot);
+    if((inst.Patron || inst.Luffaren) && inst.player.GetTeamNumber() === 3)
+    {
+        Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: "agents/models/luffaren/mister_muscle.vmdl" });
+        player.SetModel("agents/models/luffaren/mister_muscle.vmdl");
+    }
+});
 
 Instance.OnScriptInput("GiveTrail", ({ caller, activator }) => {
     const player = activator;

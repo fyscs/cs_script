@@ -1,4 +1,4 @@
-import { Instance, CSInputs, CSDamageTypes, CustomCameraMode } from "cs_script/point_script";
+import { Instance, CSInputs, CSDamageTypes, /* CustomCameraMode, */ CSWeaponAttackType } from "cs_script/point_script";
 
 class MathUtils {
 	static clamp(value, min, max) {
@@ -495,7 +495,8 @@ const Inputs = [
 const SKINS_LIST = [
     { number: 1, path: "agents/models/waffel/rurune_bunny/rurune.vmdl" },
     { number: 2, path: "agents/models/waffel/kipfel/kipfel_ghostcandy/kipfel_ghostcandy.vmdl" },
-    { number: 3, path: "agents/models/waffel/kipfel/kipfel_cherry/kipfel_cherry.vmdl" }
+    { number: 3, path: "agents/models/waffel/kipfel/kipfel_cherry/kipfel_cherry.vmdl" },
+    { number: 4, path: "agents/models/waffel/kletka_hero/kletka_hero.vmdl" }
 ];
 
 const MUSIC_LIST_MAIN = [
@@ -544,84 +545,86 @@ const MUSIC_LIST_MAIN = [
 const SteamIdBySlot = new Map();
 
 const STEAM_IDS_LIST = {
-    "[U:1:410330410]":    ["MAPPER", "VIP"],             // WAFFEL
-    "[U:1:241854455]":    ["MAPPER", "VIP"],             // KONDIK
-    "[U:1:183786478]":    ["MAPPER", "VIP"],             // GOOBER
-    "[U:1:40412677]":     ["VIP"],                       // HARYDE
-    "[U:1:116002616]":    ["VIP"],                       // MICROROST PIDARAS
-    "[U:1:322548190]":    ["VIP"],                       // NICESHOT
-    "[U:1:229842349]":    ["VIP"],                       // KOEN
-    "[U:1:248696175]":    ["VIP"],                       // KOTYA
-    "[U:1:291899504]":    ["VIP"],                       // CMAZ
-    "[U:1:910174825]":    ["VIP", "LEADER"],             // IDGI
-    "[U:1:372244152]":    ["SPONSOR", "LEADER"],         // KOTYA
-    "[U:1:213985657]":    ["SPONSOR", "LEADER"],         // ICECREAM
-    "[U:1:394124028]":    ["SPONSOR", "LEADER"],         // XYZ
-    "[U:1:451086077]":    ["SPONSOR", "LASTIMS"],        // LASTIMS
-    "[U:1:139302242]":    ["SPONSOR"],
-    "[U:1:150304910]":    ["SPONSOR"],
-    "[U:1:193136715]":    ["SPONSOR"],
-    "[U:1:246506151]":    ["SPONSOR"],
-    "[U:1:284193660]":    ["SPONSOR"],
-    "[U:1:301943715]":    ["SPONSOR"],
-    "[U:1:322214617]":    ["SPONSOR"],
-    "[U:1:343832039]":    ["SPONSOR"],
-    "[U:1:354007308]":    ["SPONSOR"],
-    "[U:1:359488071]":    ["SPONSOR"],
-    "[U:1:390200387]":    ["SPONSOR"],
-    "[U:1:420120983]":    ["SPONSOR"],
-    "[U:1:423420069]":    ["SPONSOR"],
-    "[U:1:438155835]":    ["SPONSOR"],
-    "[U:1:861729261]":    ["SPONSOR"],
-    "[U:1:871257449]":    ["SPONSOR"],
-    "[U:1:871858770]":    ["SPONSOR"],
-    "[U:1:879989488]":    ["SPONSOR"],
-    "[U:1:893052324]":    ["SPONSOR"],
-    "[U:1:916071915]":    ["SPONSOR"],
-    "[U:1:1011513405]":   ["SPONSOR"],
-    "[U:1:1013141718]":   ["SPONSOR"],
-    "[U:1:1071010909]":   ["SPONSOR"],
-    "[U:1:1077881397]":   ["SPONSOR"],
-    "[U:1:1097306165]":   ["SPONSOR"],
-    "[U:1:1097436058]":   ["SPONSOR"],
-    "[U:1:1101938023]":   ["SPONSOR"],
-    "[U:1:1105080481]":   ["SPONSOR"],
-    "[U:1:1105887898]":   ["SPONSOR"],
-    "[U:1:1129775376]":   ["SPONSOR"],
-    "[U:1:1179000354]":   ["SPONSOR"],
-    "[U:1:1180290688]":   ["SPONSOR"],
-    "[U:1:1181433179]":   ["SPONSOR"],
-    "[U:1:1209402773]":   ["SPONSOR"],
-    "[U:1:1239537389]":   ["SPONSOR"],
-    "[U:1:1249040532]":   ["SPONSOR"],
-    "[U:1:1251438123]":   ["SPONSOR"],
-    "[U:1:1252076762]":   ["SPONSOR"],
-    "[U:1:1261632859]":   ["SPONSOR"],
-    "[U:1:1264235863]":   ["SPONSOR"],
-    "[U:1:1296064582]":   ["SPONSOR"],
-    "[U:1:1381947386]":   ["SPONSOR"],
-    "[U:1:1406953216]":   ["SPONSOR"],
-    "[U:1:1416686877]":   ["SPONSOR"],
-    "[U:1:1429962946]":   ["SPONSOR"],
-    "[U:1:1478044442]":   ["SPONSOR"],
-    "[U:1:1485213215]":   ["SPONSOR"],
-    "[U:1:1485748077]":   ["SPONSOR"],
-    "[U:1:1507447363]":   ["SPONSOR"],
-    "[U:1:1552153866]":   ["SPONSOR"],
-    "[U:1:1554432495]":   ["SPONSOR"],
-    "[U:1:1557876133]":   ["SPONSOR"],
-    "[U:1:1563918330]":   ["SPONSOR"],
-    "[U:1:1567863605]":   ["SPONSOR"],
-    "[U:1:1581015300]":   ["SPONSOR"],
-    "[U:1:1614793619]":   ["SPONSOR"],
-    "[U:1:1731392452]":   ["SPONSOR"],
-    "[U:1:1735488207]":   ["SPONSOR"],
-    "[U:1:1773883846]":   ["SPONSOR"],
-    "[U:1:1776065042]":   ["SPONSOR"],
-    "[U:1:1826512598]":   ["SPONSOR"],
-    "[U:1:1873977017]":   ["SPONSOR"],
-    "[U:1:22853297]":     ["SPONSOR"],
-    "[U:1:761769159]":    ["SPONSOR"],
+    "76561198370596138":  ["MAPPER", "VIP"],             // WAFFEL
+    "76561198202120183":  ["MAPPER", "VIP"],             // KONDIK
+    "76561198144052206":  ["MAPPER", "VIP"],             // GOOBER
+    "76561198000678405":  ["VIP"],                       // HARYDE
+    "76561198076268344":  ["VIP"],                       // MICROROST PIDARAS
+    "76561198282813918":  ["VIP"],                       // NICESHOT
+    "76561198190108077":  ["VIP"],                       // KOEN
+    "76561198208961903":  ["VIP"],                       // KOTYA
+    "76561198252165232":  ["VIP"],                       // CMAZ
+    "76561198106955421":  ["VIP"],                       // VAUFF
+    "76561198870440553":  ["VIP", "LEADER"],             // IDGI
+    "76561198332509880":  ["SPONSOR", "LEADER"],         // KK
+    "76561198174251385":  ["SPONSOR", "LEADER"],         // ICECREAM
+    "76561198354389756":  ["SPONSOR", "LEADER"],         // XYZ
+    "76561198411351805":  ["SPONSOR", "LASTIMS"],        // LASTIMS
+    "76561198099567970":  ["SPONSOR"],
+    "76561198110570638":  ["SPONSOR"],
+    "76561198153402443":  ["SPONSOR"],
+    "76561198206771879":  ["SPONSOR"],
+    "76561198244459388":  ["SPONSOR"],
+    "76561198262209443":  ["SPONSOR"],
+    "76561198282480345":  ["SPONSOR"],
+    "76561198304097767":  ["SPONSOR"],
+    "76561198314273036":  ["SPONSOR"],
+    "76561198319753799":  ["SPONSOR"],
+    "76561198350466115":  ["SPONSOR"],
+    "76561198380386711":  ["SPONSOR"],
+    "76561198383685797":  ["SPONSOR"],
+    "76561198398421563":  ["SPONSOR"],
+    "76561198821994989":  ["SPONSOR"],
+    "76561198831523177":  ["SPONSOR"],
+    "76561198832124498":  ["SPONSOR"],
+    "76561198840255216":  ["SPONSOR"],
+    "76561198853318052":  ["SPONSOR"],
+    "76561198876337643":  ["SPONSOR"],
+    "76561198971779133":  ["SPONSOR"],
+    "76561198973407446":  ["SPONSOR"],
+    "76561199031276637":  ["SPONSOR"],
+    "76561199038147125":  ["SPONSOR"],
+    "76561199057571893":  ["SPONSOR"],
+    "76561199057701786":  ["SPONSOR"],
+    "76561199062203751":  ["SPONSOR"],
+    "76561199065346209":  ["SPONSOR"],
+    "76561199066153626":  ["SPONSOR"],
+    "76561199090041104":  ["SPONSOR"],
+    "76561199139266082":  ["SPONSOR"],
+    "76561199140556416":  ["SPONSOR"],
+    "76561199141698907":  ["SPONSOR"],
+    "76561199169668501":  ["SPONSOR"],
+    "76561199199803117":  ["SPONSOR"],
+    "76561199209306260":  ["SPONSOR"],
+    "76561199211703851":  ["SPONSOR"],
+    "76561199212342490":  ["SPONSOR"],
+    "76561199221898587":  ["SPONSOR"],
+    "76561199224501591":  ["SPONSOR"],
+    "76561199256330310":  ["SPONSOR"],
+    "76561199342213114":  ["SPONSOR"],
+    "76561199367218944":  ["SPONSOR"],
+    "76561199376952605":  ["SPONSOR"],
+    "76561199390228674":  ["SPONSOR"],
+    "76561199438310170":  ["SPONSOR"],
+    "76561199445478943":  ["SPONSOR"],
+    "76561199446013805":  ["SPONSOR"],
+    "76561199467713091":  ["SPONSOR"],
+    "76561199512419594":  ["SPONSOR"],
+    "76561199514698223":  ["SPONSOR"],
+    "76561199518141861":  ["SPONSOR"],
+    "76561199524184058":  ["SPONSOR"],
+    "76561199528129333":  ["SPONSOR"],
+    "76561199541281028":  ["SPONSOR"],
+    "76561199575059347":  ["SPONSOR"],
+    "76561199691658180":  ["SPONSOR"],
+    "76561199695753935":  ["SPONSOR"],
+    "76561199734149574":  ["SPONSOR"],
+    "76561199736330770":  ["SPONSOR"],
+    "76561199786778326":  ["SPONSOR"],
+    "76561199834242745":  ["SPONSOR"],
+    "76561197983119025":  ["SPONSOR"],
+    "76561198722034887":  ["SPONSOR"],
+    "76561199376469058":  ["SPONSOR"],
 };
 
 const HUD_ALL_PANELS = [
@@ -638,9 +641,11 @@ const HUD_ALL_PANELS = [
     "score_overlay",
     "big_menu",
     "hint_container",
+    "buff_vote_container",
+    "knife_frenzy_banner",
 ];
 
-const VERSION = "13/09/26";
+const VERSION = "30/09/26";
 
 
 
@@ -678,6 +683,7 @@ const SKIN_CARDS = [
     { key: "rurune",     number: 1, flags: ["Mapper"] },
     { key: "ghostcandy", number: 2, flags: ["Mapper", "Vip", "Sponsor"] },
     { key: "cherry",     number: 3, flags: ["Mapper", "Vip", "Sponsor"] },
+    { key: "hero",       number: 4, flags: ["Mapper"], winner: true },
 ];
 
 const ADMIN_NUMERIC = [
@@ -703,6 +709,13 @@ const ADMIN_TOGGLES = [
     { key: "elevatorhumanscheck", fn: () => ChangeElevatorHumansCheck, get: () => pre_isElevatorHumansCheck },
 ];
 
+const WEAPON_REPLACEMENTS = {
+    "weapon_awp": "weapon_m4a1",
+};
+
+const WEAPON_CHECK_INTERVAL = 1.0;
+let lastWeaponCheck = 0;
+
 const STATS_DEFAULT = {
     server: "",
     ways: [0, 0, 0, 0],
@@ -723,7 +736,7 @@ const STATS_DEFAULT = {
         bottles_spent: 0,
         spins: 0,
     },
-    survival_top: [],
+    skin_winners: [],
 };
 
 let STATS = null;
@@ -742,9 +755,9 @@ let SURVIVAL_ZOMBIE_HP = 700;
 let SURVIVAL_ZM_ITEM_HP = 900;
 const DEFAULT_ZM_ITEM_HP = 60000;
 
-const SURVIVAL_ZM_ITEM_MAX = 4;
-const SURVIVAL_ZM_ITEM_START = 3;
-const SURVIVAL_ZM_ITEM_INTERVAL = 60.0;
+const SURVIVAL_ZM_ITEM_MAX = 10;
+const SURVIVAL_ZM_ITEM_START = 5;
+const SURVIVAL_ZM_ITEM_INTERVAL = 40.0;
 const SURVIVAL_ZM_ITEM_CHECK = 1.0;
 let SURVIVAL_HP_TICK = 5.00;
 let SURVIVAL_ZOMBIE_DAMAGE = 10;
@@ -763,17 +776,125 @@ let survivalHpLoopActive = false;
 let survivalZmItemLoopActive = false;
 let survivalZmItemNextSpawn = 0;
 
+/*
 const TPS_OFFSET_RIGHT = { x: -70, y: -22, z: 4 };
 const TPS_OFFSET_LEFT  = { x: -70, y: 22,  z: 4 };
 const TPS_OFFSET_FPS   = { x: 0,   y: 0,   z: 0 };
 
 const TPS_LERP_SPEED = 12.0;
+*/
 
-const FYS_SKINS = ["kipfel_ghostcandy", "kipfel_cherry"];
+const FYS_SKINS = ["kipfel_ghostcandy", "kipfel_cherry", "kletka_hero"];
 
 
 
 
+// ------------------------------------------------------------
+//  ФЛАГИ
+// ------------------------------------------------------------
+let buff_ct_regen = false;
+let buff_ct_knife = false;
+let buff_ct_speed = false;
+let buff_ct_beacon = false;
+let buff_ct_frenzy = false;
+let buff_ct_scavenger = false;
+
+let buff_zm_sprint = false;
+let buff_zm_swarm = false;
+let buff_zm_streak = false;
+let buff_zm_stealth = false;
+let buff_zm_scarcity = false;
+let buff_zm_fog = false;
+let buff_zm_shrink = false;
+
+// ------------------------------------------------------------
+//  НАСТРОЙКИ
+// ------------------------------------------------------------
+const BUFF_REGEN_INTERVAL   = 8.0;     // CT регенерация
+const BUFF_REGEN_AMOUNT     = 1;
+
+const BUFF_KNIFE_ZM_DMG_MUL = 1.5;     // множитель урона зомби при BUTCHER
+
+const BUFF_CT_SPEED         = 1.20;    // runspeed людей
+
+const BUFF_BEACON_COUNT     = 2;
+const BUFF_BEACON_HP        = 50;
+const BUFF_BEACON_RADIUS    = 300;
+const BUFF_BEACON_HEAL      = 3;       // HP в секунду рядом с маяком
+
+const BUFF_FRENZY_MIN       = 30.0;
+const BUFF_FRENZY_MAX       = 45.0;
+const BUFF_FRENZY_DURATION  = 12.0;
+
+const BUFF_ZM_SPRINT_HP     = 200;     // минус к здоровью
+const BUFF_ZM_SPRINT_SPEED  = 1.20;
+
+const BUFF_ZM_SWARM_MUL     = 0.5;     // интервал зм-предметов
+
+const BUFF_STREAK_HP_PER_KILL    = 50;     // PREDATOR: +HP за каждое убийство, без лимита
+const BUFF_STREAK_SPEED_PER_KILL = 0.02;   // +runspeed за каждое убийство
+const BUFF_STREAK_SPEED_MAX      = 1.10;   // потолок runspeed
+
+const BUFF_STEALTH_DELAY    = 0.6;     // сколько стоять, прежде чем начать таять
+const BUFF_STEALTH_FADE     = 2.5;     // за сколько секунд до минимума
+const BUFF_STEALTH_MIN_A    = 18;      // минимальная альфа
+const BUFF_STEALTH_MOVE     = 25;      // скорость, выше которой зомби «движется»
+
+const BUFF_SHRINK_SCALE     = 0.7;     // CRAWLER: размер зомби
+const BUFF_SHRINK_SPEED     = 0.10;    // прибавка к runspeed
+const BUFF_SHRINK_HP        = 300;     // минус к здоровью
+
+const BUFF_SCAV_EVERY       = 7;       // SCAVENGER: каждый N-й убитый зомби
+const BUFF_SCAV_CHANCE      = 0.5;     // шанс выпадения
+const BUFF_SCAV_HP          = 40;      // минус к здоровью людей
+
+const BUFF_TICK             = 0.10;
+
+// ------------------------------------------------------------
+//  СПИСКИ ДЛЯ ГОЛОСОВАНИЯ
+// ------------------------------------------------------------
+const BUFF_HUMAN = [
+    { key: "regen",       apply: () => { buff_ct_regen = true; } },
+    { key: "knife",       apply: () => { buff_ct_knife = true; } },
+    { key: "speed",       apply: () => { buff_ct_speed = true; ApplyRunSpeedAll(); } },
+    { key: "beacon",      apply: () => { buff_ct_beacon = true; PickBeacons(); } },
+    { key: "frenzy",      apply: () => { buff_ct_frenzy = true; ScheduleFrenzy(); } },
+    { key: "scavenger",   apply: () => { buff_ct_scavenger = true; ApplyScavengerPenaltyNow(); } },
+];
+
+const BUFF_ZOMBIE = [
+    { key: "sprint",   apply: () => { buff_zm_sprint = true; ApplyRunSpeedAll(); } },
+    { key: "swarm",    apply: () => { buff_zm_swarm = true; } },
+    { key: "streak",   apply: () => { buff_zm_streak = true; } },
+    { key: "stealth",  apply: () => { buff_zm_stealth = true; } },
+    { key: "scarcity", apply: () => { buff_zm_scarcity = true; } },
+    { key: "fog",      apply: () => { buff_zm_fog = true; ApplyFog(); } },
+    { key: "shrink",   apply: () => { buff_zm_shrink = true; ApplyShrinkAll(); ApplyRunSpeedAll(); } },
+];
+
+let buffLoopActive = false;
+let buffRegenAcc = 0;
+let buffBeaconAcc = 0;
+let buffBeaconSlots = [];
+let frenzyNextAt = 0;
+let frenzyUntil = 0;
+let scavengerKills = 0;
+
+const BUFF_VOTE_TIME = 15.0;
+const BUFF_SLOTS = [1, 2, 3];
+const BUFF_THROW_STAGGER = 0.16;
+
+let buffVoteActive = false;
+let buffVoteEndTime = 0;
+let buffOfferCT = [];
+let buffOfferT = [];
+
+
+
+
+
+
+let Temp_Trap_Mine = undefined;
 
 let Temp_Item_Flamethrower = undefined;
 let Temp_Item_SuicideBomber = undefined;
@@ -852,6 +973,16 @@ let GIFTBOX_CHANCE = [
 
 const DelayedCalls = [];
 
+let ROUND_ID = 0;
+
+function RoundDelay(seconds)
+{
+    const id = ROUND_ID;
+    return new Promise((resolve) => {
+        Instance.Delay(seconds).then(() => { if(id === ROUND_ID) resolve(undefined); });
+    });
+}
+
 let CHUNKS = {
     NORMAL_CHUNKS: [],
     RARE_CHUNKS: [],
@@ -928,7 +1059,7 @@ let isSurvivalMode = false;
 let MapEntrancesCount = 0;
 let MapEntrancesCount_Max = 1;
 
-const TEAM_OBJECTIVE_DISPLAY_DURATION = 10.0;
+const TEAM_OBJECTIVE_DISPLAY_DURATION = 5.0;
 
 const SLOT_ITEM_NAMES = ["BEER", "BEANS", "SPANNER", "WHIP", "FLARE GUN", "PPSH", "PPSH GOLDEN"];
 
@@ -955,7 +1086,7 @@ const SLOT_RIGHT_TICKS = 27;  // ≈4.59s
 const SLOT_POST_SPIN_WAIT = 3.0;
 const SLOT_MACHINE_COST = 3;
 
-const SLOT_NO_WIN_CHANCE = 0.30;
+const SLOT_NO_WIN_CHANCE = 0.20;
 
 const VOTE_DURATION = 35;
 const WRAPPER_IDS = ["wrapper_left", "wrapper_center", "wrapper_right"];
@@ -1339,7 +1470,7 @@ function UpdateChangeModeVoteText()
     if(!HUD_ENT) return;
     const need = ComputeVotesNeeded();
     HUD_ENT.SetDialogVariableString("change_mode_vote_text", "vote_count_text",
-        `${VotesForChangingMode}/${need} VOTED TO CHANGE MODE`);
+        `有 ${VotesForChangingMode}/${need} 人投票更换模式`);
     HUD_ENT.SetHasClass("change_mode_vote_container", "Visible", true);
 }
 
@@ -1383,6 +1514,7 @@ Instance.OnCustomHudClicked((event) => {
         if(buttonId === "skin_card_" + c.key) { ApplySkin(playerSlot, inst, c.key); return; }
     }
 
+    if(HandleBuffClick(buttonId, playerSlot, inst)) return;
     if(HandleAdminClick(buttonId, inst)) return;
 
     // голосование — строго последним
@@ -1439,7 +1571,7 @@ function ShowSlotResult(isWin, itemIndex)
     if(!HUD_ENT) return;
  
     HUD_ENT.SetDialogVariableString("slot_result_text", "result_text",
-        isWin ? ("YOU WON: " + SLOT_ITEM_NAMES[itemIndex]) : "NO WIN — TRY AGAIN");
+        isWin ? ("你赢得了: " + SLOT_ITEM_NAMES[itemIndex]) : "你啥也没得到,再试一次吧");
  
     if(isWin)
     {
@@ -1450,7 +1582,7 @@ function ShowSlotResult(isWin, itemIndex)
  
         Instance.EntFireAtName({ name: "Map_Slot_Machine_Win_Sound", input: "StartSound" });
  
-        Instance.Delay(3.00).then(() => {
+        RoundDelay(3.00).then(() => {
             const pos = { x: 160, y: -128, z: -2560 };
  
             if(itemIndex === 0) Temp_Item_Beer.ForceSpawn(pos);
@@ -1466,7 +1598,7 @@ function ShowSlotResult(isWin, itemIndex)
             {
                 const temp = Temp_Item_PPSh.ForceSpawn(pos);
                 const logic_case = (temp ?? []).filter(ent => ent?.IsValid() && ent.GetClassName() === "logic_case")[0];
-                Instance.EntFireAtTarget({ target: logic_case, input: "InValue", value: "2", delay: 0.02 });
+                Instance.EntFireAtTarget({ target: logic_case, input: "InValue", value: "2.0", delay: 0.02 });
             }
         });
  
@@ -1640,7 +1772,7 @@ function PlaySlotMachine(caller)
 
     Instance.EntFireAtName({ name: "Map_Slot_Machine_Result_Sound", input: "StartSound", delay: 3.20 });
 
-    Instance.Delay(totalSpinTime).then(() => {
+    RoundDelay(totalSpinTime).then(() => {
         ShowSlotResult(isWin, winningItem);
     });
 
@@ -1685,7 +1817,6 @@ let enable_chunks3 = false;
 let players_in_elevator = 0;
 let meat = 0;
 let meat_max = 0;
-let survival_floor_max = 3;
 let floor = 0;
 let floors_min = 1;
 let pre_floors_max = 6;
@@ -1705,6 +1836,12 @@ Instance.SetThink(function () {
         }
     }
 
+    if(buffVoteActive)
+    {
+        UpdateBuffVoteTimer(now);
+        if(now >= buffVoteEndTime) EndBuffVoting();
+    }
+
     if(!HUD_ENT)
     {
         return;
@@ -1717,6 +1854,14 @@ Instance.SetThink(function () {
 
         UpdateUseProgress(slot, inst, player, now);
 
+        if(isSurvivalMode)
+        {
+            if(now - lastWeaponCheck >= WEAPON_CHECK_INTERVAL)
+            {
+                ReplaceForbiddenWeapons(player);
+            }
+        }
+
         if(isSurvivalMode
            && !inst.HudScoreOverlayOpen
            && !inst.HudMainMenuOpen
@@ -1726,48 +1871,58 @@ Instance.SetThink(function () {
             ToggleRadar(slot, inst, player);
         }
 
-        if(inst.HudScoreOverlayOpen && player.WasInputJustReleased(CSInputs.SHOW_SCORES))
+        // 1. открытие
+        if(player.WasInputJustPressed(CSInputs.SHOW_SCORES)
+           && !player.IsInputPressed(CSInputs.WALK)
+           && !inst.HudMainMenuOpen
+           && !inst.HudRadarOpen
+           && !votingActive
+           && !buffVoteActive
+           && !revealingWinner)
+        {
+            ToggleScoreOverlay(slot, inst);
+        }
+
+        // 2. закрытие — по факту состояния клавиши, а не по событию
+        if(inst.HudScoreOverlayOpen && !player.IsInputPressed(CSInputs.SHOW_SCORES))
         {
             inst.HudScoreOverlayOpen = false;
             HUD_ENT.SetHasClassForPlayer(slot, "score_overlay", "Visible", false);
             HUD_ENT.SetInputCaptureEnabled(slot, inst.HudMainMenuOpen);
         }
 
-        if(player.WasInputJustPressed(CSInputs.SHOW_SCORES)
-           && !player.IsInputPressed(CSInputs.WALK)
-           && !inst.HudMainMenuOpen
-           && !inst.HudRadarOpen
-           && !votingActive
-           && !revealingWinner)
-        {
-            ToggleScoreOverlay(slot, inst);
-        }
-
+        // 3. курсор по CTRL
         if(player.WasInputJustPressed(CSInputs.DUCK)
            && !player.IsInputPressed(CSInputs.WALK)
            && !votingActive
+           && !buffVoteActive
            && !revealingWinner)
         {
             HUD_ENT.SetInputCaptureEnabled(slot, inst.HudScoreOverlayOpen || inst.HudMainMenuOpen);
             HUD_ENT.SetHasClassForPlayer(slot, "lang_cursor_hint", "Hidden", true);
         }
 
-        if(!isSurvivalMode
-           && !votingActive
-           && !revealingWinner
-           && player.IsInputPressed(CSInputs.WALK)
-           && player.WasInputJustPressed(CSInputs.DUCK))
-        {
-            CycleCameraState(player, inst);
-        }
+        // if(!isSurvivalMode
+        //    && !votingActive
+        //    && !revealingWinner
+        //    && player.IsInputPressed(CSInputs.WALK)
+        //    && player.WasInputJustPressed(CSInputs.DUCK))
+        // {
+        //     CycleCameraState(player, inst);
+        // }
 
-        UpdateCameraLerp(player, inst, 0.01);
+        // UpdateCameraLerp(player, inst, 0.01);
     }
 
     if(now - lastRadarUpdate >= RADAR_UPDATE_INTERVAL && IsAnyRadarOpen())
     {
         lastRadarUpdate = now;
         UpdateRadarDots();
+    }
+
+    if(isSurvivalMode && now - lastWeaponCheck >= WEAPON_CHECK_INTERVAL)
+    {
+        lastWeaponCheck = now;
     }
 
     for(let i = DelayedCalls.length - 1; i >= 0; i--)
@@ -1819,11 +1974,22 @@ class Player {
         this.HudMainMenuOpen = false;
         this.HudMainMenuTab = "map_stats";
 
-        this.ThirdPersonOn = false;
-        this.CamState = 0;   // 0 = первое лицо, 1 = справа, 2 = слева
-        this.CamOffset = { x: 0, y: 0, z: 0 };
-        this.CamTarget = { x: 0, y: 0, z: 0 };
-        this.CamAnimating = false;
+        // this.ThirdPersonOn = false;
+        // this.CamState = 0;   // 0 = первое лицо, 1 = справа, 2 = слева
+        // this.CamOffset = { x: 0, y: 0, z: 0 };
+        // this.CamTarget = { x: 0, y: 0, z: 0 };
+        // this.CamAnimating = false;
+
+        this.KillIconId = 0;
+
+        this.BuffVote = -1;
+        this.LifeKills = 0;
+        this.StreakBonus = false;
+        this.StillTime = 0;
+        this.StealthAlpha = 255;
+
+        this.KnifeAttackType = -1;
+        this.KnifeAttackTime = 0;
     }
     SetVotedForChangingMode()
     {
@@ -1945,6 +2111,78 @@ Instance.OnScriptInput("SetLastims", ({caller, activator}) => {
 // //__  \ V /  __/ | | | |_\__ \
 // \__/   \_/ \___|_| |_|\__|___/
 
+Instance.OnPlayerKill((event) => {
+    const player = event.player;
+    const attacker = event.attacker;
+
+    if(!player?.IsValid()) return;
+    if(!isSurvivalMode) return;
+
+    if(attacker?.IsValid()
+       && attacker !== player
+       && attacker.GetClassName() === "player")
+    {
+        const slot = attacker.GetPlayerController()?.GetPlayerSlot();
+        if(slot != null)
+        {
+            Instance.EntFireAtName({ name: "Liquidation_Sound_Kill", input: "StartSoundOnSingleClient", value: slot });
+            ShowKillIcon(slot);
+        }
+    }
+
+    OnZombieKilledForScavenger(player, attacker);
+
+    if(buff_zm_streak
+       && attacker?.IsValid()
+       && attacker !== player
+       && attacker.GetClassName() === "player"
+       && attacker.GetTeamNumber() === 2
+       && player.GetTeamNumber() === 3)
+    {
+        const aslot = attacker.GetPlayerController()?.GetPlayerSlot();
+        const ainst = aslot != null ? PlayerInstancesMap.get(aslot) : null;
+        if(ainst)
+        {
+            ainst.LifeKills++;
+            ApplyRunSpeed(attacker, ainst);
+            attacker.SetMaxHealth(attacker.GetMaxHealth() + BUFF_STREAK_HP_PER_KILL);
+            attacker.SetHealth(attacker.GetHealth() + BUFF_STREAK_HP_PER_KILL);
+        }
+    }
+
+    if(player === attacker) return;
+    if(player.GetEntityName() !== "player_zm_suicide") return;
+    if(!Temp_Trap_Mine?.IsValid()) return;
+
+    const pos = player.GetAbsOrigin();
+    const temp = Temp_Trap_Mine.ForceSpawn({ x: pos.x, y: pos.y, z: pos.z + 8 });
+    const physbox = (temp ?? []).filter(ent => ent?.IsValid() && ent.GetClassName() === "func_physbox")[0];
+    const explosion = (temp ?? []).filter(ent => ent?.IsValid() && ent.GetClassName() === "env_explosion")[0];
+
+    if(!physbox?.IsValid()) return;
+    if(!explosion?.IsValid()) return;
+
+    physbox.Teleport({
+        angles: { pitch: GetRandomNumber(0, 360), yaw: GetRandomNumber(0, 360), roll: GetRandomNumber(0, 360) },
+        velocity: { x: 0, y: 0, z: 500 },
+        angularVelocity: { x: 200, y: 200, z: 200 }
+    });
+
+    Instance.Delay(2.98).then(() => {
+        if(!explosion?.IsValid()) return;
+
+        const boomPos = physbox?.IsValid() ? physbox.GetAbsOrigin() : pos;
+
+        Instance.EntFireAtTarget({ target: explosion, input: "ClearParent" });
+        Instance.Delay(0.01).then(() => {
+            if(!explosion?.IsValid()) return;
+
+            explosion.Teleport({ position: { x: boomPos.x, y: boomPos.y, z: boomPos.z + 16 } });
+            Instance.EntFireAtTarget({ target: explosion, input: "Explode", delay: 0.01 });
+        });
+    });
+});
+
 Instance.OnPlayerDisconnect((event) => {
     const player_slot = event.playerSlot
 
@@ -1996,11 +2234,11 @@ Instance.OnPlayerReset((event) => {
         const player_controller = player?.GetPlayerController();
         const player_name = player_controller?.GetPlayerName();
         const player_slot = player_controller?.GetPlayerSlot();
-        const cam = player.GetCustomCamera();
-        if(cam)
-        {
-            cam.SetMode(CustomCameraMode.DISABLED);
-        }
+        // const cam = player.GetCustomCamera();
+        // if(cam)
+        // {
+        //     cam.SetMode(CustomCameraMode.DISABLED);
+        // }
         if(player_slot == null)
         {
             return;
@@ -2031,17 +2269,18 @@ Instance.OnPlayerReset((event) => {
             inst.player = player;
             inst.controller = player_controller;
             inst.name = player_name;
-            inst.ThirdPersonOn = false;
+            // inst.ThirdPersonOn = false;
             inst.HudRadarHlIndex = -1;
-            inst.CamState = 0;
-            inst.CamOffset = { x: 0, y: 0, z: 0 };
-            inst.CamTarget = { x: 0, y: 0, z: 0 };
-            inst.CamAnimating = false;
-            if(inst.Mapper || inst.Vip || inst.Sponsor)
+            // inst.CamState = 0;
+            // inst.CamOffset = { x: 0, y: 0, z: 0 };
+            // inst.CamTarget = { x: 0, y: 0, z: 0 };
+            // inst.CamAnimating = false;
+            if(inst.Mapper || inst.Vip || inst.Sponsor || IsSkinWinner(inst))
             {
                 if(inst.Skin != "" && player.GetTeamNumber() === 3)
                 {
                     Instance.EntFireAtTarget({ target: inst.player, input: "SetModel", value: ResolveSkinPath(inst.Skin), delay: 1.00 });
+                    ApplySkinBodyGroup(inst.player, inst.Skin, 1.02);
                 }
                 if(inst.BodyGroup == "1" && player.GetTeamNumber() === 3)
                 {
@@ -2067,6 +2306,17 @@ Instance.OnPlayerReset((event) => {
         }
         Instance.Delay(0.01).then(() => {
             ApplyPlayerFlags(player_slot, PlayerInstancesMap.get(player_slot));
+
+            const pi = PlayerInstancesMap.get(player_slot);
+            if(pi && player?.IsValid())
+            {
+                pi.StreakBonus = false;
+                pi.StillTime = 0;
+                pi.StealthAlpha = 255;
+                player.SetColor({ r: 255, g: 255, b: 255, a: 255 });
+                if(isSurvivalMode) ApplyRunSpeed(player, pi);
+                if(isSurvivalMode) ApplyShrink(player);
+            }
         })
     }
 });
@@ -2074,6 +2324,7 @@ Instance.OnPlayerReset((event) => {
 Instance.OnActivate(async () => {
     Instance.Msg("Custom Player Script Activated");
     LoadStats();
+    ApplyWeekendUnlock();
     let event_c = Instance.FindEntityByName("Map_Event_Listener");
     while(!event_c?.IsValid()) 
     {
@@ -2087,7 +2338,7 @@ Instance.OnActivate(async () => {
 
         Instance.Msg(`Event payload: ${value.value}`);
 
-        const steamid = data.networkid;
+        const steamid = data.steam_id ?? null;
         const slot = data.userid ?? null;
 
         if(steamid && slot != null)
@@ -2099,6 +2350,7 @@ Instance.OnActivate(async () => {
 });
 
 Instance.OnRoundStart(() => {
+    ROUND_ID++;
     CloseAllHud();
     ResetScript();
     RefreshHint();
@@ -2114,8 +2366,11 @@ Instance.OnRoundStart(() => {
         Instance.EntFireAtName({ name: "Temp_Anomaly_Mita", input: "Kill" });
         Instance.EntFireAtName({ name: "Spawn_SurvivalMode_ZM_Push", input: "Enable" });
         Instance.EntFireAtName({ name: "Spawn_SurvivalMode_ZM_Teleport", input: "Enable" });
-        Instance.EntFireAtName({ name: "Spawn_Elevator_Out_Button", input: "Lock", delay: 1.00 });
-        Instance.EntFireAtName({ name: "Spawn_Elevator_Out_Button", input: "Unlock", delay: 20.00 });
+        if(BOTTLES >= 3)
+        {
+            Instance.EntFireAtName({ name: "Spawn_Elevator_Out_Button", input: "Lock", delay: 1.00 });
+            Instance.EntFireAtName({ name: "Spawn_Elevator_Out_Button", input: "Unlock", delay: 20.00 });
+        }
 
         Instance.EntFireAtName({ name: "Spawn_SurvivalMode_ZM_Push", input: "Enable", delay: 2.00 });
         Instance.EntFireAtName({ name: "Spawn_SurvivalMode_ZM_Teleport", input: "Enable", delay: 2.00 });
@@ -2138,6 +2393,9 @@ Instance.OnRoundStart(() => {
         HUD_ENT.SetHasClass("floor_label_container", "Visible", true);
         ResetChangeModeVoteText();
     }
+
+    ApplyWeekendUnlock();
+
     if(isVotingForMode)
     {
         StartVoting();
@@ -2168,6 +2426,7 @@ Instance.OnRoundStart(() => {
 });
 
 Instance.OnRoundEnd(() => {
+    ROUND_ID++;
     SaveStats();
     DelayedCalls.length = 0;
     survivalHpLoopActive = false;
@@ -2177,6 +2436,9 @@ Instance.OnRoundEnd(() => {
     survivalDestLoopActive = false;
     votingActive = false;
     revealingWinner = false;
+    buffVoteActive = false;
+    StopBuffEffects();
+    ResetBuffs();
 
     for(const [, inst] of PlayerInstancesMap)
     {
@@ -2192,11 +2454,13 @@ Instance.OnRoundEnd(() => {
         inst.HudScoreOverlayOpen = false;
         inst.HudMainMenuOpen = false;
 
-        inst.ThirdPersonOn = false;
-        inst.CamState = 0;
-        inst.CamOffset = { x: 0, y: 0, z: 0 };
-        inst.CamTarget = { x: 0, y: 0, z: 0 };
-        inst.CamAnimating = false;
+        // inst.ThirdPersonOn = false;
+        // inst.CamState = 0;
+        // inst.CamOffset = { x: 0, y: 0, z: 0 };
+        // inst.CamTarget = { x: 0, y: 0, z: 0 };
+        // inst.CamAnimating = false;
+
+        inst.BuffVote = -1;
     }
 
     CloseAllHud();
@@ -2205,6 +2469,7 @@ Instance.OnRoundEnd(() => {
 });
 
 Instance.OnBeginRoundRestart(() => {
+    ROUND_ID++;
     SaveStats();
     DelayedCalls.length = 0;
     survivalHpLoopActive = false;
@@ -2214,6 +2479,9 @@ Instance.OnBeginRoundRestart(() => {
     survivalDestLoopActive = false;
     votingActive = false;
     revealingWinner = false;
+    buffVoteActive = false;
+    StopBuffEffects();
+    ResetBuffs();
 
     for(const [, inst] of PlayerInstancesMap)
     {
@@ -2228,11 +2496,13 @@ Instance.OnBeginRoundRestart(() => {
         inst.HudScoreOverlayOpen = false;
         inst.HudMainMenuOpen = false;
 
-        inst.ThirdPersonOn = false;
-        inst.CamState = 0;
-        inst.CamOffset = { x: 0, y: 0, z: 0 };
-        inst.CamTarget = { x: 0, y: 0, z: 0 };
-        inst.CamAnimating = false;
+        // inst.ThirdPersonOn = false;
+        // inst.CamState = 0;
+        // inst.CamOffset = { x: 0, y: 0, z: 0 };
+        // inst.CamTarget = { x: 0, y: 0, z: 0 };
+        // inst.CamAnimating = false;
+
+        inst.BuffVote = -1;
     }
 
     CloseAllHud();
@@ -2240,26 +2510,56 @@ Instance.OnBeginRoundRestart(() => {
     HUD_ENT = undefined;
 });
 
+Instance.OnKnifeAttack(({ weapon, attackType }) => {
+    const owner = weapon?.GetOwner();
+    if(!owner?.IsValid() || owner.GetTeamNumber() !== 3) return;
+    const slot = owner.GetPlayerController()?.GetPlayerSlot();
+    const inst = slot != null ? PlayerInstancesMap.get(slot) : null;
+    if(!inst) return;
+    inst.KnifeAttackType = attackType;
+    inst.KnifeAttackTime = Instance.GetGameTime();
+});
+
 Instance.OnModifyPlayerDamage((event) => {
     const player = event.player;
     const attacker = event.attacker;
     const weapon = event.weapon;
     const inflictor = event.inflictor;
+    const damage = event.damage;
 
     if(isVotingForMode)
     {
-        if(isVotingImmunity && inflictor.GetClassName() == "player" && inflictor.GetTeamNumber() == 2)
+        if(inflictor?.GetClassName() == "player" && inflictor.GetTeamNumber() == 2)
         {
             return { abort: true }
         }
     }
-    
+
+    if(!player?.IsValid()) return;
+
+    if(isSurvivalMode) RestoreSpeedLater(player);
+
     if(isSurvivalMode)
     {
         if(player !== attacker && weapon !== recursive_fix && player.IsAlive() && attacker?.IsValid() && attacker.GetClassName() === "player" && attacker.GetTeamNumber() === 2)
         {
-            player.TakeDamage({ damage: SURVIVAL_ZOMBIE_DAMAGE, damageTypes: CSDamageTypes.SONIC, inflictor: attacker, weapon: recursive_fix });
+            const slot = attacker.GetPlayerController()?.GetPlayerSlot();
+            if(slot != null)
+            {
+                Instance.EntFireAtName({ name: `Liquidation_Sound_KnifeHit${GetRandomNumber(1, 2)}`, input: "StartSoundOnSingleClient", value: slot });
+            }
+            const zmDmg = SURVIVAL_ZOMBIE_DAMAGE * (buff_ct_knife ? BUFF_KNIFE_ZM_DMG_MUL : 1);
+            player.TakeDamage({ damage: zmDmg, damageTypes: CSDamageTypes.SONIC, inflictor: attacker, weapon: recursive_fix });
             return { abort: true }
+        }
+
+        if(player.IsAlive() && attacker?.IsValid() && attacker.GetClassName() === "player" && attacker.GetTeamNumber() === 3)
+        {
+            if(weapon?.GetClassName() == "weapon_knife")
+            {
+                if(IsKnifeLethal() && IsKnifeRmb(attacker)) return { damage: 99999 };
+                return { abort: true }
+            }
         }
     }
 
@@ -2420,17 +2720,6 @@ Instance.OnPlayerChat((event) => {
         {
             chunks_survival = value;
             Instance.Msg("chunks_survival = " + chunks_survival);
-        }
-    }
-
-    if(player_text.includes("!m_survivalfloors") && (inst.Mapper || inst.Leader))
-    {
-        const text = player_text.split(' ');
-        const value = Number(text[1]);
-        if(!isNaN(value) && value > 0)
-        {
-            survival_floor_max = value;
-            Instance.Msg("survival_floor_max = " + survival_floor_max);
         }
     }
 
@@ -2755,7 +3044,7 @@ Instance.OnScriptInput("SpawnItem", ({ caller, activator }) => {
                     Instance.Msg("GOLDEN PPSH")
                     const temp = Temp_Item_PPSh.ForceSpawn(ent_pos);
                     const logic_case = (temp ?? []).filter(ent => ent?.IsValid() && ent.GetClassName() === "logic_case")[0];
-                    Instance.EntFireAtTarget({ target: logic_case, input: "InValue", value: "2", delay: 0.02 });
+                    Instance.EntFireAtTarget({ target: logic_case, input: "InValue", value: "2.0", delay: 0.02 });
                     r_ent.Remove();
                 }
             }
@@ -2921,7 +3210,7 @@ Instance.OnScriptInput("SetFloorMessage", ({ caller, activator }) => {
         {
             if(floor != floors_max)
             {
-                Instance.EntFireAtTarget({ target: caller, input: "SetMessage", value: `FLOOR ${floor}` });
+                Instance.EntFireAtTarget({ target: caller, input: "SetMessage", value: `第 ${floor} 层` });
             }
             if(floor == floors_max)
             {
@@ -3926,9 +4215,19 @@ function ChangeMaxMiniBosses(arg)
 function ChangeMaxFloors(arg)
 {
     pre_floors_max = pre_floors_max - arg;
-    if(pre_floors_max > 9)
+    if(isSurvivalMode)
     {
-        pre_floors_max = 9
+        if(pre_floors_max > 30)
+        {
+            pre_floors_max = 30
+        }
+    }
+    else
+    {
+        if(pre_floors_max > 9)
+        {
+            pre_floors_max = 9
+        }
     }
     if(pre_floors_max < 2)
     {
@@ -4045,10 +4344,17 @@ function ShowTeamObjectives()
         if(!HUD_ENT) return;
         for(const slot of shown)
         {
-            HUD_ENT.SetHasClassForPlayer(slot, "team_objective_container", "Visible", false);
-            HUD_ENT.SetHasClassForPlayer(slot, "team_objective_ct", "Visible");
-            HUD_ENT.SetHasClassForPlayer(slot, "team_objective_t", "Visible");
+            HUD_ENT.SetHasClassForPlayer(slot, "team_objective_container", "Visible");   // снять запись → плавно гаснет
         }
+        // тексты убираем после затухания (2s — как transition-duration в CSS)
+        Instance.Delay(0.5).then(() => {
+            if(!HUD_ENT) return;
+            for(const slot of shown)
+            {
+                HUD_ENT.SetHasClassForPlayer(slot, "team_objective_ct", "Visible");
+                HUD_ENT.SetHasClassForPlayer(slot, "team_objective_t", "Visible");
+            }
+        });
     });
 }
 
@@ -4063,7 +4369,8 @@ Instance.OnScriptInput("LoadMode", () => {
         if(floor == 0)
         {
             SetFloor("LIQUIDATION MODE");
-            ShowTeamObjectives();
+            RoundDelay(0.50).then(() => StartBuffVoting());
+            // ShowTeamObjectives();
 
             Instance.EntFireAtName({ name: "Map_Slot_Machine_Button", input: "Kill" });
             Instance.EntFireAtName({ name: "Spawn_SurvivalMode_ZM_Push", input: "Kill" });
@@ -4085,6 +4392,7 @@ Instance.OnScriptInput("LoadMode", () => {
             Instance.EntFireAtName({ name: "cmd", input: "Command", value: "sv_disable_radar 1" });
             Instance.EntFireAtName({ name: "Map_Chunk_Counter", input: "SetHitMax", value: chunks_survival });
             Instance.EntFireAtName({ name: "Admin_*", input: "Lock" });
+            Instance.EntFireAtName({ name: "Temp_SafeZone", input: "ForceSpawn" });
         }
         Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "SpawnSurvivalMap" });
     }
@@ -4100,7 +4408,7 @@ Instance.OnScriptInput("SpawnSurvivalMap", () => {
 
     floor++;
 
-    if(floor < survival_floor_max)
+    if(floor < floors_max)
     {
         SURVIVAL_DESTINATIONS = [];
 
@@ -4117,10 +4425,11 @@ Instance.OnScriptInput("SpawnSurvivalMap", () => {
 
         floor_type_fire = true;
 
-        Instance.Delay(5.00).then(() => { StartSurvivalZmItems(); for(let i = 0; i < SURVIVAL_CANISTER_COUNT; i++) SpawnCanister(); });
+        ApplyFog();
+        const itemsDelay = (floor == 1) ? 17.00 : 5.00;   // на 1-м этаже — после голосования за баффы
+        RoundDelay(itemsDelay).then(() => { StartSurvivalZmItems(); for(let i = 0; i < GetCanisterCount(); i++) SpawnCanister(); });
         Instance.ServerCommand(`say >> FLOOR ${floor} <<`);
         Instance.EntFireAtName({ name: "Map_Floor_SurvivalMode_Relay", input: "Trigger" });
-        Instance.EntFireAtName({ name: "Map_FogController_Floor3", input: "Trigger" });
         Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "ShowSamosborTimer", delay: 13.00 });
 
         if(floor > 1)
@@ -4154,8 +4463,8 @@ Instance.OnScriptInput("SpawnCommonMap", () => {
     ResetFloor();
     if(floor == 0)
     {
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "Lock" })
-        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "Lock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Disable", input: "UnLock" })
+        Instance.EntFireAtName({ name: "Admin_ExtremeMode_Enable", input: "UnLock" })
         UpdateVariables();
         StartRun();
     }
@@ -4307,7 +4616,7 @@ Instance.OnScriptInput("SpawnCommonMap", () => {
             player_text?.SetParent(VIP_PLAYER)
             let player_controller = VIP_PLAYER?.GetPlayerController();
             let player_name = player_controller.GetPlayerName();
-            Instance.EntFireAtName({ name: "cmd", input: "Command", value: `say >> 本回合需要保护的玩家是... ${player_name}! 千万别把这个人卖了! <<`, delay: 15.00 });
+            Instance.EntFireAtName({ name: "cmd", input: "Command", value: `say >> 你们需要保护的玩家是.. ${player_name}! 别把他卖了.<<`, delay: 15.00 });
             Instance.EntFireAtTarget({ target: VIP_PLAYER, input: "KeyValue", value: "speed 0.8" });
             Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "CheckVipPlayer" });
         }
@@ -4476,6 +4785,7 @@ class NAV_POINT_WORM
 Instance.OnScriptInput("WormBossRelay", () => {
     MINI_BOSS = "WORM";
     isMusicPick = false;
+    SetFloor("");
     Instance.EntFireAtName({ name: SCRIPT_ENT, input: "RunScriptInput", value: "DisableMusic" })
     Instance.EntFireAtName({ name: "Template_ElevatorTeleport", input: "KeyValue", value: "origin 10592 0 -15368" })
     Instance.EntFireAtName({ name: "Template_ElevatorTeleport", input: "KeyValue", value: "angles 0 180 0" })
@@ -4904,59 +5214,7 @@ function CloseAllHud()
 function ClearPlayerHudState(slot)
 {
     if(!HUD_ENT) return;
-	let count = 0;
-    // верхнеуровневые панели
-    for(const p of HUD_ALL_PANELS)
-    {
-        HUD_ENT.SetHasClassForPlayer(slot, p, "Visible");
-		count++;
-    }
-
-    // голосование
-    for(const id of WRAPPER_IDS)
-    {
-        HUD_ENT.SetHasClassForPlayer(slot, id, "Focused");
-        HUD_ENT.SetHasClassForPlayer(slot, id, "Dimmed");
-		count++;
-    }
-
-    // вкладки меню
-    for(const t of MENU_TABS)
-    {
-        HUD_ENT.SetHasClassForPlayer(slot, "tab_btn_" + t, "Active");
-        HUD_ENT.SetHasClassForPlayer(slot, "tab_page_" + t, "Active");
-		count++;
-    }
-    HUD_ENT.SetHasClassForPlayer(slot, "tab_btn_admin_room", "Locked");
-    HUD_ENT.SetHasClassForPlayer(slot, "lang_admin_noaccess", "Visible");
-
-    // скины
-    for(const card of SKIN_CARDS)
-    {
-        HUD_ENT.SetHasClassForPlayer(slot, "skin_card_" + card.key, "Locked");
-        HUD_ENT.SetHasClassForPlayer(slot, "skin_card_" + card.key, "Selected");
-        HUD_ENT.SetDialogVariableStringForPlayer(slot, "skin_state_" + card.key, "txt", "");
-		count++;
-    }
-    HUD_ENT.SetDialogVariableStringForPlayer(slot, "skins_hint", "txt", "");
-
-    // радар: подсветка
-    for(const team of ["ct", "t"])
-    {
-		count++;
-        for(let i = 0; i < RADAR_DOTS_PER_TEAM; i++)
-        {
-            HUD_ENT.SetHasClassForPlayer(slot, "radar_cell_highlight_" + team + "_" + i, "Visible");
-			count++;
-        }
-    }
-
-    // прочее
-    HUD_ENT.SetHasClassForPlayer(slot, "lang_cursor_hint", "Hidden");
-    HUD_ENT.SetHasClassForPlayer(slot, "use_progress_fill", "Active");
-    HUD_ENT.SetHasClassForPlayer(slot, "team_objective_ct", "Visible");
-    HUD_ENT.SetHasClassForPlayer(slot, "team_objective_t", "Visible");
-	Instance.Msg(`count: ${count}`);
+    HUD_ENT.ResetForPlayer(slot);
     HUD_ENT.SetInputCaptureEnabled(slot, false);
 }
 
@@ -5008,7 +5266,7 @@ function ResetVariables()
         pre_traps_percentage = 20;
         pre_npcs_percentage = 20;
         pre_miniboss_max = 1;
-        pre_floors_max = 6;
+        pre_floors_max = 5;
         pre_samosbortime = 300;
         pre_samosbordamage = 1;
         fire_percentage = 100;
@@ -5132,13 +5390,13 @@ function ResetVariables()
     if(isSurvivalMode)
     {
         // VALUES
-        pre_human_hp = 100;
+        pre_human_hp = 130;
         pre_human_max_hp = 170;
         pre_traps_percentage = 50;
         pre_npcs_percentage = 20;
         pre_miniboss_max = 1;
-        pre_floors_max = 6;
-        pre_samosbortime = 480;
+        pre_floors_max = 3;
+        pre_samosbortime = 360;
         pre_samosbordamage = 2;
         fire_percentage = 10;
         snow_percentage = 10;
@@ -5162,10 +5420,10 @@ function ResetVariables()
         FLOOR_TYPE_CHANCE[1].weight = 0;
         FLOOR_TYPE_CHANCE[2].weight = 0;
         FLOOR_TYPE_CHANCE[3].weight = 0;
-        BOTTLE_CHANCE[0].weight = 5;
+        BOTTLE_CHANCE[0].weight = 8;
         BOTTLE_CHANCE[1].weight = 45;
         BOTTLE_CHANCE[2].weight = 35;
-        BOTTLE_CHANCE[3].weight = 15;
+        BOTTLE_CHANCE[3].weight = 12;
         GIFTBOX_CHANCE[0].weight = 25;
         GIFTBOX_CHANCE[1].weight = 10;
         GIFTBOX_CHANCE[2].weight = 52;
@@ -5175,12 +5433,6 @@ function ResetVariables()
 
     ResetAdminWorldText();
 }
-
-// function UpdateMapStats()
-// {
-//     let text = `- SERVER STATISTICS -\n\nTOTAL MAP WINS: ${Server_MapData.total_wins}\nFASTEST TRUTH WIN: X\nFASTEST EXTREME TRUTH WIN: X`
-//     Instance.EntFireAtName({ name: "Server_MapData_Text", input: "SetMessage", value: text })
-// }
 
 function ResetMusicList()
 {
@@ -5206,13 +5458,18 @@ function ResetScript()
 
     if(isSurvivalMode)
     {
-        BOTTLES = Math.ceil(BOTTLES *= 0.9);
+        if(BOTTLES > 30)
+        {
+            BOTTLES = 30;
+        }
         Instance.EntFireAtName({ name: "Map_Slot_Machine*", input: "Enable" });
     }
     else
     {
         BOTTLES = 0;
     }
+
+    Temp_Trap_Mine = Instance.FindEntityByName("Map_Suicider_Mine_Template");
 
     Temp_Item_Flamethrower = Instance.FindEntityByName("Item_Flamethrower_Template");
     Temp_Item_SuicideBomber = Instance.FindEntityByName("Item_SuicideBomber_Template");
@@ -5345,9 +5602,19 @@ function UpdateVariables()
 
 function UpdateBottlesAmount()
 {
-    if(BOTTLES > 999)
+    if(isSurvivalMode)
     {
-        BOTTLES = 999;
+        if(BOTTLES > 30)
+        {
+            BOTTLES = 30;
+        }
+    }
+    else
+    {
+        if(BOTTLES > 99)
+        {
+            BOTTLES = 99;
+        }
     }
     if(BOTTLES < 0)
     {
@@ -5876,7 +6143,9 @@ function SetMenuTab(slot, inst, tab)
 
 function CanUseSkin(inst, card)
 {
-    return card.flags.some(f => inst[f]);
+    if(card.flags.some(f => inst[f])) return true;
+    if(card.winner && IsSkinWinner(inst)) return true;
+    return false;
 }
 
 function PlayerHasAnyFlag(inst)
@@ -5919,14 +6188,24 @@ function ApplySkin(slot, inst, key)
     const skin = SKINS_LIST.find(s => s.number === card.number);
     if(!skin) return;
 
+    const p = inst.player;
+    if(p?.IsValid() && p.GetModelName() === ResolveSkinPath(skin.path)) return;
+
     inst.Skin = skin.path;
 
     if(inst.player?.IsValid() && inst.player.GetTeamNumber() === 3)
     {
         inst.player.SetModel(ResolveSkinPath(skin.path));
+        ApplySkinBodyGroup(inst.player, skin.path);
     }
 
     RefreshSkinMenu(slot, inst);
+}
+
+function ApplySkinBodyGroup(player, path, delay = 0.00)
+{
+    if(!player?.IsValid() || !path || !path.includes("kletka_hero")) return;
+    Instance.EntFireAtTarget({ target: player, input: "SetBodyGroup", value: "head," + GetRandomNumber(0, 1), delay: delay });
 }
 
 function ResolveSkinPath(path)
@@ -6036,7 +6315,8 @@ function LoadStats()
     if(!Array.isArray(STATS.ways) || STATS.ways.length !== 4) STATS.ways = [0,0,0,0];
     STATS.records = Object.assign({}, STATS_DEFAULT.records, STATS.records || {});
     STATS.totals  = Object.assign({}, STATS_DEFAULT.totals,  STATS.totals  || {});
-    if(!Array.isArray(STATS.survival_top)) STATS.survival_top = [];
+    delete STATS.survival_top;
+    if(!Array.isArray(STATS.skin_winners)) STATS.skin_winners = [];
 }
 
 function SaveStats()
@@ -6114,8 +6394,14 @@ function FinishRun(isTrueEnding)
     RefreshMapStats();
 }
 
-Instance.OnScriptInput("FinishRunNormal", () => { FinishRun(false) });
-Instance.OnScriptInput("FinishRunSecret", () => { FinishRun(true) });
+Instance.OnScriptInput("FinishRunNormal", () => {
+    FinishRun(false);
+    if(!isEasyMode) GrantWinnersSkin();
+});
+Instance.OnScriptInput("FinishRunSecret", () => {
+    FinishRun(true);
+    if(!isEasyMode) GrantWinnersSkin();
+});
 
 // ============================================================
 //  СЧЁТЧИКИ
@@ -6134,37 +6420,6 @@ function CountBottle(n) { STATS.totals.bottles += (n || 1); }
 function CountBottleSpent(n) { STATS.totals.bottles_spent += (n || 1); }
 function CountSpin()    { STATS.totals.spins++; }
 
-// ============================================================
-//  ТОП-10 SURVIVAL ПО БУТЫЛКАМ
-//  Вызывать в конце забега/раунда в Survival Mode
-// ============================================================
-
-function SubmitSurvivalScore(inst, bottles)
-{
-    if(!inst || !inst.steamid) return;
-    if(!bottles || bottles <= 0) return;
-
-    const existing = STATS.survival_top.find(e => e.id === inst.steamid);
-
-    if(existing)
-    {
-        if(bottles > existing.bottles)
-        {
-            existing.bottles = bottles;
-            existing.name = inst.player_name;
-        }
-    }
-    else
-    {
-        STATS.survival_top.push({ id: inst.steamid, name: inst.player_name, bottles: bottles });
-    }
-
-    STATS.survival_top.sort((a, b) => b.bottles - a.bottles);
-    if(STATS.survival_top.length > 10) STATS.survival_top.length = 10;
-
-    SaveStats();
-    RefreshMapStats();
-}
 
 // ============================================================
 //  ОТРИСОВКА ВКЛАДКИ
@@ -6193,13 +6448,6 @@ function RefreshMapStats()
     HUD_ENT.SetDialogVariableString("ms_bottles", "val", String(STATS.totals.bottles));
     HUD_ENT.SetDialogVariableString("ms_bottles_spent", "val", String(STATS.totals.bottles_spent));
     HUD_ENT.SetDialogVariableString("ms_spins",   "val", String(STATS.totals.spins));
-
-    // for(let i = 1; i <= 10; i++)
-    // {
-    //     const e = STATS.survival_top[i - 1];
-    //     HUD_ENT.SetDialogVariableString("ms_top_name_" + i, "val", e ? e.name : "—");
-    //     HUD_ENT.SetDialogVariableString("ms_top_val_" + i,  "val", e ? String(e.bottles) : "—");
-    // }
 }
 
 
@@ -6233,7 +6481,7 @@ function SurvivalDestinationTick()
         }
     }
 
-    Instance.Delay(SURVIVAL_DEST_CHECK_TICK).then(() => SurvivalDestinationTick());
+    RoundDelay(SURVIVAL_DEST_CHECK_TICK).then(() => SurvivalDestinationTick());
 }
 
 function GetDestinationsAndRemove()
@@ -6329,12 +6577,13 @@ Instance.OnScriptInput("TeleportToRandomDestination", ({ caller, activator }) =>
         velocity: { x: 0, y: 0, z: 0 },
     });
 
-    Instance.Delay(1.00).then(() => {
+    RoundDelay(1.00).then(() => {
         if(!activator?.IsValid() || !activator?.IsAlive()) return;
 
         const name = activator.GetEntityName();
         const hasItem = name && ZM_ITEM_PLAYER_NAMES.includes(name);
-        const hp = hasItem ? SURVIVAL_ZM_ITEM_HP : SURVIVAL_ZOMBIE_HP;
+        const zslot = activator.GetPlayerController()?.GetPlayerSlot();
+        const hp = GetZombieHp(hasItem, zslot != null ? PlayerInstancesMap.get(zslot) : null);
 
         activator.SetMaxHealth(hp);
         activator.SetHealth(hp);
@@ -6509,31 +6758,31 @@ function SurvivalZmItemTick()
         {
             if(SpawnRandomZmItem())
             {
-                survivalZmItemNextSpawn = now + SURVIVAL_ZM_ITEM_INTERVAL;
+                survivalZmItemNextSpawn = now + GetZmItemInterval();
             }
         }
     }
     else
     {
         // предметов максимум — отсчёт начнётся заново, когда один подберут
-        survivalZmItemNextSpawn = now + SURVIVAL_ZM_ITEM_INTERVAL;
+        survivalZmItemNextSpawn = now + GetZmItemInterval();
     }
 
-    Instance.Delay(SURVIVAL_ZM_ITEM_CHECK).then(() => SurvivalZmItemTick());
+    RoundDelay(SURVIVAL_ZM_ITEM_CHECK).then(() => SurvivalZmItemTick());
 }
 
 function StartSurvivalZmItems()
 {
-    Instance.Delay(1.00).then(() => {
+    RoundDelay(1.00).then(() => {
         for(let i = 0; i < SURVIVAL_ZM_ITEM_START; i++) SpawnZmItemNearZombies();
     });
 
-    survivalZmItemNextSpawn = Instance.GetGameTime() + SURVIVAL_ZM_ITEM_INTERVAL;
+    survivalZmItemNextSpawn = Instance.GetGameTime() + GetZmItemInterval();
 
     if(!survivalZmItemLoopActive)
     {
         survivalZmItemLoopActive = true;
-        Instance.Delay(SURVIVAL_ZM_ITEM_CHECK).then(() => SurvivalZmItemTick());
+        RoundDelay(SURVIVAL_ZM_ITEM_CHECK).then(() => SurvivalZmItemTick());
     }
 }
 
@@ -6547,13 +6796,28 @@ function SurvivalHealthTick()
 
         const name = zombie.GetEntityName();
         const hasItem = name && ZM_ITEM_PLAYER_NAMES.includes(name);
-        const hp = hasItem ? SURVIVAL_ZM_ITEM_HP : SURVIVAL_ZOMBIE_HP;
+        const zslot = zombie.GetPlayerController()?.GetPlayerSlot();
+        const hp = GetZombieHp(hasItem, zslot != null ? PlayerInstancesMap.get(zslot) : null);
 
         zombie.SetMaxHealth(hp);
         zombie.SetHealth(hp);
     }
 
-    Instance.Delay(SURVIVAL_HP_TICK).then(() => SurvivalHealthTick());
+    RoundDelay(SURVIVAL_HP_TICK).then(() => SurvivalHealthTick());
+}
+
+function ReplaceForbiddenWeapons(player)
+{
+    if(!player?.IsValid()) return;
+
+    for(const oldName in WEAPON_REPLACEMENTS)
+    {
+        const weapon = player.FindWeapon(oldName);
+        if(!weapon?.IsValid()) continue;
+
+        player.DestroyWeapon(weapon);
+        player.GiveNamedItem(WEAPON_REPLACEMENTS[oldName], true);
+    }
 }
 
 function VectorDistance(a, b)
@@ -6578,6 +6842,7 @@ function VectorDistance(a, b)
 
 
 
+/*
 function EnableThirdPerson(player)
 {
     if(!player?.IsValid()) return;
@@ -6594,7 +6859,7 @@ function EnableThirdPerson(player)
         cameraOffsetReturnStrength: 0.15,
     });
 
-    cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
+    // cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
 }
 
 function DisableThirdPerson(player)
@@ -6604,7 +6869,7 @@ function DisableThirdPerson(player)
     const cam = player.GetCustomCamera();
     if(!cam) return;
 
-    cam.SetMode(CustomCameraMode.DISABLED);
+    // cam.SetMode(CustomCameraMode.DISABLED);
 }
 
 function GetCamOffsetForState(state)
@@ -6630,7 +6895,7 @@ function ApplyCamOffset(player, inst)
         cameraOffsetReturnStrength: 0.15,
     });
 
-    cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
+    // cam.SetMode(CustomCameraMode.FOLLOW_POSITION);
 }
 
 function CycleCameraState(player, inst)
@@ -6670,13 +6935,14 @@ function UpdateCameraLerp(player, inst, delta)
         if(inst.CamState === 0)
         {
             const cam = player.GetCustomCamera();
-            if(cam) cam.SetMode(CustomCameraMode.DISABLED);
+            // if(cam) cam.SetMode(CustomCameraMode.DISABLED);
             return;
         }
     }
 
     ApplyCamOffset(player, inst);
 }
+*/
 
 
 
@@ -6690,7 +6956,783 @@ function RefreshHint()
 
     HUD_ENT.SetDialogVariableString("hint_text", "txt",
         isSurvivalMode ? "SHIFT + ATTACK2 — OPEN RADAR"
-                       : "SHIFT + CTRL — THIRDPERSON MODE");
+                       : " ");
 
     HUD_ENT.SetHasClass("hint_container", "Visible", true);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const KILL_STAGES = ["Go", "Fade", "Out", "Arm"];
+ 
+function ShowKillIcon(slot)
+{
+    if(!HUD_ENT) return;
+ 
+    const inst = PlayerInstancesMap.get(slot);
+    if(!inst) return;
+ 
+    inst.KillIconId = (inst.KillIconId || 0) + 1;
+    const id = inst.KillIconId;
+ 
+    const alive = () => {
+        const i = PlayerInstancesMap.get(slot);
+        return HUD_ENT && i && i.KillIconId === id;
+    };
+ 
+    // если прошлая анимация ещё идёт — сначала вернуть в базу
+    const restarting = inst.KillIconPlaying === true;
+    for(const s of KILL_STAGES) HUD_ENT.SetHasClassForPlayer(slot, "kill_icon", s);
+    inst.KillIconPlaying = true;
+ 
+    Instance.Delay(restarting ? 0.12 : 0.03).then(() => {
+        if(!alive()) return;
+        HUD_ENT.SetHasClassForPlayer(slot, "kill_icon", "Go", true);
+ 
+        Instance.Delay(0.20).then(() => {
+            if(!alive()) return;
+            HUD_ENT.SetHasClassForPlayer(slot, "kill_icon", "Fade", true);
+        });
+ 
+        Instance.Delay(0.90).then(() => {
+            if(!alive()) return;
+            HUD_ENT.SetHasClassForPlayer(slot, "kill_icon", "Out", true);
+        });
+ 
+        // уборка — снять все записи
+        Instance.Delay(1.35).then(() => {
+            if(!alive()) return;
+            for(const s of KILL_STAGES) HUD_ENT.SetHasClassForPlayer(slot, "kill_icon", s);
+            const i = PlayerInstancesMap.get(slot);
+            if(i) i.KillIconPlaying = false;
+        });
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+function IsWeekend()
+{
+    const d = new Date().getDay();
+    return d === 0 || d === 6;
+}
+
+function ApplyWeekendUnlock()
+{
+    if(IsWeekend()) SetModeEnabled(3, true);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ============================================================
+//  БАФФЫ ДЛЯ LIQUIDATION MODE
+//  Голосование + эффекты.
+//  Тексты и иконки — статикой в XML. По сети только флаги.
+// ============================================================
+
+// ------------------------------------------------------------
+//  СОСТОЯНИЕ
+// ------------------------------------------------------------
+
+function ResetBuffs()
+{
+    buff_ct_regen = false;
+    buff_ct_knife = false;
+    buff_ct_speed = false;
+    buff_ct_beacon = false;
+    buff_ct_frenzy = false;
+    buff_ct_scavenger = false;
+
+    buff_zm_sprint = false;
+    buff_zm_swarm = false;
+    buff_zm_streak = false;
+    buff_zm_stealth = false;
+    buff_zm_scarcity = false;
+    buff_zm_fog = false;
+    buff_zm_shrink = false;
+    scavengerKills = 0;
+
+    buffRegenAcc = 0;
+    buffBeaconAcc = 0;
+    buffBeaconSlots = [];
+    frenzyNextAt = 0;
+    frenzyUntil = 0;
+
+    if(HUD_ENT)
+    {
+        HUD_ENT.SetHasClass("knife_frenzy_banner", "Visible", false);
+        HUD_ENT.SetHasClass("knife_frenzy_banner", "Run", false);
+    }
+
+    for(const [, inst] of PlayerInstancesMap)
+    {
+        inst.LifeKills = 0;
+        inst.StreakBonus = false;
+        inst.StillTime = 0;
+        inst.StealthAlpha = 255;
+    }
+}
+
+// ============================================================
+//  ЭФФЕКТЫ — ВСПОМОГАТЕЛЬНЫЕ
+// ============================================================
+
+// Итоговый runspeed для игрока с учётом всех баффов
+function GetRunSpeedFor(player, inst)
+{
+    const team = player.GetTeamNumber();
+
+    if(team === 3)
+    {
+        return buff_ct_speed ? BUFF_CT_SPEED : 1.0;
+    }
+
+    if(team === 2)
+    {
+        let s = buff_zm_sprint ? BUFF_ZM_SPRINT_SPEED : 1.0;
+        if(buff_zm_shrink) s += BUFF_SHRINK_SPEED;
+        if(buff_zm_streak && inst?.LifeKills > 0) s = Math.min(BUFF_STREAK_SPEED_MAX, s + inst.LifeKills * BUFF_STREAK_SPEED_PER_KILL);
+        return s;
+    }
+
+    return 1.0;
+}
+
+function ApplyRunSpeed(player, inst)
+{
+    if(!player?.IsValid()) return;
+    Instance.EntFireAtTarget({ target: player, input: "KeyValue", value: "runspeed " + GetRunSpeedFor(player, inst).toFixed(2) });
+}
+
+function ApplyRunSpeedAll()
+{
+    for(const [, inst] of PlayerInstancesMap)
+    {
+        if(inst.player?.IsValid() && inst.player.IsAlive()) ApplyRunSpeed(inst.player, inst);
+    }
+}
+
+function RestoreSpeedLater(player)
+{
+    const slot = player.GetPlayerController()?.GetPlayerSlot();
+    const inst = slot != null ? PlayerInstancesMap.get(slot) : null;
+    if(!inst || Math.abs(GetRunSpeedFor(player, inst) - 1.0) < 0.001) return;   // без баффа скорости — не трогаем
+
+    const token = (inst.SpeedRestoreToken || 0) + 1;
+    inst.SpeedRestoreToken = token;
+    Instance.Delay(1.5).then(() => {
+        if(inst.SpeedRestoreToken !== token) return;          // был удар позже — вернёт он
+        if(player.IsValid() && player.IsAlive()) ApplyRunSpeed(player, inst);
+    });
+}
+
+function ApplyFog()
+{
+    const n = buff_zm_fog ? 5 : 3;
+    Instance.EntFireAtName({ name: "Map_FogController_Floor" + n, input: "Trigger" });
+}
+
+// Базовое здоровье зомби с учётом баффов — использовать в SurvivalHealthTick
+function GetZombieHp(hasItem, inst)
+{
+    let hp = hasItem ? SURVIVAL_ZM_ITEM_HP : SURVIVAL_ZOMBIE_HP;
+    if(buff_zm_sprint && !hasItem) hp -= BUFF_ZM_SPRINT_HP;
+    if(buff_zm_shrink && !hasItem) hp -= BUFF_SHRINK_HP;
+    if(buff_zm_streak && inst?.LifeKills > 0) hp += inst.LifeKills * BUFF_STREAK_HP_PER_KILL;
+    return Math.max(1, hp);
+}
+
+// Интервал спавна зм-предметов с учётом баффа
+function GetZmItemInterval()
+{
+    return buff_zm_swarm ? SURVIVAL_ZM_ITEM_INTERVAL * BUFF_ZM_SWARM_MUL : SURVIVAL_ZM_ITEM_INTERVAL;
+}
+
+// Количество канистр с учётом баффа
+function GetCanisterCount()
+{
+    return Math.max(1, SURVIVAL_CANISTER_COUNT - (buff_zm_scarcity ? 1 : 0));
+}
+
+// Нож убивает с одного удара?
+function IsKnifeLethal()
+{
+    return buff_ct_knife || (buff_ct_frenzy && Instance.GetGameTime() < frenzyUntil);
+}
+
+function IsKnifeRmb(attacker)
+{
+    const slot = attacker.GetPlayerController()?.GetPlayerSlot();
+    const inst = slot != null ? PlayerInstancesMap.get(slot) : null;
+
+    // свежий удар из OnKnifeAttack — по нему
+    if(inst && Instance.GetGameTime() - inst.KnifeAttackTime <= 0.2)
+    {
+        return inst.KnifeAttackType === CSWeaponAttackType.SECONDARY;
+    }
+
+    // OnKnifeAttack ещё не пришёл в этом тике — зажата ли ПКМ прямо сейчас
+    return attacker.IsInputPressed(CSInputs.ATTACK2);
+}
+
+// ============================================================
+//  МАЯКИ
+// ============================================================
+function PickBeacons()
+{
+    const humans = GetValidPlayersCT().filter(h => h?.IsValid() && h.IsAlive());
+    buffBeaconSlots = [];
+
+    for(let i = 0; i < BUFF_BEACON_COUNT && humans.length > 0; i++)
+    {
+        const h = humans.splice(GetRandomNumber(0, humans.length - 1), 1)[0];
+        const slot = h.GetPlayerController()?.GetPlayerSlot();
+        if(slot == null) continue;
+
+        buffBeaconSlots.push(slot);
+        h.SetMaxHealth(BUFF_BEACON_HP);
+        h.SetHealth(BUFF_BEACON_HP);
+        h.SetColor({ r: 120, g: 255, b: 140, a: 255 });
+
+        Instance.ClientCommand(slot, "play sounds/ui/beep07");
+    }
+}
+
+function IsBeacon(slot)
+{
+    return buffBeaconSlots.includes(slot);
+}
+
+function BeaconHealTick()
+{
+    const beacons = [];
+    for(const s of buffBeaconSlots)
+    {
+        const inst = PlayerInstancesMap.get(s);
+        const p = inst?.player;
+        if(p?.IsValid() && p.IsAlive() && p.GetTeamNumber() === 3) beacons.push(p);
+    }
+    if(beacons.length === 0) return;
+
+    for(const h of GetValidPlayersCT())
+    {
+        if(!h?.IsValid() || !h.IsAlive()) continue;
+
+        const slot = h.GetPlayerController()?.GetPlayerSlot();
+        if(slot == null || IsBeacon(slot)) continue;   // маяк сам себя не лечит
+
+        const hp = h.GetHealth();
+        const max = h.GetMaxHealth();
+        if(hp >= max) continue;
+
+        const pos = h.GetAbsOrigin();
+        for(const b of beacons)
+        {
+            if(Vector3Utils.distance(pos, b.GetAbsOrigin()) <= BUFF_BEACON_RADIUS)
+            {
+                h.SetHealth(Math.min(max, hp + BUFF_BEACON_HEAL));
+                break;
+            }
+        }
+    }
+}
+
+// ============================================================
+//  KNIFE FRENZY
+// ============================================================
+function ScheduleFrenzy()
+{
+    const wait = BUFF_FRENZY_MIN + Math.random() * (BUFF_FRENZY_MAX - BUFF_FRENZY_MIN);
+    frenzyNextAt = Instance.GetGameTime() + wait;
+}
+
+function FrenzyTick(now)
+{
+    if(!buff_ct_frenzy) return;
+
+    if(frenzyUntil > 0 && now >= frenzyUntil)
+    {
+        frenzyUntil = 0;
+        if(HUD_ENT) HUD_ENT.SetHasClass("knife_frenzy_banner", "Visible", false);
+        // полоску сбрасываем после того, как баннер погас, чтобы не мелькнула полной
+        Instance.Delay(0.30).then(() => {
+            if(HUD_ENT && frenzyUntil === 0) HUD_ENT.SetHasClass("knife_frenzy_banner", "Run", false);
+        });
+        ScheduleFrenzy();
+        return;
+    }
+
+    if(frenzyUntil === 0 && frenzyNextAt > 0 && now >= frenzyNextAt)
+    {
+        frenzyUntil = now + BUFF_FRENZY_DURATION;
+        frenzyNextAt = 0;
+        if(HUD_ENT)
+        {
+            HUD_ENT.SetHasClass("knife_frenzy_banner", "Visible", true);
+            HUD_ENT.SetHasClass("knife_frenzy_banner", "Run", true);
+        }
+        // Instance.ServerCommand("say >> KNIFE FRENZY — 12 SECONDS <<");
+    }
+}
+
+// ============================================================
+//  НЕВИДИМОСТЬ
+// ============================================================
+function StealthTick()
+{
+    for(const z of GetValidPlayersT())
+    {
+        if(!z?.IsValid() || !z.IsAlive()) continue;
+
+        const slot = z.GetPlayerController()?.GetPlayerSlot();
+        const inst = slot != null ? PlayerInstancesMap.get(slot) : null;
+        if(!inst) continue;
+
+        const v = z.GetAbsVelocity();
+        const speed = Math.sqrt(v.x * v.x + v.y * v.y);
+
+        let target = 255;
+
+        if(speed > BUFF_STEALTH_MOVE)
+        {
+            inst.StillTime = 0;
+        }
+        else
+        {
+            inst.StillTime += BUFF_TICK;
+            const t = (inst.StillTime - BUFF_STEALTH_DELAY) / BUFF_STEALTH_FADE;
+            if(t > 0)
+            {
+                target = Math.round(255 - Math.min(1, t) * (255 - BUFF_STEALTH_MIN_A));
+            }
+        }
+
+        // дёргаем SetColor только при заметной смене
+        if(Math.abs(target - (inst.StealthAlpha ?? 255)) >= 6 || (target === 255 && inst.StealthAlpha !== 255))
+        {
+            inst.StealthAlpha = target;
+            z.SetColor({ r: 255, g: 255, b: 255, a: target });
+        }
+    }
+}
+
+// ============================================================
+//  CRAWLER — уменьшенные зомби
+// ============================================================
+function ApplyShrink(player)
+{
+    if(!player?.IsValid()) return;
+    const scale = (buff_zm_shrink && player.GetTeamNumber() === 2) ? BUFF_SHRINK_SCALE : 1;
+    Instance.EntFireAtTarget({ target: player, input: "SetScale", value: String(scale) });
+}
+
+function ApplyShrinkAll()
+{
+    for(const z of GetValidPlayersT())
+    {
+        if(z?.IsValid() && z.IsAlive()) ApplyShrink(z);
+    }
+}
+
+// ============================================================
+//  SCAVENGER — предметы с зомби, меньше здоровья у людей
+// ============================================================
+
+// Штраф к здоровью людей — используется в ResetHumanHealth
+function GetHumanHpPenalty()
+{
+    return buff_ct_scavenger ? BUFF_SCAV_HP : 0;
+}
+
+// В момент выбора баффа: у всех живых людей -40 к текущему и максимуму
+function ApplyScavengerPenaltyNow()
+{
+    const max = Math.max(1, human_max_hp - BUFF_SCAV_HP);
+    for(const h of GetValidPlayersCT())
+    {
+        if(!h?.IsValid() || !h.IsAlive()) continue;
+        h.SetMaxHealth(max);
+        h.SetHealth(Math.max(1, Math.min(max, h.GetHealth() - BUFF_SCAV_HP)));
+    }
+}
+
+// Предмет людям по вашей таблице ITEM_CHANCE (канистры в ней нет)
+function SpawnHumanItemAt(pos)
+{
+    const p = { x: pos.x, y: pos.y, z: pos.z + 16 };
+    const pick = getRandomItem(ITEM_CHANCE);
+    let spawned = null;
+
+    if(pick == 0) spawned = Temp_Item_Beer?.ForceSpawn(p);
+    else if(pick == 1) spawned = Temp_Item_Beans?.ForceSpawn(p);
+    else if(pick == 2) spawned = Temp_Item_Spanner?.ForceSpawn(p);
+    else if(pick == 3) spawned = Temp_Item_Whip?.ForceSpawn(p);
+    else if(pick == 4) spawned = Temp_Item_FlareGun?.ForceSpawn(p);
+    else if(pick == 5) spawned = Temp_Item_PPSh?.ForceSpawn(p);
+    else if(pick == 6)
+    {
+        spawned = Temp_Item_PPSh?.ForceSpawn(p);
+        const lc = (spawned ?? []).filter(e => e?.IsValid() && e.GetClassName() === "logic_case")[0];
+        if(lc) Instance.EntFireAtTarget({ target: lc, input: "InValue", value: "2.0" });
+    }
+
+    // подсветка, чтобы выпавший предмет было видно
+    for(const e of (spawned ?? []))
+    {
+        if(e?.IsValid() && e.GetClassName() === "prop_dynamic")
+        {
+            Instance.EntFireAtTarget({ target: e, input: "StartGlowing" });
+        }
+    }
+}
+
+// Вызывать из OnPlayerKill
+function OnZombieKilledForScavenger(victim, attacker)
+{
+    if(!buff_ct_scavenger) return;
+    if(!victim?.IsValid() || victim.GetTeamNumber() !== 2) return;
+    if(!attacker?.IsValid() || attacker.GetClassName() !== "player" || attacker.GetTeamNumber() !== 3) return;
+
+    scavengerKills++;
+    if(scavengerKills % BUFF_SCAV_EVERY !== 0) return;
+    if(Math.random() >= BUFF_SCAV_CHANCE) return;
+
+    SpawnHumanItemAt(victim.GetAbsOrigin());
+}
+
+// ============================================================
+//  ОСНОВНОЙ ЦИКЛ ЭФФЕКТОВ
+// ============================================================
+function StartBuffEffects()
+{
+    if(buffLoopActive) return;
+    buffLoopActive = true;
+    BuffEffectsTick();
+}
+
+function StopBuffEffects()
+{
+    buffLoopActive = false;
+}
+
+function BuffEffectsTick()
+{
+    if(!buffLoopActive) return;
+    if(!isSurvivalMode) { buffLoopActive = false; return; }
+
+    const now = Instance.GetGameTime();
+
+    // регенерация людей
+    if(buff_ct_regen)
+    {
+        buffRegenAcc += BUFF_TICK;
+        if(buffRegenAcc >= BUFF_REGEN_INTERVAL)
+        {
+            buffRegenAcc = 0;
+            for(const h of GetValidPlayersCT())
+            {
+                if(!h?.IsValid() || !h.IsAlive()) continue;
+                const hp = h.GetHealth(), max = h.GetMaxHealth();
+                if(hp < max) h.SetHealth(Math.min(max, hp + BUFF_REGEN_AMOUNT));
+            }
+        }
+    }
+
+    // маяки
+    if(buff_ct_beacon)
+    {
+        buffBeaconAcc += BUFF_TICK;
+        if(buffBeaconAcc >= 1.0)
+        {
+            buffBeaconAcc = 0;
+            BeaconHealTick();
+        }
+    }
+
+    FrenzyTick(now);
+
+    if(buff_zm_stealth) StealthTick();
+
+    RoundDelay(BUFF_TICK).then(() => BuffEffectsTick());
+}
+
+function PickThree(list)
+{
+    const pool = list.slice();
+    const out = [];
+    for(let i = 0; i < 3 && pool.length > 0; i++)
+    {
+        out.push(pool.splice(GetRandomNumber(0, pool.length - 1), 1)[0]);
+    }
+    return out;
+}
+
+function ResetBuffCardAnim()
+{
+    if(!HUD_ENT) return;
+    for(const c of BUFF_SLOTS)
+    {
+        HUD_ENT.SetHasClass("buff_card_" + c, "FlyIn", false);
+        HUD_ENT.SetHasClass("buff_card_" + c, "FlyOut", false);
+    }
+}
+
+function ClearBuffSlotClasses(pslot)
+{
+    if(!HUD_ENT) return;
+
+    HUD_ENT.SetHasClassForPlayer(pslot, "buff_vote_container", "Visible");
+
+    for(const c of BUFF_SLOTS)
+    {
+        HUD_ENT.SetHasClassForPlayer(pslot, "buff_card_" + c, "Picked");
+        for(const b of BUFF_HUMAN)  HUD_ENT.SetHasClassForPlayer(pslot, "buff_" + c + "_" + b.key, "Visible");
+        for(const b of BUFF_ZOMBIE) HUD_ENT.SetHasClassForPlayer(pslot, "buff_" + c + "_" + b.key, "Visible");
+    }
+}
+
+function StartBuffVoting()
+{
+    if(!HUD_ENT) return;
+    if(buffVoteActive) return;
+
+    ResetBuffs();
+    ResetBuffCardAnim();
+
+    buffOfferCT = PickThree(BUFF_HUMAN);
+    buffOfferT  = PickThree(BUFF_ZOMBIE);
+
+    buffVoteActive = true;
+    buffVoteEndTime = Instance.GetGameTime() + BUFF_VOTE_TIME;
+
+    for(const [pslot, inst] of PlayerInstancesMap)
+    {
+        const p = inst.player;
+        if(!p?.IsValid()) continue;
+
+        ClearBuffSlotClasses(pslot);
+
+        const offer = (p.GetTeamNumber() === 3) ? buffOfferCT : buffOfferT;
+        inst.BuffVote = -1;
+
+        for(let c = 0; c < 3; c++)
+        {
+            HUD_ENT.SetHasClassForPlayer(pslot, "buff_" + (c + 1) + "_" + offer[c].key, "Visible", true);
+        }
+
+        HUD_ENT.SetHasClassForPlayer(pslot, "buff_vote_container", "Visible", true);
+        HUD_ENT.SetInputCaptureEnabled(pslot, true);
+    }
+
+    UpdateBuffVoteTimer(Instance.GetGameTime());
+
+    for(let i = 0; i < BUFF_SLOTS.length; i++)
+    {
+        const c = BUFF_SLOTS[i];
+        Instance.Delay(0.10 + i * BUFF_THROW_STAGGER).then(() => {
+            if(!HUD_ENT || !buffVoteActive) return;
+            HUD_ENT.SetHasClass("buff_card_" + c, "FlyIn", true);
+        });
+    }
+}
+
+function UpdateBuffVoteTimer(now)
+{
+    if(!HUD_ENT) return;
+    const left = Math.max(0, Math.ceil(buffVoteEndTime - now));
+    HUD_ENT.SetDialogVariableString("buff_vote_timer", "time_left", String(left));
+}
+
+function CountBuffVotes(players, offer)
+{
+    const counts = [0, 0, 0];
+
+    for(const p of players)
+    {
+        const s = p.GetPlayerController()?.GetPlayerSlot();
+        if(s == null) continue;
+        const i = PlayerInstancesMap.get(s);
+        if(!i) continue;
+        if(i.BuffVote >= 0 && i.BuffVote <= 2) counts[i.BuffVote]++;
+    }
+
+    let best = 0;
+    for(let k = 1; k < 3; k++) if(counts[k] > counts[best]) best = k;
+    if(counts[0] + counts[1] + counts[2] === 0) best = GetRandomNumber(0, 2);
+
+    return offer[best];
+}
+
+const BUFF_NAMES = {
+    regen:     "REGENERATION · 再生",
+    knife:     "BUTCHER · 屠夫",
+    speed:     "ADRENALINE · 肾上腺素",
+    beacon:    "BEACONS · 信标",
+    frenzy:    "KNIFE FRENZY · 小刀狂热",
+    scavenger: "SCAVENGER · 拾荒者",
+
+    sprint:    "HUNGER · 饥饿",
+    swarm:     "SWARM · 虫群",
+    streak:    "PREDATOR · 掠食者",
+    stealth:   "STALKER · 潜行者",
+    scarcity:  "SCARCITY · 匮乏",
+    fog:       "DENSE FOG · 浓雾",
+    shrink:    "CRAWLER · 爬行者",
+};
+
+function EndBuffVoting()
+{
+    if(!buffVoteActive) return;
+    buffVoteActive = false;
+
+    if(!HUD_ENT) return;
+
+    const winCT = CountBuffVotes(GetValidPlayersCT(), buffOfferCT);
+    const winT  = CountBuffVotes(GetValidPlayersT(),  buffOfferT);
+
+    if(winCT) { winCT.apply(); Instance.Msg("[BUFF] CT: " + winCT.key); }
+    if(winT)  { winT.apply();  Instance.Msg("[BUFF] T: "  + winT.key); }
+
+    Instance.ServerCommand(`say >> HUMANS 人类: ${BUFF_NAMES[winCT?.key] ?? "-"} <<`);
+    Instance.ServerCommand(`say >> ZOMBIES 僵尸: ${BUFF_NAMES[winT?.key] ?? "-"} <<`);
+
+    StartBuffEffects();
+
+    for(const [pslot] of PlayerInstancesMap) HUD_ENT.SetInputCaptureEnabled(pslot, false);
+
+    for(let i = 0; i < BUFF_SLOTS.length; i++)
+    {
+        const c = BUFF_SLOTS[i];
+        Instance.Delay(i * 0.08).then(() => {
+            if(!HUD_ENT) return;
+            HUD_ENT.SetHasClass("buff_card_" + c, "FlyIn", false);
+            HUD_ENT.SetHasClass("buff_card_" + c, "FlyOut", true);
+        });
+    }
+
+    Instance.Delay(1.60).then(() => {
+        if(!HUD_ENT) return;
+
+        ResetBuffCardAnim();
+
+        for(const [pslot, inst] of PlayerInstancesMap)
+        {
+            ClearBuffSlotClasses(pslot);
+            inst.BuffVote = -1;
+        }
+
+        // цели команд — уже после голосования, чтобы не накладывались на карты
+        ShowTeamObjectives();
+    });
+}
+
+function HandleBuffClick(buttonId, pslot, inst)
+{
+    if(!buffVoteActive) return false;
+
+    for(const c of BUFF_SLOTS)
+    {
+        if(buttonId !== "buff_card_" + c) continue;
+
+        inst.BuffVote = c - 1;
+
+        for(const k of BUFF_SLOTS)
+        {
+            if(k === c) HUD_ENT.SetHasClassForPlayer(pslot, "buff_card_" + k, "Picked", true);
+            else        HUD_ENT.SetHasClassForPlayer(pslot, "buff_card_" + k, "Picked");
+        }
+        return true;
+    }
+    return false;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function IsSkinWinner(inst)
+{
+    if(!STATS || !inst?.steamid) return false;
+    return STATS.skin_winners.includes(inst.steamid);
+}
+
+function GrantWinnersSkin()
+{
+    if(!STATS) return;
+
+    let added = 0;
+
+    for(const p of GetValidPlayersCT())
+    {
+        if(!p?.IsValid() || !p.IsAlive()) continue;
+
+        const slot = p.GetPlayerController()?.GetPlayerSlot();
+        if(slot == null) continue;
+
+        const inst = PlayerInstancesMap.get(slot);
+        if(!inst?.steamid) continue;
+
+        if(IsSkinWinner(inst)) continue;
+
+        STATS.skin_winners.push(inst.steamid);
+        added++;
+
+        // Instance.ServerCommand(`say >> ${inst.player_name} unlocked the ELEVATOR HERO skin! <<`);
+    }
+
+    if(added > 0)
+    {
+        SaveStats();
+        Instance.Msg("[SKIN] new winners: " + added + ", total: " + STATS.skin_winners.length);
+    }
 }

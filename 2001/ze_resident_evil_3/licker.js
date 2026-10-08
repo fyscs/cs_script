@@ -1,6 +1,4 @@
-import { Instance, CSPlayerPawn, CSGearSlot, CSDamageTypes, CSInputs } from 'cs_script/point_script';
-
-const MIN_THINK_INTERVAL_SECONDS = 0.1;
+import { Instance, CSPlayerPawn, CSGearSlot, CSInputs, CSDamageTypes } from 'cs_script/point_script';
 
 // SCRIPT BY TILGEP (hi)
 // STUFF THAT MIGHT NEED CHANGING FOR BALANCE
@@ -8,7 +6,7 @@ let BLOCK_INFECTION = true; // Whether to block infection, licker can only use i
 // Lick Ability
 const LICK_COOLDOWN_MISS = 7;          // Cooldown of lick ability (+use) if it doesn't hit a CT
 const LICK_COOLDOWN = 60;              // Cooldown of lick ability (+use) if it hits a CT
-const TONGUE_LENGTH = 1300;            // Max range of lick
+const TONGUE_LENGTH = 1200;            // Max range of lick
 const TONGUE_SPEED = 2500;             // Speed of tongue going out
 const TONGUE_SPEED_RETRACT = 4000;     // Tongue missed, speed as it goes back
 const TONGUE_SPEED_PULL = 75;          // Tongue HIT, speed as it pulls a CT
@@ -18,6 +16,9 @@ const TONGUE_PHYSBOX_HP_PER_CT = 25;   // HP added per alive CT to grabbed physb
 const TONGUE_PULL_DELAY = 2;           // Delay (in seconds) before licked CT starts getting pulled
 const TONGUE_DAMAGE = 4;             // Damage per TONGUE_DAMAGE_INTERVAL while being pulled
 const TONGUE_DAMAGE_INTERVAL = 0.5;    // Interval (in seconds) between damage ticks while being pulled (0 = every tick)
+// Pulled CT return settings
+const PULLED_RETURN_DELAY = 2;         // Delay before pulled CTs who end stuck, start to return to their last free position (-1=disabled)
+const PULLED_RETURN_SPEED = 75;        // Speed that stuck players return to their last free position
 // Jump Ability
 const JUMP_COOLDOWN = 15;               // Cooldown of jump ability (right click)
 const JUMP_FORCE = {
@@ -38,11 +39,11 @@ const ABILTY_KB_MODIFIER = {
 const HURTS = {
     SHOTGUN: {
         trigger: "shotgunhurt",
-        damage: 3000,
+        damage: 1500,
     },
     KAR98: {
         trigger: "preitem_03_hurt",
-        damage: 5000,
+        damage: 2500,
     },
     SAW: {
         trigger: "saw_hurt",
@@ -74,7 +75,6 @@ function vecLengthSquared(vector) { return (vector.x * vector.x + vector.y * vec
 function vecLength(vector) { return Math.sqrt(vecLengthSquared(vector)); }
 function vecLength2D(vector) { return Math.sqrt(vecLength2DSquared(vector)); }
 function vecLength2DSquared(vector) { return (vector.x * vector.x + vector.y * vector.y); }
-function vecDot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 function vecAngles(vector) {
     let yaw = 0;
     let pitch = 0;
@@ -156,22 +156,51 @@ function getPlayerMaxs(origin, ducking) {
         return vecAdd(origin, vec(16, 16, 54));
     return vecAdd(origin, vec(16, 16, 72));
 }
+// ai moment
 function capsuleIntersectsAABB(capsule, box) {
     const ab = vecSubtract(capsule.b, capsule.a);
-    // project box center onto segment
-    const boxCenter = {
-        x: (box.min.x + box.max.x) * 0.5,
-        y: (box.min.y + box.max.y) * 0.5,
-        z: (box.min.z + box.max.z) * 0.5
+    const radiusSquared = capsule.radius * capsule.radius;
+    const distanceSquaredAt = (t) => {
+        const point = vecAdd(capsule.a, vecScale(ab, t));
+        return vecLengthSquared(vecSubtract(point, closestPointOnAABB(point, box)));
     };
-    const t = clamp(vecDot(vecSubtract(boxCenter, capsule.a), ab) / vecDot(ab, ab), 0, 1);
-    const p = vecAdd(capsule.a, vecScale(ab, t));
-    const q = closestPointOnAABB(p, box);
-    const dx = p.x - q.x;
-    const dy = p.y - q.y;
-    const dz = p.z - q.z;
-    const distSq = dx * dx + dy * dy + dz * dz;
-    return distSq <= capsule.radius * capsule.radius;
+    // A zero-length capsule is a sphere.
+    if (vecLengthSquared(ab) === 0)
+        return distanceSquaredAt(0) <= radiusSquared;
+    const axes = ["x", "y", "z"];
+    const cuts = [0, 1];
+    for (const axis of axes) {
+        if (ab[axis] === 0)
+            continue;
+        for (const bound of [box.min[axis], box.max[axis]]) {
+            const t = (bound - capsule.a[axis]) / ab[axis];
+            if (t > 0 && t < 1)
+                cuts.push(t);
+        }
+    }
+    cuts.sort((a, b) => a - b);
+    // Between box-plane crossings, squared distance is a quadratic in t.
+    // Check each interval's endpoints and its quadratic minimum.
+    for (let i = 0; i < cuts.length - 1; i++) {
+        const lo = cuts[i];
+        const hi = cuts[i + 1];
+        if (distanceSquaredAt(lo) <= radiusSquared || distanceSquaredAt(hi) <= radiusSquared)
+            return true;
+        const middle = (lo + hi) * 0.5;
+        let numerator = 0;
+        let denominator = 0;
+        for (const axis of axes) {
+            const coordinate = capsule.a[axis] + ab[axis] * middle;
+            if (coordinate >= box.min[axis] && coordinate <= box.max[axis])
+                continue;
+            const bound = coordinate < box.min[axis] ? box.min[axis] : box.max[axis];
+            numerator += ab[axis] * (capsule.a[axis] - bound);
+            denominator += ab[axis] * ab[axis];
+        }
+        if (denominator > 0 && distanceSquaredAt(clamp(-numerator / denominator, lo, hi)) <= radiusSquared)
+            return true;
+    }
+    return false;
 }
 function shuffle(array) {
     for (let i = array.length - 1; i > 0; i--) {
@@ -235,8 +264,8 @@ const SWIPE_DELAY = 1.18;
 const SWIPE_HIT_DONE = 1.27;
 const GLOW_ENT_RESET = { x: 4357, y: -6436, z: 30 };
 const IVY_PBOX = { name: "ivy.pbox" };
-let ticking = false;
-let licker = {
+let taken = false;
+const licker = {
     player: undefined,
     pawn: undefined,
     state: LickerState.NOTHING,
@@ -247,7 +276,7 @@ let licker = {
     dead: false,
     knife: { name: "licker_knife" },
 };
-let tongue = {
+const tongue = {
     state: TongueState.IDLE,
     didHit: false,
     usableAt: -1,
@@ -264,34 +293,36 @@ let tongue = {
     target: { name: "licker_tongue_target" },
     pullAt: -1,
     damageAt: -1,
+    killIcon: { name: "icon.licker.tongue" },
 };
 let targets = [];
-let pullTarget = {
+const pullTarget = {
     pawn: undefined,
     glow: { name: "licker_target_glow_2" },
     relay: { name: "licker_target_glow_1" },
     pbox_template: { name: "licker_target_pbox_temp" },
     pbox: undefined,
     position: VEC0,
+    lastFreePosition: VEC0,
+    inSolid: false,
 };
-let jump = {
+const jump = {
     usableAt: -1,
     jumpTime: -1,
     state: JumpState.CHILLING,
     connection: undefined,
 };
-let swipe = {
+const swipe = {
     usableAt: -1,
     swipeTime: -1,
     state: SwipeState.NONE,
     connection: undefined,
     hurt: { name: "licker_swipe_hurt" },
+    killIcon: { name: "icon.licker.swipe" },
 };
+const stuckPlayers = [];
 Instance.OnRoundStart(() => {
-    let dumb = BLOCK_INFECTION;
-    BLOCK_INFECTION = !BLOCK_INFECTION;
-    BLOCK_INFECTION = dumb;
-    ticking = false;
+    taken = false;
     IVY_PBOX.entity = Instance.FindEntityByName(IVY_PBOX.name);
     licker.dead = false;
     licker.player = undefined;
@@ -315,6 +346,7 @@ Instance.OnRoundStart(() => {
     tongue.target.entity = Instance.FindEntityByName(tongue.target.name);
     tongue.pullAt = -1;
     tongue.damageAt = -1;
+    tongue.killIcon.entity = Instance.FindEntityByName(tongue.killIcon.name);
     jump.usableAt = -1;
     jump.state = JumpState.CHILLING;
     if (jump.connection != undefined) {
@@ -328,10 +360,14 @@ Instance.OnRoundStart(() => {
         swipe.connection = undefined;
     }
     swipe.hurt.entity = Instance.FindEntityByName(swipe.hurt.name);
+    swipe.killIcon.entity = Instance.FindEntityByName(swipe.killIcon.name);
     pullTarget.pawn = undefined;
     pullTarget.glow.entity = undefined;
     pullTarget.relay.entity = undefined;
     pullTarget.pbox_template.entity = Instance.FindEntityByName(pullTarget.pbox_template.name);
+    pullTarget.lastFreePosition = VEC0;
+    pullTarget.inSolid = false;
+    stuckPlayers.length = 0;
 });
 Instance.OnRoundEnd(() => {
     if (licker.pawn?.IsValid()) {
@@ -340,7 +376,7 @@ Instance.OnRoundEnd(() => {
     }
 });
 Instance.OnScriptInput("GasStation", (data) => {
-    if (ticking || licker.dead)
+    if (taken)
         return;
     let target = Instance.FindEntityByName("zmitem.gasstation");
     if (!target?.IsValid())
@@ -409,6 +445,13 @@ function LickerDeath() {
     if (licker.dead)
         return;
     if (licker.state == LickerState.LICKING && tongue.state == TongueState.PULLING) {
+        if (pullTarget.pawn?.IsValid() && pullTarget.pawn.IsAlive() && pullTarget.inSolid && PULLED_RETURN_DELAY >= 0) {
+            stuckPlayers.push({
+                player: pullTarget.pawn,
+                target: pullTarget.lastFreePosition,
+                moveAt: time() + PULLED_RETURN_DELAY
+            });
+        }
         if (pullTarget.pbox?.IsValid()) {
             pullTarget.pbox.Remove();
             pullTarget.pbox = undefined;
@@ -420,13 +463,28 @@ function LickerDeath() {
             pullTarget.relay.entity.SetParent(undefined);
             pullTarget.relay.entity.Teleport({ position: GLOW_ENT_RESET });
         }
-        if (tongue.particle.entity?.IsValid()) {
-            Instance.EntFireAtTarget({ target: tongue.particle.entity, input: "DestroyImmediately", delay: 0.1 });
-        }
+    }
+    pullTarget.pawn = undefined;
+    tongue.state = TongueState.IDLE;
+    if (tongue.particle.entity?.IsValid())
+        Instance.EntFireAtTarget({ target: tongue.particle.entity, input: "DestroyImmediately", delay: 0.1 });
+    if (jump.connection != undefined) {
+        Instance.DisconnectOutput(jump.connection);
+        jump.connection = undefined;
+    }
+    if (swipe.connection != undefined) {
+        Instance.DisconnectOutput(swipe.connection);
+        swipe.connection = undefined;
     }
     licker.state = LickerState.NOTHING;
     licker.dead = true;
-    licker.model.entity.SetParent(undefined);
+    //trace down so model dies on the ground
+    if (licker.model.entity?.IsValid()) {
+        let pos = licker.model.entity.GetAbsOrigin();
+        let tr = Instance.TraceBox({ mins: vec(-12, -12, 0), maxs: vec(12, 12, 16), start: pos, end: vecAdd(pos, vec(0, 0, -16e3)), ignorePlayers: true, ignoreEntity: GetIgnoreEntsDeath() });
+        licker.model.entity.SetParent(undefined);
+        licker.model.entity.Move({ position: tr.end });
+    }
     licker.player = undefined;
     if (licker.pawn?.IsValid()) {
         licker.pawn.SetEntityName("player");
@@ -434,15 +492,17 @@ function LickerDeath() {
             licker.pawn.Kill();
     }
     licker.pawn = undefined;
-    ticking = false;
-    SetAnimPlaybackRate(1.0);
-    PlayAnimation(ANIMATIONS.die);
-    SetIdleAnimation(ANIMATIONS.die_static);
+    if (licker.model.entity?.IsValid()) {
+        SetAnimPlaybackRate(1.0);
+        PlayAnimation(ANIMATIONS.die);
+        SetIdleAnimation(ANIMATIONS.die_static);
+    }
     if (licker.healthchanged != undefined) {
         Instance.DisconnectOutput(licker.healthchanged);
         licker.healthchanged = undefined;
     }
-    licker.pbox.entity?.Remove();
+    if (licker.pbox.entity?.IsValid())
+        licker.pbox.entity.Remove();
 }
 Instance.RegisterCheatCommand("re3_licker", (args) => {
     if (args.length < 1) {
@@ -468,6 +528,7 @@ Instance.RegisterCheatCommand("re3_licker", (args) => {
     Instance.Msg("Usage: re3_licker <name> - name of the player to give licker to");
 });
 function SetLicker(controller, pawn) {
+    taken = true;
     licker.player = controller;
     licker.pawn = pawn;
     licker.pawn.SetColor(col(255, 255, 255, 0));
@@ -480,32 +541,41 @@ function SetLicker(controller, pawn) {
     let fwd = getForward(ang);
     licker.model.entity.Teleport({ position: vecAdd(licker.pawn?.GetAbsOrigin(), vecScale(fwd, -20)), angles: ang });
     licker.model.entity.SetParent(licker.pawn);
-    ticking = true;
-    Instance.SetNextThink(Instance.GetGameTime() + MIN_THINK_INTERVAL_SECONDS);
+    lastTick = time();
+    Instance.SetNextThink(lastTick);
 }
 let lastTick = 0;
-let pendingPboxDamage = 0;
 Instance.SetThink(() => {
-    if (ticking)
-        Instance.SetNextThink(Instance.GetGameTime() + MIN_THINK_INTERVAL_SECONDS);
-    else
-        return;
-    if (!licker.player || !licker.player.IsValid() || !licker.pawn || !licker.pawn.IsValid() || lastTick == 0) {
-        lastTick = Instance.GetGameTime();
+    const now = Instance.GetGameTime();
+    let ticking = false;
+    if (lastTick == 0) {
+        lastTick = now;
+        Instance.SetNextThink(now);
         return;
     }
-    if (licker.pawn.GetTeamNumber() < CS_TEAM_T || !licker.pawn.IsAlive()) {
+    const delta = now - lastTick;
+    // A disconnected owner may already have invalid handles; still release their target.
+    if (taken && !licker.dead && (!licker.player?.IsValid() || !licker.pawn?.IsValid()))
         LickerDeath();
-        return;
+    if (taken && licker.player?.IsValid() && licker.pawn?.IsValid()) {
+        if (!licker.dead) {
+            if (licker.pawn.GetTeamNumber() < CS_TEAM_T || !licker.pawn.IsAlive())
+                LickerDeath();
+            else {
+                LickerTick(now, delta);
+                ticking = true;
+            }
+        }
     }
-    if (pendingPboxDamage > 0) {
-        const damage = pendingPboxDamage;
-        pendingPboxDamage = 0;
-        if (licker.pbox.entity?.IsValid())
-            licker.pbox.entity.TakeDamage({ damage });
+    if (stuckPlayers.length > 0) {
+        StuckPlayersTick(now, delta);
+        ticking = true;
     }
-    let now = time();
-    let delta = now - lastTick;
+    lastTick = now;
+    if (ticking)
+        Instance.SetNextThink(now);
+});
+function LickerTick(now, delta) {
     if (licker.state == LickerState.NOTHING) {
         let canlick = (now > tongue.usableAt);
         let canjump = (now > jump.usableAt);
@@ -546,8 +616,7 @@ Instance.SetThink(() => {
     else if (licker.state == LickerState.SWIPING) {
         SwipeTick(delta, now);
     }
-    lastTick = now;
-});
+}
 function LickInit() {
     ignoreEntsNoSawInit = true;
     ignoreEntsAllInit = true;
@@ -691,12 +760,15 @@ function LickPullStart(player) {
     tongue.pullAt = time() + TONGUE_PULL_DELAY;
     tongue.damageAt = time() + TONGUE_DAMAGE_INTERVAL;
     tongue.tipPos = GetPlayerCenter(player);
+    tongue.distanceTravelled = vecLength(vecSubtract(tongue.basePos, tongue.tipPos));
     tongue.angles = vecAngles(vecSubtract(tongue.basePos, tongue.tipPos));
     tongue.target.entity?.Teleport({ angles: tongue.angles });
     tongue.forward = getForward(tongue.angles);
     tongue.velocity = vecScale(tongue.forward, TONGUE_SPEED_PULL);
     pullTarget.pawn = player;
     pullTarget.position = player.GetAbsOrigin();
+    pullTarget.lastFreePosition = pullTarget.position;
+    pullTarget.inSolid = false;
     // Physbox
     // SILLY GOOFY BUG RIGHT NOW >_<
     // TWO PHYSBOXES ARE IN THE TEMPLATE
@@ -730,7 +802,18 @@ function LickPullStart(player) {
 function LickPullInterrupted() {
     tongue.state = TongueState.RETRACTING;
     tongue.velocity = vecScale(tongue.forward, TONGUE_SPEED_RETRACT);
+    if (pullTarget.pawn?.IsValid() && pullTarget.pawn.IsAlive() && pullTarget.inSolid && PULLED_RETURN_DELAY >= 0) {
+        stuckPlayers.push({
+            player: pullTarget.pawn,
+            target: pullTarget.lastFreePosition,
+            moveAt: time() + PULLED_RETURN_DELAY
+        });
+    }
     pullTarget.pawn = undefined;
+    if (pullTarget.pbox?.IsValid()) {
+        pullTarget.pbox.Remove();
+        pullTarget.pbox = undefined;
+    }
     if (pullTarget.glow.entity?.IsValid() && pullTarget.glow.entity.IsGlowing())
         pullTarget.glow.entity.Unglow();
     if (pullTarget.relay.entity?.IsValid()) {
@@ -742,24 +825,21 @@ function LickPullInterrupted() {
 function LickPull(delta, now) {
     if (!pullTarget.pawn || !pullTarget.pawn.IsValid() ||
         pullTarget.pawn.GetTeamNumber() != CS_TEAM_CT || !pullTarget.pawn.IsAlive()) {
-        if (pullTarget.pbox && pullTarget.pbox.IsValid()) {
-            pullTarget.pbox.Remove();
-            pullTarget.pbox = undefined;
-        }
         LickPullInterrupted();
         return;
     }
     if (LickCheckForTp()) {
+        if (pullTarget.pawn?.IsValid() && pullTarget.pawn.IsAlive() && pullTarget.inSolid && PULLED_RETURN_DELAY >= 0) {
+            stuckPlayers.push({
+                player: pullTarget.pawn,
+                target: pullTarget.lastFreePosition,
+                moveAt: now + PULLED_RETURN_DELAY
+            });
+        }
         LickFinish();
         return;
     }
     licker.pawn.Teleport({ position: tongue.firedAt, velocity: VEC0, angularVelocity: VEC0 });
-    // Damage
-    if (now >= tongue.damageAt) {
-        //I.Msg("Dealing lick damage");
-        pullTarget.pawn.TakeDamage({ damage: TONGUE_DAMAGE, attacker: licker.pawn, damageTypes: CSDamageTypes.GENERIC });
-        tongue.damageAt = now + TONGUE_DAMAGE_INTERVAL;
-    }
     // Force CT to have knife
     let targetKnife = pullTarget.pawn.FindWeaponBySlot(CSGearSlot.KNIFE);
     if (targetKnife != undefined) {
@@ -773,35 +853,46 @@ function LickPull(delta, now) {
         pullTarget.pawn.Teleport({ position: pullTarget.position, velocity: VEC0 });
         return;
     }
-    let move = vecScale(tongue.velocity, delta);
+    // Do the pull
+    const pullStep = Math.min(vecLength(tongue.velocity) * delta, tongue.distanceTravelled);
+    let move = vecScale(tongue.forward, pullStep);
     let endpos = vecAdd(tongue.tipPos, move);
     let distance = vecLength(vecSubtract(endpos, tongue.tipPos));
     tongue.distanceTravelled -= distance;
     tongue.tipPos = endpos;
-    let pos = pullTarget.pawn.GetEyePosition();
-    let min = vec(-16, -16, -8);
-    let max = vec(16, 16, 0);
-    // Teleport target to ground or air if tip is above their center
-    let tr = Instance.TraceBox({ mins: min, maxs: max, start: tongue.tipPos, end: vecAdd(pos, vec(0, 0, -16e3)), ignorePlayers: true, ignoreEntity: GetIgnoreEntsAll() });
-    //I.DebugLine({start:tongue.tipPos,end:tongue.basePos,duration:delta,color:col(0,0,255)});
-    let floorPos = tr.end;
-    let distToFloor = vecLength(vecSubtract(floorPos, tongue.tipPos));
-    //I.Msg("frac:"+tr.fraction+"  didHit:"+tr.didHit+"  solid:"+tr.startedInSolid+"");
-    if (distToFloor < 37) {
-        pullTarget.pawn.Teleport({ position: floorPos, velocity: VEC0 });
-    }
-    else {
-        let targetpos = vecSubtract(tongue.tipPos, vec(0, 0, 36));
-        pullTarget.pawn.Teleport({ position: targetpos, velocity: VEC0 });
-    }
+    const playerPos = vecSubtract(tongue.tipPos, vec(0, 0, 36));
+    const ignore = GetIgnoreEntsAll();
+    if (pullTarget.pbox?.IsValid())
+        ignore.push(pullTarget.pbox);
+    // Probe beneath the new tongue position so floor movement keeps advancing in X/Y.
+    const floor = Instance.TraceBox({
+        mins: vec(-16, -16, 0),
+        maxs: vec(16, 16, 8),
+        start: tongue.tipPos,
+        end: vecAdd(tongue.tipPos, vec(0, 0, -38)),
+        ignorePlayers: true,
+        ignoreEntity: ignore
+    });
+    const floorGap = tongue.tipPos.z - floor.end.z;
+    const nearFloor = floor.didHit && !floor.startedInSolid &&
+        floor.normal.z >= 0.7 && floorGap >= 0 && floorGap < 38;
+    const desiredPos = nearFloor
+        ? vec(tongue.tipPos.x, tongue.tipPos.y, floor.end.z + 0.1)
+        : playerPos;
+    // Test the full player hull for stuck recovery, rather than the short floor probe.
+    const fit = Instance.TracePlayer({ start: desiredPos, player: pullTarget.pawn });
+    pullTarget.inSolid = fit.startedInSolid;
+    if (!pullTarget.inSolid)
+        pullTarget.lastFreePosition = desiredPos;
+    pullTarget.pawn.Move({ position: desiredPos, velocity: VEC0 });
     pullTarget.position = pullTarget.pawn.GetAbsOrigin();
     let center = GetPlayerCenter(pullTarget.pawn);
-    tongue.target.entity.Teleport({ position: center });
-    pullTarget.pbox?.Teleport({ position: center });
+    tongue.target.entity.Move({ position: center });
+    pullTarget.pbox?.Move({ position: center });
     //I.DebugSphere({center:tongue.tipPos, radius:tongue.capsule.radius, duration:delta, color:col(255,128,0)});
     if (tongue.distanceTravelled <= 0) {
         // Teleport target to where the licker was so they won't be stuck
-        pullTarget.pawn.Teleport({ position: tongue.firedAt });
+        pullTarget.pawn.Move({ position: tongue.firedAt });
         LickFinish();
     }
 }
@@ -996,8 +1087,17 @@ Instance.OnModifyPlayerDamage((event) => {
     if (BLOCK_INFECTION && event.attacker && event.attacker === licker.pawn && event.damageTypes != CSDamageTypes.GENERIC) {
         return { abort: true };
     }
-    // Block CT damage to licker zombie
-    if (event.player === licker.pawn && event.attacker && event.attacker.GetTeamNumber() == CS_TEAM_CT && event.damageTypes != CSDamageTypes.GENERIC)
+    // Handle damage to non-licker
+    if (event.player !== licker.pawn) {
+        // Check if it was licker swipe, set attacker,inflictor if it is
+        if (event.attacker?.IsValid() && event.attacker.GetEntityName() == "licker_swipe_hurt") {
+            event.player.TakeDamage({ damage: event.damage, attacker: licker.pawn, inflictor: swipe.killIcon.entity, damageTypes: CSDamageTypes.GENERIC });
+            return { abort: true };
+        }
+        return;
+    }
+    // Block damage from CT players (its handled by the physbox)
+    if (event.attacker && event.attacker.GetTeamNumber() == CS_TEAM_CT && event.damageTypes != CSDamageTypes.GENERIC)
         return { abort: true };
     // Check if this was damage from CT items, if it was apply damage to the pbox instead
     if (!event.attacker?.IsValid())
@@ -1005,12 +1105,13 @@ Instance.OnModifyPlayerDamage((event) => {
     let hurter = event.attacker.GetEntityName();
     if (hurter == "")
         return;
-    for (const val of Object.values(HURTS)) {
+    Object.values(HURTS).forEach((val) => {
         if (hurter == val.trigger) {
-            pendingPboxDamage += val.damage;
+            if (licker.pbox.entity?.IsValid())
+                licker.pbox.entity.TakeDamage({ damage: val.damage });
             return { damage: 0 };
         }
-    }
+    });
 });
 Instance.OnBulletImpact((event) => {
     if (!licker.pbox.entity || !licker.pbox.entity.IsValid() || event.hitEntity !== licker.pbox.entity)
@@ -1039,7 +1140,7 @@ Instance.OnBulletImpact((event) => {
     licker.pawn.Teleport({ velocity: vecAdd(licker.pawn.GetAbsVelocity(), kbpush) });
 });
 function LickerHealthChanged(inputData) {
-    if (!ticking || !licker.pawn?.IsValid() || !licker.pbox.entity?.IsValid())
+    if (!taken || !licker.pawn?.IsValid() || !licker.pbox.entity?.IsValid())
         return;
     let newhealth = licker.pbox.entity.GetHealth();
     // Do this to counteract zombie regen
@@ -1049,15 +1150,23 @@ function LickerHealthChanged(inputData) {
     licker.health = newhealth;
     if (dmg <= 0)
         return;
-    // Generic damage type shouldn't apply knockback i hope, but will show a hitmarker with most plugins
-    licker.pawn.TakeDamage({ damage: dmg, attacker: inputData.activator, damageTypes: CSDamageTypes.GENERIC });
+    let weapon;
+    if (inputData.activator?.IsValid() && inputData.activator instanceof CSPlayerPawn)
+        weapon = inputData.activator.GetActiveWeapon();
+    // Generic damage type shouldn't apply knockback i hope
+    licker.pawn.TakeDamage({ damage: dmg, attacker: inputData.activator, inflictor: weapon, damageTypes: CSDamageTypes.GENERIC });
 }
 Instance.OnScriptReload({ before: () => {
+        let dumb = BLOCK_INFECTION;
+        BLOCK_INFECTION = !BLOCK_INFECTION;
+        BLOCK_INFECTION = dumb;
         if (licker.pawn?.IsValid())
             licker.pawn.SetColor(col(255, 255, 255, 255));
     } });
 function GetIgnoreEnts() {
-    let ents = [licker.pbox.entity];
+    let ents = [];
+    if (licker.pbox.entity?.IsValid())
+        ents.push(licker.pbox.entity);
     if (IVY_PBOX.entity?.IsValid())
         ents.push(IVY_PBOX.entity);
     return ents;
@@ -1093,4 +1202,47 @@ function GetIgnoreEntsAll() {
     }
     ents.push(...ignoresAll);
     return ents;
+}
+function GetIgnoreEntsDeath() {
+    let ents = GetIgnoreEnts();
+    let entis = Instance.FindEntitiesByClass("func_button");
+    entis.forEach(ent => {
+        if (ent.GetParent() != undefined)
+            ents.push(ent);
+    });
+    return ents;
+}
+function StuckPlayersTick(now, delta) {
+    for (let i = stuckPlayers.length - 1; i >= 0; i--) {
+        const stuck = stuckPlayers[i];
+        if (now < stuck.moveAt)
+            continue;
+        let remove = false;
+        if (!stuck.player.IsValid())
+            remove = true;
+        else if (!stuck.player.IsAlive())
+            remove = true;
+        else if (stuck.player.GetTeamNumber() < CS_TEAM_T)
+            remove = true;
+        else {
+            let tr = Instance.TracePlayer({ start: stuck.player.GetAbsOrigin(), player: stuck.player });
+            if (!tr.startedInSolid)
+                remove = true;
+        }
+        if (remove) {
+            stuckPlayers.splice(i, 1);
+            continue;
+        }
+        const origin = stuck.player.GetAbsOrigin();
+        const offset = vecSubtract(stuck.target, origin);
+        const distance = vecLength(offset);
+        const step = Math.max(0, PULLED_RETURN_SPEED * delta);
+        if (distance < 2 || step >= distance) {
+            stuck.player.Move({ position: stuck.target });
+            stuckPlayers.splice(i, 1);
+            continue;
+        }
+        const endpos = vecAdd(origin, vecScale(offset, step / distance));
+        stuck.player.Move({ position: endpos });
+    }
 }

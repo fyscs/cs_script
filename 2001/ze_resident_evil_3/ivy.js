@@ -1,7 +1,5 @@
 import { Instance, CSPlayerPawn, CSGearSlot, CSInputs, CSDamageTypes } from 'cs_script/point_script';
 
-const MIN_THINK_INTERVAL_SECONDS = 0.1;
-
 // Script by tilgep
 // OPTIONS
 let IVY = {
@@ -10,7 +8,7 @@ let IVY = {
 };
 const GOO = {
     COOLDOWN: 90,            // Cooldown of Ivy goo attack (+use)
-    COOLDOWN_MISS: 40,       // Cooldown of Ivy goo attack (+use) if it did not damage anyone
+    COOLDOWN_MISS: 35,       // Cooldown of Ivy goo attack (+use) if it did not damage anyone
     DELAY: 0.72,            // Delay after using that the projectile spawns
     VELOCITY: 750.0,        // Launch speed of goo projectile (750 is default grenade throw speed)
     LIFETIME: -1,           // Max lifetime of a goo projectile (-1 = until it stops moving)
@@ -23,8 +21,8 @@ const GOO = {
     EXPLODE_LOS: true,      // Whether goo explosion must have line of sight to center to apply goo
     SLIME_DURATION: 8,      // Duration slime lasts on CTs
     SLIMED_MAXSPEED: 100,   // Maximum speed of CTs covered in slime
-    SLIME_DMG_DIRECT: 30,   // Damage dealt to the CT who gets hit directly by the goo orb (they also take SLIME_DMG)
-    SLIME_DMG: 20,           // Damage dealt to every CT that is hit by the goo explosion
+    SLIME_DMG_DIRECT: 50,   // Damage dealt to the CT who gets hit directly by the goo orb (they also take SLIME_DMG)
+    SLIME_DMG: 30,           // Damage dealt to every CT that is hit by the goo explosion
 };
 const MIST = {
     DURATION: 10,           // Time the slowing mist is active
@@ -34,7 +32,7 @@ const MIST = {
 const GRAB = {
     COOLDOWN: 8,            // Cooldown of grab attack (left click)
     RANGE: 50,              // Range of grab attack
-    DAMAGE_PER_TICK: 10,     // Damage dealt to grabbed CT per tick
+    DAMAGE_PER_TICK: 20,     // Damage dealt to grabbed CT per tick
     DAMAGE_INTERVAL: 0.5,   // Interval between damage ticks
     HURT_START: 1.95,       // When to start dealing damage to grabbed CT after grabbing
     HURT_END: 4.75,         // When to release the CT after grabbing
@@ -50,11 +48,11 @@ const CHARGE = {
 const HURTS = {
     SHOTGUN: {
         trigger: "shotgunhurt",
-        damage: 2500,
+        damage: 1500,
     },
     KAR98: {
         trigger: "preitem_03_hurt",
-        damage: 3500,
+        damage: 2500,
     },
     SAW: {
         trigger: "saw_hurt",
@@ -197,7 +195,7 @@ var GrabState;
     GrabState[GrabState["HOLDING"] = 2] = "HOLDING";
 })(GrabState || (GrabState = {}));
 const ivy = {
-    ticking: false,
+    taken: false,
     knife: { name: "ivy.knife" },
     model: { name: "ivy.model" },
     pbox: { name: "ivy.pbox" },
@@ -224,6 +222,7 @@ const goo = {
     floorBounces: 0,
     didHit: false,
     slimeIgnoreEnts: [],
+    killIcon: { name: "icon.ivy.goo" },
 };
 const mist = {
     active: false,
@@ -243,6 +242,7 @@ const grab = {
     targetPos: VEC0,
     targets: [],
     rangeSqr: 0,
+    killIcon: { name: "icon.ivy.grab" },
 };
 const charge = {
     endsAt: 0,
@@ -250,7 +250,7 @@ const charge = {
 };
 Instance.Msg("Ivy script started!");
 Instance.OnRoundStart(() => {
-    ivy.ticking = false;
+    ivy.taken = false;
     ivy.stripped = undefined;
     ivy.player = undefined;
     ivy.pawn = undefined;
@@ -274,11 +274,13 @@ Instance.OnRoundStart(() => {
     // goo particles found when its shot
     goo.slimeTemplate.entity = Instance.FindEntityByName(goo.slimeTemplate.name);
     goo.usableAt = 0;
+    goo.killIcon.entity = Instance.FindEntityByName(goo.killIcon.name);
     mist.active = false;
     mist.particle.entity = Instance.FindEntityByName(mist.particle.name);
     mist.overlayTemplate.entity = Instance.FindEntityByName(mist.overlayTemplate.name);
     charge.usableAt = 0;
     grab.usableAt = 0;
+    grab.killIcon.entity = Instance.FindEntityByName(grab.killIcon.name);
     LICKER_PBOX.entity = Instance.FindEntityByName(LICKER_PBOX.name);
 });
 Instance.OnRoundEnd(() => {
@@ -288,7 +290,8 @@ Instance.OnRoundEnd(() => {
     }
 });
 Instance.OnScriptInput("GasStation", (data) => {
-    if (ivy.ticking || ivy.dead)
+    // shouldnt tp if already has an owner
+    if (ivy.taken)
         return;
     let target = Instance.FindEntityByName("zmitem.gasstation");
     if (!target?.IsValid())
@@ -312,14 +315,6 @@ Instance.OnScriptInput("IvyGrab", () => {
 });
 Instance.OnScriptInput("IvyDeath", () => {
     IvyDeath();
-});
-Instance.OnScriptInput("IvyShotgun", () => {
-});
-Instance.OnScriptInput("IvyKar98", () => {
-});
-Instance.OnScriptInput("IvyChainsaw", () => {
-});
-Instance.OnScriptInput("IvyRocket", () => {
 });
 Instance.RegisterCheatCommand("goo", (args) => {
     ivy.state = IvyState.GOOING;
@@ -403,7 +398,7 @@ function isGooKey(key) {
     return key in GOO;
 }
 Instance.OnScriptInput("IvyStrip", ({ caller, activator }) => {
-    if (ivy.ticking || ivy.dead || ivy.stripped?.IsValid() || activator?.GetEntityName() === "licker")
+    if (ivy.taken || ivy.stripped?.IsValid() || activator?.GetEntityName() === "licker")
         return;
     if (activator instanceof CSPlayerPawn) {
         let knife = activator.FindWeaponBySlot(CSGearSlot.KNIFE);
@@ -435,11 +430,11 @@ Instance.OnScriptInput("IvyPickup", ({ caller, activator }) => {
     }
 });
 function SetIvy(controller, pawn) {
-    if (ivy.dead) // Ivy already died this round, cant do anything about that
+    if (ivy.taken) // Ivy already taken this round, cant do anything about that
         return;
+    ivy.taken = true;
     ivy.player = controller;
     ivy.pawn = pawn;
-    ivy.ticking = true;
     ivy.pawn.SetColor(col(255, 255, 255, 0));
     ivy.pawn.SetEntityName("ivy");
     ivy.pawn.SetMaxHealth(ivy.health);
@@ -455,66 +450,105 @@ function SetIvy(controller, pawn) {
         ivy.model.entity.SetParent(ivy.pawn);
         SetIdleAnimation(ANIMATIONS.IDLE);
     }
-    Instance.SetNextThink(Instance.GetGameTime() + MIN_THINK_INTERVAL_SECONDS);
+    Instance.SetNextThink(Instance.GetGameTime());
 }
 function IvyDeath() {
     if (ivy.dead)
         return;
-    if (ivy.state == IvyState.GRABBING && grab.state == GrabState.HOLDING) {
-        GrabEnd();
+    GrabEnd();
+    grab.targets = [];
+    if (goo.state == GooState.PREPPING) {
+        goo.state = GooState.NOGOO;
+        goo.ticking = false;
+        if (goo.orbParticle.entity?.IsValid()) {
+            goo.orbParticle.entity.SetParent(undefined);
+            Instance.EntFireAtTarget({ target: goo.orbParticle.entity, input: "DestroyImmediately" });
+            // GooPrepare queues Start after 0.05 seconds; clear it again after that input.
+            Instance.EntFireAtTarget({ target: goo.orbParticle.entity, input: "DestroyImmediately", delay: 0.1 });
+        }
     }
-    ivy.ticking = false;
     ivy.state = IvyState.IDLE;
     ivy.dead = true;
-    ivy.model.entity?.SetParent(undefined);
-    ivy.player = undefined;
+    //trace down so model dies on the ground
+    if (ivy.model.entity?.IsValid()) {
+        let pos = ivy.model.entity.GetAbsOrigin();
+        let tr = Instance.TraceBox({ mins: vec(-12, -12, 0), maxs: vec(12, 12, 16), start: pos, end: vecAdd(pos, vec(0, 0, -16e3)), ignorePlayers: true, ignoreEntity: GetIgnoreEntsDeath() });
+        ivy.model.entity.SetParent(undefined);
+        ivy.model.entity.Move({ position: tr.end });
+    }
+    //ivy.player = undefined;
     if (ivy.pawn?.IsValid()) {
         ivy.pawn.SetColor(col(255, 255, 255, 255));
         ivy.pawn.SetEntityName("player");
         if (ivy.pawn.IsAlive())
             ivy.pawn.Kill();
     }
-    ivy.pawn = undefined;
-    SetAnimPlaybackRate(1.0);
-    if (Math.random() < 0.5)
-        PlayAnimation(ANIMATIONS.DEAD1);
-    else
-        PlayAnimation(ANIMATIONS.DEAD2);
-    SetIdleAnimation(ANIMATIONS.NONE);
+    //ivy.pawn = undefined;
+    if (ivy.model.entity?.IsValid()) {
+        SetAnimPlaybackRate(1.0);
+        if (Math.random() < 0.5)
+            PlayAnimation(ANIMATIONS.DEAD1);
+        else
+            PlayAnimation(ANIMATIONS.DEAD2);
+        SetIdleAnimation(ANIMATIONS.NONE);
+    }
 }
 let lastTick = 0;
-let pendingPboxDamage = 0;
 Instance.SetThink(() => {
-    let now = Instance.GetGameTime();
-    // Ivy dead or not picked?
-    if (!ivy.ticking) {
-        lastTick = 0;
-        return;
-    }
-    Instance.SetNextThink(now + MIN_THINK_INTERVAL_SECONDS);
+    const now = Instance.GetGameTime();
+    let ticking = false;
     // First tick
     if (lastTick == 0) {
         lastTick = now;
+        Instance.SetNextThink(now);
         return;
     }
-    // Check invalid ivy
-    if (!ivy.player?.IsValid() || !ivy.pawn?.IsValid()) {
-        // i think set ticking false is best
-        ivy.ticking = false;
-        return;
-    }
-    // Allow CTs to have it
-    if (ivy.pawn.GetTeamNumber() < CS_TEAM_T || !ivy.pawn.IsAlive()) {
+    const delta = now - lastTick;
+    // Owner handles may already be invalid after a disconnect; still clean up Ivy.
+    if (ivy.taken && !ivy.dead && (!ivy.player?.IsValid() || !ivy.pawn?.IsValid()))
         IvyDeath();
-        return;
+    if (ivy.taken && ivy.player?.IsValid() && ivy.pawn?.IsValid()) {
+        if (!ivy.dead) {
+            if (ivy.pawn.GetTeamNumber() < CS_TEAM_T || !ivy.pawn.IsAlive()) {
+                IvyDeath();
+            }
+            else {
+                IvyTick(now);
+                ticking = true;
+            }
+        }
     }
-    if (pendingPboxDamage > 0) {
-        const damage = pendingPboxDamage;
-        pendingPboxDamage = 0;
-        if (ivy.pbox.entity?.IsValid())
-            ivy.pbox.entity.TakeDamage({ damage });
+    if (goo.ticking) {
+        if (goo.state == GooState.MOVING) {
+            if (GOO.LIFETIME <= 0)
+                GooTick(now, delta);
+            else {
+                if (now - goo.shotAt < GOO.LIFETIME)
+                    GooTick(now, delta);
+                else
+                    GooPreExplode(now);
+            }
+        }
+        else if (goo.state == GooState.EXPLODING) {
+            if (now >= goo.explodeAt)
+                GooExplode(now);
+        }
+        ticking = true;
     }
-    let delta = now - lastTick;
+    if (mist.active) {
+        MistTick(now);
+        ticking = true;
+    }
+    // Slowdown slimed CTs
+    if (goo.slimedPawns.length > 0) {
+        SlimeTick(now);
+        ticking = true;
+    }
+    lastTick = now;
+    if (ticking)
+        Instance.SetNextThink(now);
+});
+function IvyTick(now, delta) {
     if (ivy.state == IvyState.IDLE) {
         let canGoo = (now > goo.usableAt);
         let canCharge = (now > charge.usableAt);
@@ -553,29 +587,7 @@ Instance.SetThink(() => {
     else if (ivy.state == IvyState.GRABBING) {
         GrabTick(now);
     }
-    if (goo.ticking) {
-        if (goo.state == GooState.MOVING) {
-            if (GOO.LIFETIME <= 0)
-                GooTick(now, delta);
-            else {
-                if (now - goo.shotAt < GOO.LIFETIME)
-                    GooTick(now, delta);
-                else
-                    GooPreExplode(now);
-            }
-        }
-        else if (goo.state == GooState.EXPLODING) {
-            if (now <= goo.explodeAt)
-                GooExplode(now);
-        }
-    }
-    if (mist.active)
-        MistTick(now);
-    // Slowdown slimed CTs
-    if (goo.slimedPawns.length > 0)
-        SlimeTick(now);
-    lastTick = now;
-});
+}
 function GooPrepare() {
     goo.spitAt = time() + GOO.DELAY;
     goo.state = GooState.PREPPING;
@@ -710,7 +722,7 @@ function GooPreExplode(now, directHit) {
     if (directHit?.IsValid()) {
         goo.didHit = true;
         if (GOO.SLIME_DMG_DIRECT > 0)
-            directHit.TakeDamage({ damage: GOO.SLIME_DMG_DIRECT, attacker: ivy.pawn, damageTypes: CSDamageTypes.GENERIC });
+            directHit.TakeDamage({ damage: GOO.SLIME_DMG_DIRECT, attacker: ivy.pawn, inflictor: goo.killIcon.entity, damageTypes: CSDamageTypes.GENERIC });
     }
     Instance.EntFireAtName({ name: "ivy.orb.snd.explode", input: "StartSound" });
     goo.state = GooState.EXPLODING;
@@ -788,7 +800,7 @@ function CanPawnSeeGoo(pawn) {
 function SlimeThisPawn(pawn) {
     goo.didHit = true;
     if (GOO.SLIME_DMG > 0)
-        pawn.TakeDamage({ damage: GOO.SLIME_DMG, attacker: ivy.pawn, damageTypes: CSDamageTypes.GENERIC });
+        pawn.TakeDamage({ damage: GOO.SLIME_DMG, attacker: ivy.pawn, inflictor: goo.killIcon.entity, damageTypes: CSDamageTypes.GENERIC });
     if (goo.slimeTemplate.entity?.IsValid()) {
         let ptcl = goo.slimeTemplate.entity.ForceSpawn(pawn.GetEyePosition())[0];
         ptcl.SetParent(pawn);
@@ -796,7 +808,10 @@ function SlimeThisPawn(pawn) {
     }
     else
         goo.slimedPawns.push({ pawn: pawn });
-    // If they are slimed, they are also getting misted
+    // Slime applies mist immediately, so exclude them from MistTick.
+    const index = mist.unaffectedPawns.indexOf(pawn);
+    if (index !== -1)
+        mist.unaffectedPawns.splice(index, 1);
     MistThisPawn(pawn);
 }
 function SlimeTick(now) {
@@ -808,8 +823,7 @@ function SlimeTick(now) {
         const pawn = goo.slimedPawns[i].pawn;
         if (!pawn.IsValid() || !pawn.IsAlive() || pawn.GetTeamNumber() != CS_TEAM_CT) {
             if (goo.slimedPawns[i].particle?.IsValid()) {
-                Instance.EntFireAtTarget({ target: goo.slimedPawns[i].particle, input: "DestroyImmediately" });
-                Instance.EntFireAtTarget({ target: goo.slimedPawns[i].particle, input: "Kill", delay: 0.1 });
+                Instance.EntFireAtTarget({ target: goo.slimedPawns[i].particle, input: "Kill" });
             }
             goo.slimedPawns.splice(i, 1);
             continue;
@@ -822,12 +836,7 @@ function SlimeTick(now) {
     }
 }
 function SlimeEnd() {
-    for (let i = goo.slimedPawns.length - 1; i >= 0; i--) {
-        if (goo.slimedPawns[i].particle?.IsValid()) {
-            Instance.EntFireAtTarget({ target: goo.slimedPawns[i].particle, input: "Stop" });
-            Instance.EntFireAtTarget({ target: goo.slimedPawns[i].particle, input: "Kill", delay: 0.02 });
-        }
-    }
+    Instance.EntFireAtName({ name: "ivy.slime.particle", input: "Kill" });
     goo.slimedPawns = [];
 }
 function MistTick(now) {
@@ -903,6 +912,7 @@ function GrabTick(now, delta) {
                     grab.targetPos = p.GetAbsOrigin();
                     PlayAnimation(ANIMATIONS.GRAB_HOLD);
                     GrabHold(now);
+                    break;
                 }
             }
         }
@@ -920,7 +930,7 @@ function GrabHold(now) {
     grab.target.Teleport({ position: grab.targetPos, velocity: VEC0 });
     ivy.pawn.Teleport({ position: grab.ivyPos, velocity: VEC0 });
     if (now >= grab.hurtAt) {
-        grab.target.TakeDamage({ damage: GRAB.DAMAGE_PER_TICK, attacker: ivy.pawn, damageTypes: CSDamageTypes.GENERIC });
+        grab.target.TakeDamage({ damage: GRAB.DAMAGE_PER_TICK, attacker: ivy.pawn, inflictor: grab.killIcon.entity, damageTypes: CSDamageTypes.GENERIC });
         grab.hurtAt = now + GRAB.DAMAGE_INTERVAL;
     }
 }
@@ -987,7 +997,7 @@ Instance.OnBulletImpact((event) => {
     ivy.pawn.Teleport({ velocity: vecAdd(ivy.pawn.GetAbsVelocity(), kbpush) });
 });
 function IvyHealthChanged(inputData) {
-    if (!ivy.ticking || !ivy.pawn?.IsValid() || !ivy.pbox.entity?.IsValid())
+    if (!ivy.taken || !ivy.pawn?.IsValid() || !ivy.pbox.entity?.IsValid())
         return;
     let newhealth = ivy.pbox.entity.GetHealth();
     // Do this to counteract zombie regen
@@ -997,8 +1007,11 @@ function IvyHealthChanged(inputData) {
     ivy.health = newhealth;
     if (dmg <= 0)
         return;
+    let weapon;
+    if (inputData.activator?.IsValid() && inputData.activator instanceof CSPlayerPawn)
+        weapon = inputData.activator.GetActiveWeapon();
     // Generic damage type shouldn't apply knockback i hope, but will show a hitmarker with most plugins
-    ivy.pawn.TakeDamage({ damage: dmg, attacker: inputData.activator, damageTypes: CSDamageTypes.GENERIC });
+    ivy.pawn.TakeDamage({ damage: dmg, attacker: inputData.activator, inflictor: weapon, damageTypes: CSDamageTypes.GENERIC });
 }
 Instance.OnModifyPlayerDamage((event) => {
     if (!ivy.pawn || !ivy.pawn.IsValid())
@@ -1007,8 +1020,11 @@ Instance.OnModifyPlayerDamage((event) => {
     if (IVY.BLOCK_INFECTION && event.attacker && event.attacker === ivy.pawn && event.damageTypes != CSDamageTypes.GENERIC) {
         return { abort: true };
     }
-    // Block CT damage to ivy zombie
-    if (event.player === ivy.pawn && event.attacker && event.attacker.GetTeamNumber() == CS_TEAM_CT && event.damageTypes != CSDamageTypes.GENERIC)
+    // Handle damage to ivy zombie (ignore damage to others)
+    if (event.player !== ivy.pawn)
+        return;
+    // Block damage from CT players
+    if (event.attacker && event.attacker.GetTeamNumber() == CS_TEAM_CT && event.damageTypes != CSDamageTypes.GENERIC)
         return { abort: true };
     // Check if this was damage from CT items, if it was apply damage to the pbox instead
     if (!event.attacker?.IsValid())
@@ -1016,12 +1032,13 @@ Instance.OnModifyPlayerDamage((event) => {
     let hurter = event.attacker.GetEntityName();
     if (hurter == "")
         return;
-    for (const val of Object.values(HURTS)) {
+    Object.values(HURTS).forEach((val) => {
         if (hurter == val.trigger) {
-            pendingPboxDamage += val.damage;
+            if (ivy.pbox.entity?.IsValid())
+                ivy.pbox.entity.TakeDamage({ damage: val.damage });
             return { damage: 0 };
         }
-    }
+    });
 });
 const walkAnimSpeed = 200;
 const walkAnimSpeedSqr = walkAnimSpeed * walkAnimSpeed;
@@ -1064,7 +1081,9 @@ function SetAnimPlaybackRate(rate) {
     Instance.EntFireAtTarget({ target: ivy.model.entity, input: "SetPlaybackRate", value: rate.toFixed(2) });
 }
 function GetIgnoreEnts() {
-    let ents = [ivy.pbox.entity];
+    let ents = [];
+    if (ivy.pbox.entity?.IsValid())
+        ents.push(ivy.pbox.entity);
     if (LICKER_PBOX.entity?.IsValid())
         ents.push(LICKER_PBOX.entity);
     return ents;
@@ -1098,6 +1117,15 @@ function GetIgnoreEntsGoo(first) {
     return ents;
 }
 function GetIgnoreEntsSlime() {
+    let ents = GetIgnoreEnts();
+    let entis = Instance.FindEntitiesByClass("func_button");
+    entis.forEach(ent => {
+        if (ent.GetParent() != undefined)
+            ents.push(ent);
+    });
+    return ents;
+}
+function GetIgnoreEntsDeath() {
     let ents = GetIgnoreEnts();
     let entis = Instance.FindEntitiesByClass("func_button");
     entis.forEach(ent => {

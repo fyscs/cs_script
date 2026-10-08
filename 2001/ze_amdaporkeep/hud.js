@@ -595,8 +595,6 @@ function OnItemPickup(itemName, playerSlot) {
 }
 
 function OnItemDrop(itemName) {
-    // 普通命名武器也会触发丢弃事件, 这里只处理配置中的神器.
-    if (!ITEM_CONFIG[itemName]) return;
     const playerSlot = ITEM_OWNER[itemName];
     if (playerSlot < 0) return;
     ITEM_OWNER[itemName] = -1;
