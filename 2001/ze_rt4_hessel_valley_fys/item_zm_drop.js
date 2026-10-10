@@ -1,4 +1,4 @@
-import { Instance, CSPlayerPawn, CSGearSlot } from "cs_script/point_script";
+import { Instance, CSPlayerPawn, CSGearSlot } from 'cs_script/point_script'
 
 /**
  * 枪械清除脚本
@@ -6,13 +6,13 @@ import { Instance, CSPlayerPawn, CSGearSlot } from "cs_script/point_script";
  * 2026/2/18
  */
 
-Instance.OnScriptInput("drop_weapon", (inputData) => {
-    const player = /** @type {CSPlayerPawn} */ (inputData.activator);
-    if (!player?.IsValid() || player.GetTeamNumber() !== 3) return;
-    const knife = player.FindWeaponBySlot(CSGearSlot.KNIFE);
-    if (!knife || !knife.IsValid()) return;
-    player.SwitchToWeapon(knife);
-    const weapon = player.FindWeaponBySlot(CSGearSlot.RIFLE);
-    if (!weapon || !weapon.IsValid()) return;
-    player.DestroyWeapon(weapon);
-});
+Instance.OnScriptInput('drop_weapon', (inputData) => {
+  const player = /** @type {CSPlayerPawn} */ (inputData.activator)
+  if (!player?.IsValid() || player.GetTeamNumber() !== 3) return
+  const knife = player.FindWeaponBySlot(CSGearSlot.KNIFE)
+  if (!knife || !knife.IsValid()) return
+  player.SwitchToWeapon(knife)
+  const weapon = player.FindWeaponBySlot(CSGearSlot.RIFLE)
+  if (!weapon || !weapon.IsValid()) return
+  player.DestroyWeapon(weapon)
+})
