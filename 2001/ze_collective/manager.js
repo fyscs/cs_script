@@ -5,7 +5,7 @@ import { CSDamageFlags, CSDamageTypes, CSGearSlot, CSInputs, Instance } from "cs
                                                                              
                                                                                   
 const DEBUG_DATA = {
-  showcaseExcludedTiles: new Set(), showcaseLevel: { id: "" }, gravityLevel: { id: "" },
+  entwatchLevel: { id: "" }, showcaseExcludedTiles: new Set(), showcaseLevel: { id: "" }, gravityLevel: { id: "" },
   movementThemesLevel: { id: "" }, teleportLanes: [], teleportLevel: { id: "" },
   liquidFallColumns: [], liquidFallLevel: { id: "" }, allModelsLevel: { id: "" },
   trapLevel: { id: "" }, spiderLevel: { id: "" }, kartsLevel: { id: "" }, stageCatalog: [], stageIds: new Set(),
@@ -25,6 +25,9 @@ const DEBUG_HOOKS = {
    
 
 const CONFIG = Object.freeze({
+  // Set false to silence all [ze_collective] console logs.
+  loggingEnabled: false,
+  zombieItemAntiInflateCallout: true,
   gridSize: 96,
   mapSize: 20,
   elevationStep: 30,
@@ -41,20 +44,39 @@ const CONFIG = Object.freeze({
   // Stage props at their final transform (hidden, collision off) so deployment
   // only re-enables them. false restores the parking-area + origin-move path.
   terrainPreloadInPlace: true,
-  // TEMPORARY inspection switch: draw in-place staged props half-transparent
-  // (collision stays off). Set back to false before release.
-  terrainPreloadDebugVisible: false,
   spawnFadeStep: 60,
   spawnFadeInterval: 0.05,
   despawnFadeStep: 10,
   despawnFadeInterval: 0.2,
   thinkInterval: 0.01,
   idleThinkInterval: 0.1,
-  // Retired-level entities killed per Think (destroyLevel deferKill path).
+  // Bound retired-level cleanup by both inspected handles and elapsed time.
+  // Cleanup shares generation's allowance and runs after foreground work.
   deferredKillPerThink: 48,
-  // Total maker spawns per Think shared by every generation queue, including
-  // item/trap postspawn. Finale escape and the debug gallery keep their rates.
+  deferredKillMsPerThink: 1,
+  levelFadePerThink: 64,
+  stormVisualsPerThink: 2,
+  // Shared allowance for foreground, endings, model warmup and staged terrain.
+  // Compound feature requests are atomic; their actual ForceSpawn calls are
+  // charged before any subsequent job can start.
   spawnBudgetPerThink: 8,
+  // Shared live sky-debris bodies across events/endings; terrain collapse has its own limit.
+  maxActiveRubble: 5,
+  rubbleSpawnInterval: 1.5,
+  // Wall-clock cap on maker spawns per Think. Engine ForceSpawn cost grows over
+  // a map session (about 4x in 50 minutes, reset only by a map change), so a
+  // fixed count alone lets late-session generation overrun the 15.6 ms tick.
+  // One atomic job may finish past this limit; never start another afterwards.
+  spawnMsPerThink: 4,
+  spawnMsPerThinkFast: 8,
+  // Yield sooner when players/tasks/gameplay already used this Think's time.
+  // Allow one complete job for progress; these are script-side soft limits,
+  // not deadlines for the server's physics/network/render work.
+  generationThinkMsLimit: 8,
+  generationThinkMsLimitFast: 12,
+  themePreloadPerThink: 2,
+  themePreloadCleanupPerThink: 4,
+  themePreloadPollPerThink: 8,
   adminPlatformKillDelay: 40,
   endCheckInterval: 0.2,
   endRadius: 110,
@@ -208,6 +230,9 @@ const CONFIG = Object.freeze({
   zombieItemMotherPriorityTime: 7,
   itemUsePingRadius: 256,
   itemMaximum: 30,
+  // Tester 10-18: unclaimed world items sat ~30u too low. Lifts only the
+  // visual anchor until first pickup; the carrier (pickup reach) stays put.
+  itemWorldVisualLift: 50,
   itemForceDesire: 5,
   itemDesireShared: true,
   ensureHealOrbSpawns: 9999,
@@ -229,11 +254,27 @@ const TERRAIN_PREVIEW_ROOT_PANEL = "collective_stage_preview_root";
                                                                             
                                                                               
                                                 
-const TERRAIN_PREVIEW_LEGACY_TILE_CLASSES = Object.freeze([
-  "TileEmpty", "TileWall", "TileStart", "TileFloor", "TilePlatform",
-  "TileFloorCeiling", "TileTall", "TileLiquid", "TileTrap", "TileDetail",
-  "TileFeature", "TileHidden", "TileHiddenWall", "TileBridge", "TileSpecial",
-]);
+// custom_hud_layout networks every distinct class name it has ever been given
+// (m_vecClassNames, 192 slots) and never drops one. TileIndex0..199/9998/Unknown
+// plus the header classes exceed that, so after enough levels the encoder
+// overflowed and the server hit FATAL "PackEntity ... Encode false". Tiles whose
+// stylesheet colors are near-identical share one class: 202 colors merge into
+// 120 (closest pair in CIE Lab, worst shift dE 7.2), so this HUD can only ever
+// use about 123 class names. Generated from collective_stage_preview.css; tile
+// key -> TileIndex key whose color stands in for it.
+const TERRAIN_PREVIEW_TILE_CLASS_ALIAS = Object.freeze({
+  "0": "146", "4": "55", "5": "6", "7": "6", "9": "8", "11": "10", "13": "12", "15": "14",
+  "17": "16", "19": "18", "20": "21", "22": "21", "23": "21", "24": "146", "25": "180", "26": "180",
+  "27": "177", "28": "177", "29": "177", "31": "30", "33": "32", "36": "35", "37": "38", "39": "38",
+  "40": "38", "46": "47", "48": "49", "50": "51", "53": "52", "54": "55", "56": "55", "58": "59",
+  "60": "61", "63": "62", "70": "158", "72": "160", "83": "166", "84": "167", "87": "194", "92": "148",
+  "106": "105", "108": "109", "110": "109", "111": "112", "113": "114", "115": "114", "116": "117", "118": "117",
+  "120": "119", "133": "136", "134": "136", "137": "136", "139": "138", "141": "52", "142": "147", "145": "188",
+  "150": "149", "152": "151", "155": "156", "159": "71", "161": "73", "162": "74", "163": "80", "164": "81",
+  "165": "82", "168": "169", "171": "170", "173": "172", "175": "174", "176": "177", "178": "177", "179": "180",
+  "181": "180", "182": "190", "183": "138", "184": "138", "186": "188", "187": "188", "189": "188", "192": "191",
+  "9998": "188", "Unknown": "194",
+});
 let terrainPreviewHud;
 let terrainPreviewHudWarningPrinted = false;
 let terrainPreviewHudShown = false;
@@ -270,6 +311,10 @@ let invincibilityHudNextSyncAt = 0;
 
 const SQUID_BLIND_HUD_TARGET = "collective_squid_blind_hud";
 const SQUID_BLIND_HUD_PANEL = "collective_squid_blind_overlay";
+const JUMPSCARE_HUD_TARGET = "collective_jumpscare_hud";
+const JUMPSCARE_HUD_PANEL = "collective_jumpscare_overlay";
+const jumpscareHudPlayers = new Map();
+let jumpscareHudWarningPrinted = false;
 let squidBlindHud;
 const squidBlindHudPlayers = new Map();
 let squidBlindHudWarningPrinted = false;
@@ -1607,6 +1652,8 @@ const SILENTHILL_MODEL_TICK_BUFFER = 5;
 const SILENTHILL_FADE_STEP = 25;
 const SILENTHILL_FADE_RATE = 0.03;
 const SILENTHILL_FADE_STEPS = Math.ceil(255 / SILENTHILL_FADE_STEP);
+const SILENTHILL_DISPATCH_PER_THINK = 8;
+const SILENTHILL_ACTIVE_LIMIT = 32;
 const THEME_PRELOAD_TIMEOUT = 12;
 const REQUIRED_ENTITY_WAIT_TIMEOUT = 20;
 const REQUIRED_ENTITY_RETRY_INTERVAL = 0.25;
@@ -1935,7 +1982,7 @@ function rememberSilentHillVisual(runtime, entity, model, request, restore) {
 
 function queueSilentHillVisualChange(dark) {
   const world = state.silentHillWorld;
-  for (const transition of world.active) transition.record.restore?.();
+  for (const transition of world.active) restoreSilentHillVisual(transition.entity, transition.record);
   world.active.length = 0;
   world.visualDark = dark === true;
                                                                         
@@ -1956,30 +2003,43 @@ function queueSilentHillVisualChange(dark) {
 
 function setSilentHillFog(dark, restore = false) {
   if ([...state.genericEvents.active.values()].some(event => event.name === "THICK_FOG" && !event.ended)) return;
-  if (state.endingRuntime) return;
+  // CS:GO pushed the SH fade distance out to 20000 once an ending or the Finale started;
+  // the campaign Finale has its own sky fog instead.
+  const ending = state.endingRuntime !== undefined;
+  if (ending && (restore || finaleUsesFinaleSky(state.endingRuntime))) return;
   const fog = Instance.FindEntityByName?.("fog");
   if (validEntity(fog)) {
                                                                    
     fireTarget(fog, "SetFogColor", restore ? "255 255 255" : dark ? "0 0 0" : "100 100 100");
-    fireTarget(fog, "SetFogStartDistance", restore ? "1000" : dark ? "-2500" : "-1000");
-    fireTarget(fog, "SetFogEndDistance", restore ? "300000" : dark ? "2500" : "5000");
+    // Source ends: light 5000, dark 2500, ending 20000. Start is 128 (~4 player widths clear)
+    // instead of Source's -1000/-2500 so players' immediate surroundings stay unfogged.
+    fireTarget(fog, "SetFogStartDistance", restore ? "1000" : String(FOG_CLEAR_DISTANCE));
+    fireTarget(fog, "SetFogEndDistance", restore ? "300000"
+      : ending ? String(SILENTHILL_ENDING_FOG_END) : dark ? "2500" : "5000");
     fireTarget(fog, "SetFogMaxOpacity", "1");
+    // CS2 gradient fog defaults to a steep falloff and never fogs env_sky; CS:GO fog was linear
+    // and covered the sky, so SH uses linear falloff plus a flat sky in the fog color.
+    fireTarget(fog, "SetFogFalloffExponent", restore ? FOG_DEFAULT_FALLOFF : FOG_LINEAR_FALLOFF);
   }
 }
 
 function setSilentHillSky(dark) {
   themeModelSky.silentHillDarkTarget = dark ? 1 : 0;
-  if (!setCollectiveSkybox(dark ? "silenthill_dark" : "generic", true)) {
-    if (dark && !themeModelSky.missingSilentHillSkyWarned) {
+  // Silent Hill pieces in the Finale mix must not swap the Finale's black sky back to flat grey.
+  if (finaleUsesFinaleSky(state.endingRuntime) && state.endingRuntime.finaleSky) return;
+  if (!setCollectiveSkybox(dark ? "silenthill_dark" : "silenthill_light", true)) {
+    if (!themeModelSky.missingSilentHillSkyWarned) {
       themeModelSky.missingSilentHillSkyWarned = true;
-      message("[SILENTHILL] dark env_sky is missing; cloud tint will change but the 2D sky will stay light");
+      message("[SILENTHILL] flat env_sky is missing; distant silhouettes will show against the sky");
     }
+    if (!dark) setCollectiveSkybox("generic", true);
     return;
   }
 }
 
 function processSilentHillVisualChange() {
   const world = state.silentHillWorld;
+  if (!world.active.length && !world.pending.length) return;
   const now = Instance.GetGameTime();
                                                                        
                                                                          
@@ -1999,7 +2059,7 @@ function processSilentHillVisualChange() {
         transition.switched = true;
       }
       if (step >= SILENTHILL_FADE_STEPS * 2 + 1) {
-        record.restore?.();
+        restoreSilentHillVisual(entity, record);
         entity.SetColor?.({ ...record.color, a: terrainRenderAlpha(entity, record.color.a) });
         world.active.splice(index, 1);
         continue;
@@ -2021,7 +2081,12 @@ function processSilentHillVisualChange() {
   }
   }
   if (now < (world.nextDispatchAt ?? 0)) return;
-  while (world.pending.length) {
+  // A model-type qrate can be zero for the entire queue. Always bound both
+  // stale-entry scanning and live fades, including after a delayed Think.
+  let dispatched = 0;
+  while (world.pending.length && dispatched < SILENTHILL_DISPATCH_PER_THINK
+    && world.active.length < SILENTHILL_ACTIVE_LIMIT) {
+    dispatched++;
     const [entity, record, qrate = 0.01] = world.pending.shift();
     if (world.visuals.get(entity) !== record) continue;
     if (!validEntity(entity) || record.runtime?.lifecycle === "destroyed") {
@@ -2052,7 +2117,27 @@ function silentHillSwapModel(entity, record, dark) {
   entity.SetModel(dark ? record.light.replace(/\.vmdl$/i, "dark.vmdl") : record.light);
   entity.collectiveFalldownCandidate = undefined;
   if (position && angles) entity.Teleport?.({ position, angles });
-  record.restore?.();
+  restoreSilentHillVisual(entity, record);
+}
+
+// SetModel does not keep the Main bodygroup, so terrain models without a
+// restore (trapfloors, plain visuals, model blocks) could show the crack
+// mesh after a light/dark swap. Reapply the last choice, else the default.
+const SILENTHILL_MAIN_BODYGROUP_MODEL = /collective_(?:floor|platform|floorceiling|floorceilingtall|blockwall)(?:_slope|_slopehalf)?silenthill\.vmdl$/i;
+function restoreSilentHillVisual(entity, record) {
+  if (record.restore) {
+    record.restore();
+    return;
+  }
+  if (!validEntity(entity)) return;
+  const bodyGroup = entity.collectiveBodyGroup
+    ?? (SILENTHILL_MAIN_BODYGROUP_MODEL.test(record.light) ? 0 : undefined);
+  if (bodyGroup === undefined) return;
+  const apply = () => {
+    if (validEntity(entity)) fireTarget(entity, "SetBodyGroup", `Main,${bodyGroup}`);
+  };
+  apply();
+  afterThink(apply);
 }
 
 function toggleSilentHillWorld(dark, delay = 0) {
@@ -2386,7 +2471,9 @@ const CONFLICT_CONFIG = Object.freeze({
   itemFlagRange: 2000,
   boundaryHalfSide: 9.5,
   boundaryForwardMin: 0,
-  boundaryForwardMax: 30,
+  // The zombie platform spans cells 30..31; its TP is at 30.5.
+  // Include its rear edge so boundary rescue cannot loop at the TP.
+  boundaryForwardMax: 31,
   humanItems: Object.freeze([
     "heal_orb", "dragonslayer", "baguette", "peanutbutter",
     "planetcrystal", "planetcrystal", "planetcrystal", "planetcrystal",
@@ -2412,6 +2499,7 @@ const KART_CONFIG = Object.freeze({
   normalSpawnZOffset: 20,
   riderLocalZ: -40,
   endingRiderLocalZ: -8,
+  humanRiderHeightOffset: 16,
   riderStartPitch: 40,
   dismountZOffset: 60,
   mountRange: 10,
@@ -2429,9 +2517,10 @@ const KART_CONFIG = Object.freeze({
 });
 
 function kartRiderLocalZ(controller) {
-  return controller?.mode === "ending"
+  const base = controller?.mode === "ending"
     ? KART_CONFIG.endingRiderLocalZ
     : KART_CONFIG.riderLocalZ;
+  return base + (controller?.team === 3 ? KART_CONFIG.humanRiderHeightOffset : 0);
 }
 
 const RACE_CONFIG = Object.freeze({
@@ -2460,6 +2549,7 @@ const RACE_CONFIG = Object.freeze({
   checkoutInterval: 0.2,
   stageBoxCells: 20,
   startAt: 17,
+  kartSpawnPerThink: 2,
   // Kart physics hull is about 60 long x 43 wide; riders are 32 wide.
   startHalfWidth: 280,
   startLaneSpacing: 56,
@@ -2479,6 +2569,8 @@ const RACE_CONFIG = Object.freeze({
   rubbleHeightMin: 4000,
   rubbleHeightMax: 800,
   rubbleLifetime: 4,
+  rubbleFailureBackoff: 1,
+  rubbleFailureBackoffMax: 8,
   rubbleTypes: Object.freeze([25, 5, 91, 95, 3]),
                                                                              
                                                                              
@@ -2576,7 +2668,9 @@ const RACE_CONFIG = Object.freeze({
                                                                              
                                                                              
                                     
-  raceCollisionGroup: 1,
+  // Native prop Debris group; the template also sets Debris + Force non-solid
+  // to players. Source 1 grenade group 1 is not the prop's debris group.
+  raceCollisionGroup: 5,
   fallCollisionGroup: 10,
                                                                            
                                                                       
@@ -2748,7 +2842,7 @@ const FINALE_BOSS_CONFIG = Object.freeze({
   movementInterpolationMax: 0.01,
   firstMovementHeight: 800,
   firstMovementPause: 6,
-  roamHeightMin: 100,
+  roamHeightMin: 350,
   roamHeightMax: 700,
   lowDriftHeight: 80,
                                                                          
@@ -2831,16 +2925,51 @@ const FINALE_BOSS_CONFIG = Object.freeze({
                                                                         
                                                                              
                                                   
+// vmap fog keeps CS2's steep exponent 4 (effectively off at its 1000..300000 range). Script fog
+// ports CS:GO env_fog_controller values, which were linear, so exponent 4 left near/mid range clear.
+const FOG_DEFAULT_FALLOFF = "4";
+const FOG_LINEAR_FALLOFF = "1";
+const SILENTHILL_ENDING_FOG_END = 20000;
+// Every theme keeps ~4 player widths around players unfogged (Source started at -1000..500).
+const FOG_CLEAR_DISTANCE = 128;
+const THEME_FOG_OPACITY_SCALE = 0.3;
+// Source used modelscale 15 on the same ~300u-radius mesh, but in CS2 the clouds read far smaller
+// than Source at that size; 75 was picked in game with ze_debug_sky_models scale (10-19).
+const SKY_CLOUD_MODEL_SCALE = 75;
+// ze_debug_sky_models scale <n> sets this so clouds spawned later (theme switch, Finale) match.
+let skyCloudScaleOverride;
+function skyCloudScale() { return skyCloudScaleOverride ?? SKY_CLOUD_MODEL_SCALE; }
 const FINALE_SKY_CONFIG = Object.freeze({
   model: "models/luffaren/collective_skybox_clouds.vmdl",
   cloudCount: Object.freeze({ red: 2, black: 5 }),
-  cloudOffsetZ: -(2000 + 300),
+  // Source spawned the clouds at z -2300, parented them to a func_rotating at the origin, then moved
+  // the rotator to end.z - 2300 every 5s, so the clouds sat at end.z - 4600 at scale 15 and the bowl
+  // dome top (mesh top 150u) at end.z - 2350. In CS2 the cloud origin sits at end.z itself per user (10-19).
+  cloudOffsetZ: 0,
                                                                           
-  modelScale: 100,
+  // Finale clouds sit 4600u below the end (theme clouds 2300u), so they need their own size; 150 per user (10-19).
+  modelScale: 150,
+  // Source func_rotating maxspeed 200, fanfriction 5, spawnflags 80/82 (no Start ON, acc/dcc):
+  // still until StartFinaleBoss fires Start, then speeds up by maxspeed * fanfriction / 100 per
+  // second (about 20s to full speed); RaiseFinalElevator's Stop slows it down the same way.
+  // All seven clouds share one centre and shape at random yaws; the 32-sided rings of the copies cut
+  // through each other along meridians and showed as streaks in CS2 (gone once the 5 black ones were
+  // killed in game, 10-19). Each layer is 1% larger than the last (ring facet sag is ~0.5%) so the
+  // shells nest instead of intersecting.
+  layerScaleStep: 0.01,
   rotationSpeed: 200,
-  fogStart: -500, fogEnd: 3000, fogOpacity: 0.7,
-  redColor: Object.freeze({ r: 100, g: 0, b: 0, a: 255 }),
-  blackColor: Object.freeze({ r: 0, g: 0, b: 0, a: 255 }),
+  rotationAcceleration: 200 * 5 / 100,
+  // Source -500..3000 at 0.7; start and opacity follow the theme fog rules (128 clear, x0.3).
+  fogStart: FOG_CLEAR_DISTANCE, fogEnd: 3000, fogOpacity: Math.round(0.7 * THEME_FOG_OPACITY_SCALE * 1000) / 1000,
+  // Source tinted the clouds with SetColor 100 0 0 / 0 0 0. collective_clouds is csgo_unlitgeneric
+  // since 10-18 and render colour no longer darkens it, so the tint is baked into material groups
+  // of collective_skybox_clouds.vmdl (0 default, 1 finale_black, 2 finale_red); colour stays white.
+  redSkin: 2,
+  blackSkin: 1,
+  cloudColor: Object.freeze({ r: 255, g: 255, b: 255, a: 255 }),
+  // Source's black finale fog also fogged the 2D sky; CS2 env_gradient_fog never fogs env_sky, so
+  // basicsky showed through grey. The flat black Silent Hill dark env_sky stands in for it.
+  skybox: "silenthill_dark",
 });
 
                                                                               
@@ -2854,7 +2983,25 @@ const FINALE_THUNDER_CONFIG = Object.freeze({
   soundChance: 30,
   secondarySoundChance: 30,
   primarySound: "thunder_dist_2",
+  // Temporarily off: finale_thunder.vpcf triggers "not precached correctly" blocking loads.
+  visualEnabled: false,
   visualNote: "Original four-frame lightning; de_train rain assets with local-view emission and bounded ground splashes",
+  // Source TickThunderFX flashes a lightning env_sprite at the same sky points every tick; the
+  // CS2 stand-in is lightning_strike_sky (~3x the ground strike, bolt ~9000u), centred on the point.
+  strikeEnabled: true,
+  strikeTemplateKey: "lightningStrikeSky",
+  strikeBaseDrop: 4500,
+  // Strikes live LIGHTNING_STRIKE_CONFIG.lifetime (0.9s) vs a ~0.25s mean tick; cap the overlap.
+  strikeMaxLive: 4,
+});
+
+// Lightning strike ("雷劈"): particles/luffaren/lightning_strike/lightning_strike.vpcf via
+// template_lightning_strike. The particle has two re-strikes up to 0.24s; 0.9s covers their fade.
+const LIGHTNING_STRIKE_CONFIG = Object.freeze({
+  lifetime: 0.9,
+  groundTraceDistance: 4096,
+  sounds: ["thunder_dist_1", "thunder_dist_2", "thunder_dist_3"],
+  soundRadius: 10000,
 });
 
 const FINALE_RAIN_CONFIG = Object.freeze({
@@ -2872,6 +3019,8 @@ const FINALE_RAIN_CONFIG = Object.freeze({
                                                                               
                                                                           
 const FINALE_STRUCTURE_CONFIG = Object.freeze({
+  // CSS bridge/tower cadence, also applied to the arena to spread CS2 spawns.
+  manualSpawnInterval: 0.05,
   bridgeLength: 70,
   bridgeSlopeEvery: 15,
   bridgeSlopeSegments: 6,
@@ -2881,6 +3030,10 @@ const FINALE_STRUCTURE_CONFIG = Object.freeze({
   bridgeCleanupDelay: 20,
   bridgeCleanupRate: 2,
   bridgeCleanupStep: 300,
+  // Source KillTilesWithin: at most killtiles_maxphys (40) pieces fall at once,
+  // each for killtiles_physkilltime (2.5 s); the rest are removed outright.
+  bridgeFallLifetime: 2.5,
+  bridgeFallMaxActive: 40,
   bridgeZombieDelay: 20,
   spawnPlatformFallDelay: 10,
   towerSize: 8,
@@ -2923,7 +3076,8 @@ const FINALE_STRUCTURE_CONFIG = Object.freeze({
                                 
                                                                     
 const FINALE_MUSIC_CONFIG = Object.freeze({
-  bridgeDelay: 68.80,
+  // Start bridge BGM as soon as the bridge timeline becomes active.
+  bridgeDelay: 0,
   bossIntroDelay: 4.50,
   bossLoopDelay: 32.90,
   normalLoopDuration: 116.40,
@@ -3047,7 +3201,7 @@ const kamikazePilots = new WeakMap();
                                                                            
 const GENERIC_EVENT_DEFINITIONS = Object.freeze({
   PIZZADOOM: Object.freeze({ cost: 0, supported: true }),
-  PLEDGE: Object.freeze({ cost: 0, supported: true, duration: Infinity }),
+  PLEDGE: Object.freeze({ calloutFail: true, cost: 0, supported: true, duration: Infinity }),
   KAMIKAZE: Object.freeze({ cost: 5, supported: true, duration: 15 }),
   BEAMGRID: Object.freeze({ cost: 50, supported: true, duration: 32 }),
   THICK_FOG: Object.freeze({ cost: 0, supported: true, duration: 40 }),
@@ -3060,7 +3214,8 @@ const GENERIC_EVENT_DEFINITIONS = Object.freeze({
                                                                            
                                                                            
   COLLAPSE: Object.freeze({ cost: 0, supported: true, duration: 260 }),
-  PHASING: Object.freeze({ cost: 0, supported: true, duration: 20 }),
+  // Halve transparency from the original alpha 30: 255 - (255 - 30) / 2.
+  PHASING: Object.freeze({ cost: 0, supported: true, duration: 20, terrainAlpha: 143 }),
   SILENCE: Object.freeze({ cost: 0, supported: false, manualProbe: false, disabled: true,
     pending: "disabled by user (including the manual ringing substitute)", duration: 15 }),
   WEAPON_JAM: Object.freeze({ cost: 0, supported: true, duration: 9 }),
@@ -3071,6 +3226,15 @@ const GENERIC_EVENT_DEFINITIONS = Object.freeze({
   WORLD_EATER: Object.freeze({ cost: 5, supported: true }),
 });
 const GENERIC_EVENT_NAMES = Object.freeze(Object.keys(GENERIC_EVENT_DEFINITIONS));
+// Source lines queued for the end of each timed event: [text, repeats].
+const GENERIC_EVENT_END_LINES = Object.freeze({
+  LOWGRAV: Object.freeze(["Gravity is back to normal again", 3]),
+  BLOODLUST: Object.freeze(["The bloodthirst has ended!", 3]),
+  PHASING: Object.freeze(["Our eyes are back to normal again", 1]),
+  BIGNADES: Object.freeze(["Our grenades are back to normal now...", 1]),
+  DISTORT: Object.freeze(["Our human eyes are back to normal", 1]),
+  SILENCE: Object.freeze(["Our human ears are starting to work again!", 1]),
+});
                                                                             
                                                
                                                                           
@@ -3143,8 +3307,8 @@ const GENERIC_PIZZADOOM_CONFIG = Object.freeze({
   soundStack: 5,
   contactFxTemplate: "template_event_pizzadoom_contact",
   contactBloodParticle: "particles/blood_impact/blood_impact_headshot.vpcf",
-  contactFlashParticle: "particles/weapons/cs_weapon_fx/weapon_taser_flash.vpcf",
-  contactFxLifetime: 0.05,
+  contactFlashParticle: "particles/luffaren/pizza_tesla/tesla.vpcf",
+  contactFxLifetime: 0.25,
   contactFxWindow: 0.15,
   contactHalfSize: Object.freeze({ x: 20000, y: 20000, z: 8 }),
 });
@@ -3161,8 +3325,6 @@ const GENERIC_BEAMGRID_CONFIG = Object.freeze({
   moverOpenDelay: 0.02,
   lifetime: 15,
   fadeDuration: 2,
-  glowFadeStep: 5,
-  glowFadeInterval: 0.02,
   activeEndPadding: 0.5,
   halfLength: 20000,
   halfWidth: 5,
@@ -3229,14 +3391,14 @@ const GENERIC_EVENT_MODEL_DEPENDENCIES = Object.freeze({
 });
 
 const THEME_FOG_PROFILES = Object.freeze({
-  generic: Object.freeze({ start: 500, end: 15000, density: 0, color: "255 255 255" }),
-  castle: Object.freeze({ start: 500, end: 10000, density: 0.20, color: "200 255 100" }),
-  factory: Object.freeze({ start: -500, end: 5000, density: 0.50, color: "0 80 50" }),
-  temple: Object.freeze({ start: -200, end: 7000, density: 0.60, color: "200 50 0" }),
-  nature: Object.freeze({ start: -1000, end: 15000, density: 0.70, color: "120 140 70" }),
-  hell: Object.freeze({ start: 500, end: 15000, density: 0.40, color: "150 0 0" }),
-  frost: Object.freeze({ start: 500, end: 15000, density: 0.40, color: "0 200 255" }),
-  silenthill: Object.freeze({ start: -1000, end: 5000, density: 1, color: "100 100 100" }),
+  generic: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 15000, density: 0, color: "255 255 255" }),
+  castle: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 10000, density: 0.20, color: "255 255 255" }),
+  factory: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 5000, density: 0.50, color: "0 80 50" }),
+  temple: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 7000, density: 0.60, color: "200 50 0" }),
+  nature: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 15000, density: 0.70, color: "120 140 70" }),
+  hell: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 15000, density: 0.40, color: "150 0 0" }),
+  frost: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 15000, density: 0.40, color: "0 200 255" }),
+  silenthill: Object.freeze({ start: FOG_CLEAR_DISTANCE, end: 5000, density: 1, color: "100 100 100" }),
 });
 const THEME_SKYBOXES = Object.freeze({
   generic: "basicsky",
@@ -3403,12 +3565,68 @@ const TEMPLATE_NAMES = Object.freeze({
 
 });
 
+// Optional 2x1 packing: one ForceSpawn yields the props of two flat, same-tile
+// neighbours (ForceSpawn cost grows per call, not per entity). Each family has
+// its own pair so collision matches the single template; a map without these
+// templates keeps per-tile spawning.
+const TERRAIN_PAIR_TEMPLATE_NAMES = Object.freeze({
+  floor: "template_terrain_floor_pair",
+  platform: "template_terrain_platform_pair",
+  floorceiling: "template_terrain_floorceiling_pair",
+  tall: "template_terrain_tall_pair",
+});
+const terrainPairTemplates = new Map();
+// Terrain pool (phase 1): flat floor-family props of a normally retired level
+// are hidden in place and handed to preload staging instead of a new
+// ForceSpawn. Keyed by template so collision always matches; round-scoped, so
+// the engine's round restart drops it.
+const TERRAIN_POOL_KEYS = new Set(Object.keys(TERRAIN_PAIR_TEMPLATE_NAMES));
+const TERRAIN_POOL_MAX_PER_KEY = 200;
+// Delayed work aimed at a retired prop (fades, event tasks) must run out first.
+const TERRAIN_POOL_COOLDOWN = 5;
+
+const ENTWATCH_CARRIER_KEYS = Object.freeze([
+  "squid",
+  "dragonslayer",
+  "pizzabaker",
+  "baguette",
+  "minislots",
+  "billnye",
+  "peanutbutter",
+  "claymore",
+  "fling",
+  "piggyback",
+  "hackerman",
+  "bomb_chuck",
+  "roar",
+  "greasy_fingers",
+  "poise",
+  "flight",
+  "gust",
+  "puller",
+  "bhop_steroids",
+  "stone",
+  "impostor",
+  "planetcrystal_earth",
+  "planetcrystal_fire",
+  "planetcrystal_wind",
+  "planetcrystal_water",
+  "rift",
+  "rift_z",
+  "storm_blade",
+  "destructo_hammer",
+  "heal_orb",
+  "moonboost",
+  "moonboost_knife"
+]);
+
 const FEATURE_TEMPLATE_NAMES = Object.freeze({
   liquidPush: "template_liquid_push",
   hazardPlaneTrigger: "template_hazard_plane",
   spawnSafety: "template_spawn_safety",
   ladder: "template_ladder",
   trigger: "template_boostpad",
+  jumpscare: "template_stage_jumpscare",
   lowgrav: "template_lowgrav",
   lowgravFloor: "template_lowgrav_floor",
   airslide: "template_airslide",
@@ -3423,6 +3641,8 @@ const FEATURE_TEMPLATE_NAMES = Object.freeze({
   finaleThunder: "template_finale_thunder",
   finaleRain: "template_finale_rain",
   finaleRainGround: "template_finale_rain_ground",
+  lightningStrike: "template_lightning_strike",
+  lightningStrikeSky: "template_lightning_strike_sky",
   volume: "template_block",
   block: "template_block",
   breakable: "template_breakable",
@@ -3517,6 +3737,8 @@ const FEATURE_TEMPLATE_NAMES = Object.freeze({
   item_moonboost: "template_item_moonboost",
   item_carrier_p250: "template_item_carrier_p250",
   item_carrier_knife: "template_item_carrier_knife",
+  ...Object.fromEntries(ENTWATCH_CARRIER_KEYS.map(key =>
+    [`item_carrier_${key}`, `template_item_carrier_${key}`])),
 });
 
                                                                             
@@ -3616,9 +3838,10 @@ const TRAP_TEMPLATE_KEYS = new Set(
 );
 
 function featureTemplateIsRequired(key) {
+  if (key === "jumpscare") return false;
                                                                            
                                                                     
-  if (["bossPieceTouch", "bossEyeTouch", "bossEyeDamage", "bossGrenadeDamage", "finaleCheckoutDamage", "finaleMover", "finaleZombieMover", "finaleCheckoutText", "finaleThunder", "finaleRain", "finaleRainGround"].includes(key)) return false;
+  if (["bossPieceTouch", "bossEyeTouch", "bossEyeDamage", "bossGrenadeDamage", "finaleCheckoutDamage", "finaleMover", "finaleZombieMover", "finaleCheckoutText", "finaleThunder", "finaleRain", "finaleRainGround", "lightningStrike", "lightningStrikeSky"].includes(key)) return false;
                                                                          
                                                                            
                                                            
@@ -3635,7 +3858,7 @@ function featureTemplateIsRequired(key) {
                                                                               
                                                          
     if (OPTIONAL_ITEM_SOUND_TEMPLATE_KEYS.has(key)) return false;
-    if (key === "item_carrier_knife") {
+    if (key.startsWith("item_carrier_")) {
       return FEATURE_FLAGS.humanItems || FEATURE_FLAGS.zombieItems
         || P7_TEST_HUMAN_ITEMS || P8_TEST_ZOMBIE_ITEMS;
     }
@@ -3665,33 +3888,51 @@ const TRAP_DEFINITIONS = Object.freeze({
     jumpAfterFirst: true, jumpNudgeDelay: 0.8, jumpNudgeForce: 20,
     healthBase: 300, healthPerHuman: 100,
   }),
-  buttonmimic: Object.freeze({ pool: "spawn", model: "models/luffaren/beartrap.vmdl", cost: 1, useRadius: 105 }),
-  banana: Object.freeze({ pool: "step", model: "models/luffaren/ck_banana.vmdl", cost: 2, radius: 8, zRange: 4, spinDegrees: 2000, spinTime: 4.0 }),
+  buttonmimic: Object.freeze({ printChat: true, pool: "spawn", model: "models/luffaren/beartrap.vmdl", cost: 1, useRadius: 105 }),
+  // Trap trigger boxes are Source trigger_multiple mins/maxs expanded by the
+  // CT hull (±16 wide, 72 tall), tested against the pawn origin.
+  banana: Object.freeze({
+    printChat: true, pool: "step", model: "models/luffaren/ck_banana.vmdl", cost: 2,
+    // Source trigger mins -2 -2 -1 / maxs 2 2 2.
+    triggerHalfSize: 18, triggerMinZ: -73, triggerMaxZ: 2,
+    spinDegrees: 2000, spinTime: 4.0,
+  }),
   flinger: Object.freeze({
+    printChat: true,
     pool: "vicinity", model: "models/luffaren/heal_orb.vmdl", cost: 2,
-    triggerRadius: 150, triggerMinZ: -100, triggerMaxZ: 200,
+    // Source trigger_size 150: mins -150 -150 -100 / maxs 150 150 200.
+    triggerHalfSize: 166, triggerMinZ: -172, triggerMaxZ: 200,
     radius: 600, force: 1400, zMin: 300, zMax: 700,
   }),
   blackhole: Object.freeze({
+    printChat: true,
     pool: "vicinity", model: "models/luffaren/heal_orb.vmdl", cost: 7,
     radius: 500, killDistance: 50, pullMultiplier: 0.9, battery: 1000,
     killDrain: 700, distanceDrainMultiplier: 1,
   }),
   spikes: Object.freeze({
-    pool: "step", model: "models/luffaren/spikes.vmdl", cost: 2, radius: 36,
-    runSpeed: 150, fallSpeed: 50, runDamage: 23, fallDamage: 132, zRange: 18,
+    printChat: true,
+    pool: "step", model: "models/luffaren/spikes.vmdl", cost: 2,
+    // Source trigger mins -25 -25 -1 / maxs 25 25 16.
+    triggerHalfSize: 41, triggerMinZ: -73, triggerMaxZ: 16,
+    runSpeed: 150, fallSpeed: 50, runDamage: 23, fallDamage: 132,
   }),
   chatter_curse: Object.freeze({
-    pool: "step", model: "models/luffaren/roar.vmdl", cost: 2, radius: 12,
-    tickInterval: 0.8, damage: 2, zRange: 4,
+    pool: "step", model: "models/luffaren/roar.vmdl", cost: 2,
+    // Source trigger mins -5 -5 -1 / maxs 5 5 2 around the +5 model origin.
+    triggerHalfSize: 21, triggerMinZ: -73, triggerMaxZ: 2,
+    tickInterval: 0.8, damage: 2,
   }),
   guster: Object.freeze({
+    printChat: true,
     pool: "vicinity", model: "models/luffaren/gust.vmdl", cost: 2,
-    triggerRadius: 300, triggerMinZ: -100, triggerMaxZ: 200,
+    // Source trigger_size 300 around the +40 model origin.
+    triggerHalfSize: 316, triggerMinZ: -172, triggerMaxZ: 200,
     waveSpeed: 300, waveRadius: 32, waveLifetime: 20,
     pushSpeed: 400, pushUp: 251,
   }),
   slotmachine: Object.freeze({
+    printNames: true,
     pool: "spawn", model: "models/luffaren/slotmachine.vmdl", cost: 3,
     useRadius: 110, winChance: 10, usesMin: 1, usesMax: 20,
     winHealth: 150, loseHealth: 18, spinTime: 0.8, reuseDelay: 1.8,
@@ -3699,8 +3940,9 @@ const TRAP_DEFINITIONS = Object.freeze({
     minislotSpawnChance: 40, minislotMaximum: 5,
   }),
   bomb: Object.freeze({
+    printChat: true,
     pool: "vicinity", model: "models/luffaren/bomb_chuck.vmdl", cost: 2,
-    triggerRadius: 150, triggerMinZ: -100, triggerMaxZ: 200,
+    triggerHalfSize: 166, triggerMinZ: -172, triggerMaxZ: 200,
     fuseTime: 8, explosionDamage: 400, explosionRadius: 400,
   }),
   explosive_barrel: Object.freeze({
@@ -3708,20 +3950,36 @@ const TRAP_DEFINITIONS = Object.freeze({
     hitsMin: 1, hitsMax: 30, explosionDamage: 200, explosionRadius: 200,
     igniteTime: 5, igniteRadius: 200,
   }),
-  mimic: Object.freeze({ pool: "spawn", model: "models/luffaren/beartrap.vmdl", cost: 10, radius: 18, zRange: 4 }),
+  mimic: Object.freeze({
+    printChat: true, pool: "spawn", model: "models/luffaren/beartrap.vmdl", cost: 10,
+    // Source trigger mins -2 -2 -1 / maxs 2 2 2 at the tile, under the fake item.
+    triggerHalfSize: 18, triggerMinZ: -73, triggerMaxZ: 2,
+  }),
   landmine: Object.freeze({
-    pool: "step", model: "models/luffaren/landmine.vmdl", cost: 2, radius: 8, zRange: 4,
+    printChat: true,
+    pool: "step", model: "models/luffaren/landmine.vmdl", cost: 2,
     // Source trigger_multiple mins -3 -3 -1 / maxs 3 3 2 touching the player hull
     // (±16 wide, 72 tall): the pawn origin may be 19 units off and up to 73 below.
     triggerHalfSize: 19, triggerMinZ: -73, triggerMaxZ: 2,
     explosionDamage: 5000, explosionRadius: 100,
   }),
-  pizza: Object.freeze({ pool: "step", model: "models/luffaren/pizza.vmdl", cost: 2, radius: 12, zRange: 6 }),
+  pizza: Object.freeze({
+    printChat: true, pool: "step", model: "models/luffaren/pizza.vmdl", cost: 2,
+    // Source trigger mins -4 -4 -1 / maxs 4 4 2, expanded by the player hull.
+    triggerHalfSize: 20, triggerMinZ: -73, triggerMaxZ: 2,
+  }),
   beartrap: Object.freeze({
+    printChat: true,
     pool: "step", model: "models/luffaren/beartrap.vmdl", cost: 2,
-    radius: 12, zRange: 4, damage: 69, freezeTime: 10,
+    // Source trigger mins -4 -4 -1 / maxs 4 4 4.
+    triggerHalfSize: 20, triggerMinZ: -73, triggerMaxZ: 4,
+    damage: 69, freezeTime: 10,
   }),
 });
+
+// Source TRAPFLOOR broke on physical touch of its 94-wide tile (top at the
+// spawn position), i.e. a CT hull overlapping the block from above or a side.
+const TRAPFLOOR_TRIGGER = Object.freeze({ halfSize: 47 + 16, minZ: -73, maxZ: 2 });
 
                                                                             
                                                       
@@ -3772,6 +4030,7 @@ function thrusterLaunchSpeed(force, forceTime, massKg) {
 
 const ITEM_DEFINITIONS = Object.freeze({
   squid: Object.freeze({
+    carrierTemplate: "squid",
     team: 2, carrierKind: "knife", hammerId: 31, model: "models/luffaren/squid.vmdl",
     cooldown: 10, uses: 1, useMode: "oneShot", behavior: "squid",
     gravity: 0.5, throwSpeed: 1000, pitchOffset: -3, lifetime: 15,
@@ -3781,6 +4040,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   dragonslayer: Object.freeze({
+    carrierTemplate: "dragonslayer",
     team: 3, carrierKind: "p250", hammerId: 30, model: "models/luffaren/berserker_sword.vmdl",
     cooldown: 0.45, uses: Infinity, useMode: "conditionalUnlimited", behavior: "dragonslayer",
     downslashVelocityThreshold: 20, swipeHitDelay: 0.16, downslashHitDelay: 0.05,
@@ -3798,6 +4058,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ forward: -20, up: -50, scale: 1.8 }),
   }),
   pizzabaker: Object.freeze({
+    carrierTemplate: "pizzabaker",
     team: 2, carrierKind: "knife", hammerId: 29, model: "models/luffaren/pizza.vmdl",
     cooldown: 10, uses: 3, useMode: "finiteCharges", behavior: "pizzabaker",
     triggerWidth: 20, triggerDepth: 1, triggerOffset: 0,
@@ -3807,6 +4068,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ forward: 4, scale: 2.5 }),
   }),
   baguette: Object.freeze({
+    carrierTemplate: "baguette",
     team: 3, carrierKind: "p250", hammerId: 28, model: "models/luffaren/baguette.vmdl",
     mapAuthoredVisualPose: true,
     cooldown: 0.27, uses: Infinity, useMode: "conditionalUnlimited", behavior: "baguette",
@@ -3818,18 +4080,21 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   minislots: Object.freeze({
+    carrierTemplate: "minislots",
     team: 3, carrierKind: "p250", hammerId: 27, model: "models/luffaren/slotmachine_mini.vmdl",
     cooldown: 1, uses: Infinity, useMode: "cooldownUnlimited", behavior: "minislots",
     attachment: Object.freeze({ scale: 3.2 }),
     idleAnimation: "idle_spawn",
   }),
   billnye: Object.freeze({
+    carrierTemplate: "billnye",
     team: 3, carrierKind: "p250", hammerId: 26, model: "models/luffaren/billnye_vhs.vmdl",
     cooldown: 0, uses: 1, useMode: "oneShot", behavior: "billnye",
     bossRadius: 500, bossDamage: 100, bossStunChance: 80, bossStunTimeAdd: 8,
     attachment: Object.freeze({ scale: 0.6 }),
   }),
   peanutbutter: Object.freeze({
+    carrierTemplate: "peanutbutter",
     team: 3, carrierKind: "p250", hammerId: 25, model: "models/luffaren/peanut_butter_can.vmdl",
     effectModel: "models/luffaren/peanut_butter.vmdl",
     cooldown: 5, uses: 10, useMode: "finiteCharges", behavior: "peanutbutter",
@@ -3840,6 +4105,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachmentRandom: Object.freeze({ yaw: 360 }),
   }),
   claymore: Object.freeze({
+    carrierTemplate: "claymore",
     team: 3, carrierKind: "p250", hammerId: 20, model: "models/luffaren/claymore.vmdl",
     cooldown: 0.2, uses: 10, useMode: "finiteCharges", behavior: "claymore",
     bossScanRadius: 300, bossRadius: 500, bossDamage: 2500, bossStunChance: 5, bossStunTimeAdd: 1,
@@ -3851,6 +4117,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     mapVisualUpCorrection: 32,
   }),
   fling: Object.freeze({
+    carrierTemplate: "fling",
     team: 2, carrierKind: "knife", hammerId: 19, model: "models/weapons/w_eq_bumpmine.vmdl",
     templateModel: "models/luffaren/heal_orb.vmdl",
     cooldown: 30, uses: 1, useMode: "oneShot", behavior: "fling",
@@ -3860,19 +4127,25 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachmentRandom: Object.freeze({ yaw: 360 }),
   }),
   piggyback: Object.freeze({
+    carrierTemplate: "piggyback",
     team: 3, carrierKind: "knife", hammerId: 18, model: "models/luffaren/piggyback.vmdl",
     cooldown: 0, uses: Infinity, useMode: "passiveAttachment", behavior: "piggyback",
     attachment: Object.freeze({ forward: -28, scale: 1 }),
   }),
   hackerman: Object.freeze({
+    carrierTemplate: "hackerman",
     team: 3, carrierKind: "p250", hammerId: 17, model: "models/props/cs_office/computer_keyboard.vmdl",
     cooldown: 130, uses: 1, useMode: "oneShot", behavior: "hackerman",
     bossRadius: 1000, bossDamage: 20000, bossStunChance: 30, bossStunTimeAdd: 5,
+    duration: 10, tickInterval: 0.15, firstTickDelay: 0.05,
+    aimVariance: 20, aimZMin: -50, aimZMax: 20,
     targetRange: 800,
+    wallhackRange: 5000, wallhackZOffset: 48,
     mapAuthoredAttachmentAngles: true,
     attachment: Object.freeze({ scale: 1 }),
   }),
   bomb_chuck: Object.freeze({
+    carrierTemplate: "bomb_chuck",
     team: 2, carrierKind: "knife", hammerId: 16, model: "models/luffaren/bomb_chuck.vmdl",
     cooldown: 10, uses: 3, useMode: "finiteCharges", behavior: "bomb_chuck",
     thrustForce: 15000, thrustTime: 0.1, physicsMass: 12.29074,
@@ -3893,6 +4166,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachmentRandom: Object.freeze({ yaw: 360 }),
   }),
   roar: Object.freeze({
+    carrierTemplate: "roar",
     team: 2, carrierKind: "knife", hammerId: 15, model: "models/luffaren/roar.vmdl",
     cooldown: 30, uses: 1, useMode: "oneShot", behavior: "roar",
     range: 300, velocityXY: 500, velocityZ: 280, preserveZAt: 240, healthFloor: 10000,
@@ -3901,6 +4175,8 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ pitch: -10, yaw: 180, scale: 0.8 }),
   }),
   greasy_fingers: Object.freeze({
+    carrierTemplate: "greasy_fingers",
+    printName: true,
     team: 2, carrierKind: "knife", hammerId: 14, model: "models/luffaren/heal_orb.vmdl",
     cooldown: 0, uses: 1, useMode: "oneShot", behavior: "greasy_fingers",
     range: CONFIG.greasyFingersRange,
@@ -3909,6 +4185,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ pitch: 90, scale: 0.6 }),
   }),
   poise: Object.freeze({
+    carrierTemplate: "poise",
     team: 2, carrierKind: "knife", hammerId: 13, model: "models/luffaren/poise.vmdl",
     cooldown: 0, uses: 1, useMode: "oneShot", behavior: "poise",
                                                                              
@@ -3919,6 +4196,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ scale: 1.5 }),
   }),
   flight: Object.freeze({
+    carrierTemplate: "flight",
     team: 2, carrierKind: "knife", hammerId: 12, model: "models/luffaren/flight.vmdl",
     cooldown: 0, uses: 1, useMode: "oneShotPersistent", behavior: "flight",
                                                                           
@@ -3934,6 +4212,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   gust: Object.freeze({
+    carrierTemplate: "gust",
     team: 2, carrierKind: "knife", hammerId: 11, model: "models/luffaren/gust.vmdl",
     cooldown: 10, uses: 5, useMode: "finiteCharges", behavior: "gust",
     pushVelocity: 400, pushVelocityUp: 251, triggerWidth: 32, triggerDepth: 5,
@@ -3943,6 +4222,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ forward: 4, scale: 0.7 }),
   }),
   puller: Object.freeze({
+    carrierTemplate: "puller",
     team: 2, carrierKind: "knife", hammerId: 10, model: "models/luffaren/planetcrystal.vmdl",
     templateModel: "models/luffaren/puller.vmdl", effectModel: "models/luffaren/puller.vmdl",
     cooldown: 10, uses: 5, useMode: "finiteCharges", behavior: "puller",
@@ -3951,6 +4231,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ pitch: -90, scale: 0.9 }),
   }),
   bhop_steroids: Object.freeze({
+    carrierTemplate: "bhop_steroids",
     team: 3, carrierKind: "p250", hammerId: 9, model: "models/luffaren/bhop_steroids.vmdl",
     cooldown: 0.2, uses: Infinity, fuel: 30, useMode: "fuelToggle", behavior: "bhop_steroids",
     jumpVelocityXY: 500, jumpVelocityZ: 320,
@@ -3959,6 +4240,8 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   stone: Object.freeze({
+    carrierTemplate: "stone",
+    printDeaths: true,
     team: 2, carrierKind: "knife", hammerId: 8, model: "models/luffaren/stone.vmdl",
     cooldown: 3, uses: 10, useMode: "finiteCharges", behavior: "stone",
     thrustForce: 20000, thrustTime: 0.1, physicsMass: 67.5863,
@@ -3971,6 +4254,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachmentRandom: Object.freeze({ pitch: 360, yaw: 360, roll: 360 }),
   }),
   impostor: Object.freeze({
+    carrierTemplate: "impostor",
     team: 2, carrierKind: "knife", hammerId: 7, model: "models/luffaren/captain_planet.vmdl",
     cooldown: 0, uses: 1, useMode: "oneShot", behavior: "impostor",
                                                                            
@@ -3984,6 +4268,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   planetcrystal: Object.freeze({
+    carrierTemplate: "planetcrystal",
     team: 3, carrierKind: "p250", hammerId: 21, model: "models/luffaren/planetcrystal.vmdl",
     cooldown: 0, uses: 1, useMode: "oneShot", behavior: "planetcrystal",
     variants: Object.freeze(["earth", "fire", "wind", "water"]),
@@ -4008,11 +4293,13 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   rift: Object.freeze({
+    carrierTemplate: "rift",
     team: 3, carrierKind: "p250", hammerId: 6, model: "models/luffaren/rift.vmdl",
     cooldown: 1, uses: 2, useMode: "twoStage", behavior: "rift",
     attachment: Object.freeze({ left: 4, yaw: 110, scale: 1 }),
   }),
   rift_z: Object.freeze({
+    carrierTemplate: "rift_z",
     team: 2, carrierKind: "knife", hammerId: 6, model: "models/luffaren/rift.vmdl",
     templateName: "rift", cooldown: 1, uses: 2, useMode: "twoStage", behavior: "rift_z",
     activeTime: 100, timeout: 200, minimumSeparation: 60, teleportLockRange: 100,
@@ -4021,14 +4308,17 @@ const ITEM_DEFINITIONS = Object.freeze({
     attachment: Object.freeze({ left: 4, yaw: 110, scale: 1 }),
   }),
   storm_blade: Object.freeze({
+    carrierTemplate: "storm_blade",
     team: 3, carrierKind: "p250", hammerId: 5, model: "models/luffaren/storm_blade_sword.vmdl",
     cooldown: 150, uses: Infinity, useMode: "cooldownUnlimited", behavior: "storm_blade",
     bossRadius: 500, bossDamage: 10000, bossStunChance: 90, bossStunTimeAdd: 7,
     pickupUseRadius: 96,
+    mapVisualUpCorrection: 16,
     attachment: Object.freeze({ left: 8, yaw: 110, scale: 1 }),
     idleAnimation: "idle",
   }),
   destructo_hammer: Object.freeze({
+    carrierTemplate: "destructo_hammer",
     team: 2, carrierKind: "knife", hammerId: 4, model: "models/luffaren/destructo_hammer.vmdl",
     cooldown: 3, uses: 5, useMode: "finiteCharges", behavior: "destructo_hammer",
     magnitude: 150, explosionRadius: 375, tileRadius: 60, tileZRadius: 5000,
@@ -4039,6 +4329,7 @@ const ITEM_DEFINITIONS = Object.freeze({
     idleAnimation: "idle",
   }),
   heal_orb: Object.freeze({
+    carrierTemplate: "heal_orb",
     team: 3,
     carrierKind: "p250",
     hammerId: 3,
@@ -4054,11 +4345,14 @@ const ITEM_DEFINITIONS = Object.freeze({
     healRate: 0.5,
     healDuration: 15,
     healRadius: 200,
-    worldScale: 0.5,
+    // Tester feedback 10-16: the idle orb at the original 0.5 reads far too big
+    // in CS2; the requested size is about a quarter of that diameter.
+    worldScale: 0.15,
     pickupUseRadius: 96,
-    attachment: Object.freeze({ scale: 0.5 }),
+    attachment: Object.freeze({ scale: 0.15 }),
   }),
   moonboost: Object.freeze({
+    carrierTemplate: "moonboost",
     team: 3, carrierKind: "p250", hammerId: 2, model: "models/weapons/w_eq_bumpmine.vmdl",
     cooldown: 1, uses: Infinity, useMode: "cooldownUnlimited", behavior: "moonboost",
     attachment: Object.freeze({ scale: 1 }),
@@ -4089,7 +4383,7 @@ const ITEM_TUTORIALS = Object.freeze({
   piggyback: { name: "Piggyback", describe: () =>
     "Let a human teammate ride on your back.\nThe rider presses E on the saddle to get on or off.\nDismounting gives the rider a jump boost.\nDying or dropping the knife forces the rider off." },
   hackerman: { name: "Hackerman", describe: () =>
-    "Gain aim assistance and infinite ammo; keep firing.\nNearby or targeted zombies become one-hit kills.\nCan hurt and stun the boss." },
+    "Gain aim assistance and infinite ammo; keep firing.\nNearby or targeted zombies become one-hit kills.\nNearby zombies are marked with a red glow.\nCan hurt and stun the boss." },
   bomb_chuck: { name: "BombChuck", describe: d =>
     `Throw a bomb towards your look-direction.\nIt explodes after ${d.fuseTime}s, dealing area damage.` },
   roar: { name: "Roar", describe: d =>
@@ -4126,10 +4420,18 @@ const ITEM_TUTORIALS = Object.freeze({
     "Give yourself an upward boost.\nCombine it with jumping for extra height." },
 });
 
+function itemDisplayName(item) {
+  if (item.name === "planetcrystal") {
+    const elements = { earth: "EarthCrystal", fire: "FireCrystal", wind: "WindCrystal", water: "WaterCrystal" };
+    if (elements[item.variant]) return elements[item.variant];
+  }
+  return ITEM_TUTORIALS[item.name]?.name ?? item.name;
+}
+
 function itemTutorialContent(item) {
   const d = item.definition;
   const tutorial = ITEM_TUTORIALS[item.name];
-  let title = tutorial?.name ?? item.name;
+  let title = itemDisplayName(item);
   let description = tutorial?.describe(d) ?? "Use this item to activate its ability.";
   if (item.name === "planetcrystal") {
     const elements = {
@@ -4263,7 +4565,12 @@ const ITEM_BEHAVIORS = Object.freeze({
     onCleanup: cleanupPiggyback,
     onTick: tickPiggyback,
   }),
-  moonboost: humanItemBehavior({ onUse: useMoonBoost, onUseFailed: flashItemFailed, onReady: restoreItemReady }),
+  moonboost: humanItemBehavior({
+    canUse: (item, holder) => item.definition.team === 2
+      ? zombieItemCanUse(item, holder) && !playerHasItemStatus(holder, ":squid")
+      : humanItemCanUse(item, holder),
+    onUse: useMoonBoost, onUseFailed: flashItemFailed, onReady: restoreItemReady,
+  }),
   minislots: humanItemBehavior({
     onPickup: onMiniSlotsPickup,
     onUse: useMiniSlots,
@@ -5757,6 +6064,18 @@ const LEVELS = Object.freeze(ALL_LEVELS.filter((level) => {
 
 
 
+// Cosmetic parodies only. Match CS2Fixes wording without invoking its commands
+// or changing the real vote, nominations, next map, or any server ConVar.
+const TROLL_MESSAGE_CONFIG = Object.freeze({
+  enabled: true, minimumDelay: 0.1, maximumDelay: 1000, voteChance: 0.20,
+  maps: Object.freeze([
+    "ze_blackmesa_lambda_v1", "ze_infiltration_final_p3", "ze_predator_ultimate_p7",
+    "ze_toaster_p3", "ze_halo_poa_p4", "ze_interception_p2", "ze_frostdrake_tower_v1",
+    "ze_castlevania_p1_7", "ze_santassination_v3", "ze_diddle_v3", "ze_pizzatime_v9",
+    "ze_best_korea_v1", "ze_magmadrake_b4", "ze_eternal_grove_v3", "ze_crazykart_v4", "ze_collective_v1_9",
+  ]),
+});
+
 // Round arena: every container that only lives for one round. An engine round
 // restart swaps the whole set for fresh objects (releaseRoundToEngine), so a
 // forgotten clear() can't carry handles or closures into later rounds.
@@ -5764,6 +6083,10 @@ const LEVELS = Object.freeze(ALL_LEVELS.filter((level) => {
 // theme resources, warnings, slot HUD maps) must stay out of this list.
 function createRoundScope() {
   return {
+    trollMessages: createTrollMessageState(),
+    roundReportLevels: new Map(),
+    roundReportRecent: [],
+    roundReportVictims: new WeakSet(),
     falldownCheckpointQueue: [],
     falldownCheckpoints: new Map(),
     falldownCheckpointSuppressions: new Map(),
@@ -5773,13 +6096,24 @@ function createRoundScope() {
     lowgravFailsafeQueue: [],
     airslideFailsafeQueue: [],
     motherZombies: new Set(),
+    zombieItemInflateCalledOut: new WeakSet(),
     terrainPreloadRetiring: new Set(),
+    terrainPreloadRestores: [],
+    terrainPool: new Map(),       // template key -> [{ entity, readyAt }], oldest first
+    themePreloadCleanup: [],
     levels: new Map(),
     roundEntities: new Set(),
+    activeRubblePieces: new Set(),
+    nextRubbleSpawnAt: 0,
+    rubbleTouchRoutes: new Map(),
+    kartImpactEntities: new WeakSet(),
     spawnSafetyTriggers: new Map(),
     spawnQueue: [],
     generationQueues: new Map(["terrain", "liquid", "model", "ladder", "boost"].map(key => [key, []])),
     terrainSpawnFades: new Map(),
+    levelFades: new Set(),
+    maintenanceKillsFirst: false,
+    stormBladeVisuals: new Map(),
     itemSpawnQueue: [],
     trapSpawnQueue: [],
     sourceStageCosts: [],
@@ -5798,6 +6132,7 @@ function createRoundScope() {
     nativeStatusSpeeds: new Map(),
     releasedItemCarriers: new Map(),
     playerItems: new Map(),
+    zombieInfectionReturns: new Map(),
     planetCrystalShuffle: [],
     itemParticleFxWindows: new Map(),
   };
@@ -5812,6 +6147,8 @@ const state = {
   roundBootstrapSerial: 0,
   roundBootstrapPending: false,
   roundBootstrapWaitLogged: false,
+  roundReportPrinted: false,
+  reportSessionId: createReportSessionId(),
   nextEndCheckAt: 0,
   endLockedUntil: 0,
   falldownCheckpointEnabled: true,
@@ -5915,6 +6252,8 @@ const state = {
   },
   planetCombo: undefined,
   debugShowcaseMode: false,
+  debugDebrisMode: false,
+  debugDebrisNextAt: 0,
   debugGravityMode: false,
   debugMovementThemesMode: false,
   debugAllModelsMode: false,
@@ -6297,7 +6636,7 @@ function infiniteCheckoutShot(vote, event) {
     ? "VOTE PASSED" : `${vote.voters.size}/${vote.needed}`}]`);
   if (vote.passed) {
     vote.checkoutValue = state.campaign.stageLevelCount;
-    announce(`[INFINITE FINALE] YOU CHECKED OUT AT ${vote.checkoutValue} LEVELS`);
+    announceRepeated(`[INFINITE FINALE] YOU CHECKED OUT AT ${vote.checkoutValue} LEVELS`, 5);
     for (const pitch of [20 + Math.floor(Math.random() * 11), 50 + Math.floor(Math.random() * 11)])
       playCatalogSound("eye_terror", vec(), { radius: 0, lifetime: 10, volume: 10, pitch });
   }
@@ -6401,18 +6740,18 @@ function flushEndingTimeline(runtime, handlers) {
   }
 }
 
-function endingAnnounce(runtime, delay, text) {
+function endingAnnounce(runtime, delay, text, times = 1) {
   if (delay <= 0) {
-    announce(text);
+    announceRepeated(text, times);
     return undefined;
   }
-  return endingTask(runtime, delay, () => announce(text));
+  return endingTask(runtime, delay, () => announceRepeated(text, times));
 }
 
-function endingCountdown(runtime, totalTime, prefix, checkpoints = [60, 30, 10, 5, 4, 3, 2, 1]) {
+function endingCountdown(runtime, totalTime, prefix, checkpoints = [60, 30, 10, 5, 4, 3, 2, 1], suffix = "") {
   for (const seconds of checkpoints) {
     const delay = totalTime - seconds;
-    if (delay > 0) endingAnnounce(runtime, delay, `${prefix} ${seconds}s`);
+    if (delay > 0) endingAnnounce(runtime, delay, `${prefix} ${seconds}s${suffix}`);
   }
 }
 
@@ -6782,10 +7121,28 @@ function startFinaleBossMusic(runtime, at = Instance.GetGameTime()) {
     if (runtime.bossPhase !== "escape") processFinaleMusic(runtime, Instance.GetGameTime());
   }, `finale_music_intro_${runtime.sequence}`);
   endingTaskAt(runtime, runtime.finaleMusicLoopAt, () => {
-    if (!runtime || runtime.bossPhase === "escape") return;
-    startFinaleMusicLoop(runtime, runtime.finaleMusicLoopAt);
+    processFinaleMusic(runtime, Instance.GetGameTime());
   }, `finale_music_loop_${runtime.sequence}`);
   return true;
+}
+
+// Source FinaleMusicLoop: the infinite static stinger also flashes white and sets
+// postprocess local contrast (vignette 1.75/0.5, blur 0.25, strength 100) until round end.
+// CS2 has no postprocess_controller inputs, so a disabled map-sized volume carries the vpost.
+function setFinaleInfiniteScreenFx(runtime, enabled) {
+  const volume = Instance.FindEntityByName?.("finale_infinite_postprocess");
+  if (!enabled) {
+    if (runtime?.finaleInfiniteScreenFx && validEntity(volume)) fireTarget(volume, "Disable", "");
+    if (runtime) runtime.finaleInfiniteScreenFx = false;
+    return;
+  }
+  const fade = Instance.FindEntityByName?.("finale_infinite_fade");
+  runtime.finaleInfiniteScreenFx = true;
+  if (validEntity(fade)) fireTarget(fade, "Fade", "", 0.02);
+  if (validEntity(volume)) fireTarget(volume, "Enable", "", 0.07);
+  if (!validEntity(fade) || !validEntity(volume)) {
+    runtime.finaleInfiniteScreenFxNote = "finale_infinite_fade/finale_infinite_postprocess map entities are unavailable";
+  }
 }
 
 function startFinaleMusicLoop(runtime, at = Instance.GetGameTime()) {
@@ -6794,6 +7151,7 @@ function startFinaleMusicLoop(runtime, at = Instance.GetGameTime()) {
   if (infinite && !runtime.finaleInfiniteMusicStaticPlayed) {
     stopEndingMusic(runtime);
     const played = playEndingMusic(runtime, "confronting_myself_infinite_static", true);
+    setFinaleInfiniteScreenFx(runtime, true);
     runtime.finaleInfiniteMusicStaticPlayed = true;
     runtime.finaleMusicPhase = played ? "infinite_static" : "infinite_static_missing";
     runtime.finaleMusicNextAt = at + FINALE_MUSIC_CONFIG.infiniteStaticDelay;
@@ -6829,9 +7187,9 @@ function processFinaleMusic(runtime, now = Instance.GetGameTime()) {
     runtime.finaleMusicRetryAt = played ? undefined : now + 1;
     finaleMusicHistory(runtime, "boss_start", "confronting_myself_start", runtime.finaleMusicStartAt);
   }
+  // A boss killed before the loop point must still hand off to the loop.
   if (["boss_intro", "boss_start", "boss_start_missing"].includes(runtime.finaleMusicPhase)
-    && now + 1e-6 >= (runtime.finaleMusicLoopAt ?? Infinity)
-    && runtime.bossPhase !== "escape") {
+    && now + 1e-6 >= (runtime.finaleMusicLoopAt ?? Infinity)) {
     startFinaleMusicLoop(runtime, runtime.finaleMusicLoopAt);
   }
   if (["infinite_static", "infinite_static_missing"].includes(runtime.finaleMusicPhase)
@@ -7055,10 +7413,14 @@ function markEndingOutcomePending(runtime, humansWon) {
     resolvedAt: Instance.GetGameTime(),
   };
   const source = runtime.sourceRuntime;
-  // Both runtimes leave activeRuntimes() below; retire in-flight gust/pizza
-  // instead of leaving them frozen mid-air until the round resets.
+  // Both runtimes leave activeRuntimes() below; retire temporary projectiles
+  // and Puller beams instead of leaving them frozen until the round resets.
   retireLinearZombieProjectiles(runtime);
-  if (source && source.lifecycle !== "destroyed") retireLinearZombieProjectiles(source);
+  retireHealOrbs(runtime);
+  if (source && source.lifecycle !== "destroyed") {
+    retireLinearZombieProjectiles(source);
+    retireHealOrbs(source);
+  }
   if (source && !["outcome_pending", "destroyed"].includes(source.lifecycle)) {
     source.lifecycleBeforeOutcome = source.lifecycle;
     source.lifecycle = "outcome_pending";
@@ -7209,7 +7571,12 @@ function createEndingRuntime(kind, stageSnapshot, sourceRuntime) {
   runtime.direction = endingCardinalDirection(runtime);
   runtime.left = leftOf(runtime.direction);
   state.endingRuntime = runtime;
+  if (ending !== "FINALE") applySilentHillEndingFog();
   return runtime;
+}
+
+function applySilentHillEndingFog() {
+  if (themeProfile(campaignStageSnapshot().theme).name === "silenthill") setSilentHillFog(state.silentHillWorld.visualDark);
 }
 
 function endingPosition(runtime, forwardCell, sideCell, elevation = 0) {
@@ -7721,37 +8088,52 @@ function spawnEndingBreakable(runtime, request) {
 }
 
 function processEndingSpawnQueue(runtime, onFinished) {
+  return withGenerationBudget(() => processEndingSpawnQueueBudgeted(runtime, onFinished));
+}
+
+function processEndingSpawnQueueBudgeted(runtime, onFinished) {
   if (!runtime || runtime.lifecycle !== "spawning") return;
-  // Original TickSpawnQueue spawned tickspawnqueue_procamount (3) blocks per tick,
-  // so ending terrain visibly builds up instead of appearing in one burst.
-  const amount = Math.min(CONFIG.spawnQueuePerThink, runtime.spawnQueue.length);
+  // Spread the whole boss structure, including the top arena and zombie
+  // platform, over time. The final pyramid keeps its separate spawn path.
+  const manualStructure = runtime.kind === "FINALE" && runtime.bossMode === "boss"
+    ? runtime.finaleStructure : undefined;
+  const now = Instance.GetGameTime();
+  if (manualStructure && runtime.spawnQueue.length
+    && now < (manualStructure.nextTileSpawnAt ?? 0)) return;
+  const amount = Math.min(manualStructure ? 1 : CONFIG.spawnQueuePerThink, runtime.spawnQueue.length);
   try {
     for (let index = 0; index < amount; index++) {
-      const request = runtime.spawnQueue.shift();
-      const spawned = request.kind === "ladder"
-        ? spawnEndingLadder(runtime, request)
-        : request.kind === "climb"
-          ? spawnEndingClimb(runtime, request)
-          : request.kind === "breakable"
-            ? spawnEndingBreakable(runtime, request)
-          : request.kind === "tile"
-            ? spawnEndingTile(runtime, request)
-          : spawnEndingTerrain(
-          runtime,
-          request.shape,
-          request.position,
-          request.role,
-          request.internal,
-          request.external,
-          request.angles ?? anglesFor(runtime.direction),
-          request.themeName,
-          request.terrainModel,
-        );
-      if (typeof request.record?.push === "function") request.record.push(...spawned);
-      else if (typeof request.record?.add === "function") for (const entity of spawned) request.record.add(entity);
-      runtime.remaining--;
+      if (!generationWorkAvailable()) break;
+      runGenerationWork(() => {
+        const request = runtime.spawnQueue.shift();
+        const spawned = request.kind === "ladder"
+          ? spawnEndingLadder(runtime, request)
+          : request.kind === "climb"
+            ? spawnEndingClimb(runtime, request)
+            : request.kind === "breakable"
+              ? spawnEndingBreakable(runtime, request)
+            : request.kind === "tile"
+              ? spawnEndingTile(runtime, request)
+            : spawnEndingTerrain(
+            runtime,
+            request.shape,
+            request.position,
+            request.role,
+            request.internal,
+            request.external,
+            request.angles ?? anglesFor(runtime.direction),
+            request.themeName,
+            request.terrainModel,
+          );
+        if (typeof request.record?.push === "function") request.record.push(...spawned);
+        else if (typeof request.record?.add === "function") for (const entity of spawned) request.record.add(entity);
+        runtime.remaining--;
+        // Advance only after doing work. Never accumulate catch-up credit when
+        // a frame stalls or another producer consumes the shared spawn budget.
+        if (manualStructure) manualStructure.nextTileSpawnAt = now + FINALE_STRUCTURE_CONFIG.manualSpawnInterval;
+      });
     }
-    if (runtime.remaining === 0) onFinished(runtime);
+    if (runtime.remaining === 0 && generationWorkAvailable()) runGenerationWork(() => onFinished(runtime));
   } catch (error) {
     failRuntime(`${runtime.kind} terrain spawn failed: ${error}`);
   }
@@ -7824,17 +8206,25 @@ function processBunkerDoorTick(runtime) {
   door.processed = true;
   const { humans, zombies } = bunkerTeamCounts();
   const ratio = zombies > 0 ? humans / zombies : Infinity;
+  // Source TickDoorOpen(): a ratio only exists with both teams alive;
+  // otherwise the door opens fully with "(no opposition)".
+  const opposed = humans > 0 && zombies > 0;
   let stateName = "closed";
-  if (zombies === 0 || ratio > opening.ratioFull) stateName = "full";
+  if (!opposed || ratio > opening.ratioFull) stateName = "full";
   else if (ratio > opening.ratioCrouch) stateName = "crouch";
   setBunkerDoorState(runtime, door, stateName);
   runtime.doorHistory.push({ index: door.index, state: stateName, ratio, opening });
-  const ratioText = Number.isFinite(ratio) ? ratio.toFixed(2) : "no opposition";
-  endingAnnounce(runtime, 0, `BUNKER ENDING: door ${door.index + 1} ${stateName.toUpperCase()} (ratio ${ratioText})`);
+  const action = { full: "OPENING EXTRA DOOR (FULLY)", crouch: "OPENING EXTRA DOOR (CROUCH)",
+    closed: "KEEPING EXTRA DOOR CLOSED" }[stateName];
+  const detail = !opposed ? "(no opposition)"
+    : `(H:${humans}/Z:${zombies} = RATIO:${sqNumber(ratio)}) `
+      + (stateName === "full" ? `(target_full:${sqNumber(opening.ratioFull)})` : `(target_crouch:${sqNumber(opening.ratioCrouch)})`);
+  endingAnnounce(runtime, 0, `[BUNKER ENDING] ${action}___________${detail}`);
 }
 
 function destroyEndingEntity(runtime, entity, deferKill = false) {
   if (!entity) return;
+  if (!deferKill) state.activeRubblePieces.delete(entity);
   const fall = entity.collectiveEndingFall;
   if (fall && !fall.retired) {
     retireEndingNativeFall(runtime, fall);
@@ -7953,6 +8343,7 @@ function processBunkerCollapseTick(runtime) {
   }
   runtime.collapseFinishedAt = Instance.GetGameTime();
   runtime.timeoutTask = endingTask(runtime, BUNKER_CONFIG.timeoutSlayAll, () => {
+    announce("[BUNKER ENDING] YOU TOOK TOO LONG TO FINISH OFF THE ZOMBIES");
     const counts = bunkerTeamCounts();
     if (counts.zombies > 0) {
       for (const pawn of allLivingPawns()) {
@@ -7968,7 +8359,6 @@ function processBunkerCollapseTick(runtime) {
       resolveStageEnding(false);
     }
   });
-  endingAnnounce(runtime, 0, `BUNKER ENDING: YOU TOOK TOO LONG; ${BUNKER_CONFIG.timeoutSlayAll}s REMAIN`);
 }
 
 function startBunkerCollapse(runtime, scheduledAt) {
@@ -7976,7 +8366,7 @@ function startBunkerCollapse(runtime, scheduledAt) {
   runtime.lifecycle = "collapsing";
   runtime.lifecycleHistory.push("collapsing");
   runtime.collapseStartedAt = scheduledAt ?? Instance.GetGameTime();
-  endingAnnounce(runtime, 0, "BUNKER ENDING: THE OUTSIDE IS STARTING TO CRUMBLE");
+  endingAnnounce(runtime, 0, "[BUNKER ENDING] THE OUTSIDE IS STARTING TO CRUMBLE");
   setAllBunkerDoorsClosed(runtime);
                                                                              
                                                                               
@@ -7993,6 +8383,8 @@ function startBunkerCollapse(runtime, scheduledAt) {
 
 function finishEndingRuntime(runtime, lifecycle = "resolved") {
   if (!runtime) return;
+  for (const piece of runtime.rubblePieces ?? []) cleanupRaceRubblePiece(runtime, piece);
+  runtime.rubblePieces = [];
   for (const leg of runtime.bunkerNativeDoors ?? []) releaseNativeMoverLeg(runtime, leg);
   runtime.bunkerNativeDoors?.clear();
   clearBoostPads(runtime);
@@ -8000,10 +8392,12 @@ function finishEndingRuntime(runtime, lifecycle = "resolved") {
   if (runtime.kind === "FINALE") {
     for (const lift of [...(runtime.finaleNativeLifts ?? [])]) retireFinaleNativeLift(runtime, lift);
     clearFinaleBossBullets(runtime);
+    clearFinaleBossAttackVisuals(runtime);
     runtime.bossPieceTouchCooldowns?.clear();
     if (runtime.bossPhase === "escape") state.finaleEscapeActive = false;
     state.finalePostImpostorUntil = 0;
     stopFinaleThunder(runtime);
+    setFinaleInfiniteScreenFx(runtime, false);
     stopCollectiveTitle("finale_cleanup");
   }
                                                                           
@@ -8042,6 +8436,7 @@ function finishEndingRuntime(runtime, lifecycle = "resolved") {
   runtime.internalEntities?.clear?.();
   runtime.externalEntities?.clear?.();
   runtime.terrainEntities?.clear?.();
+  runtime.phasingTerrainEntities?.clear?.();
   runtime.safeTerrainEntities?.clear?.();
   runtime.externalTerrainEntities?.clear?.();
   runtime.endingTerrainEntities?.clear?.();
@@ -8077,10 +8472,10 @@ function startBunkerEnding(stageSnapshot, sourceRuntime) {
                                                                            
   scheduleBunkerTimeline(runtime);
   playEndingMusic(runtime, ENDING_MUSIC.BUNKER);
-  endingAnnounce(runtime, 0, "BUNKER ENDING: THIS IS YOUR LAST STAND");
-  endingAnnounce(runtime, 1.03, "BUNKER ENDING: DEFEND THE BUNKER WITH YOUR LIFE");
-  endingAnnounce(runtime, 5, `BUNKER ENDING: HOLD OUT FOR ${BUNKER_CONFIG.defendTime - 5}s`);
-  endingCountdown(runtime, BUNKER_CONFIG.defendTime, "BUNKER ENDING: THE OUTSIDE WILL CRUMBLE IN");
+  endingAnnounce(runtime, 0, "[BUNKER ENDING] THIS IS YOUR LAST STAND", 3);
+  endingAnnounce(runtime, 1.03, "[BUNKER ENDING] DEFEND THE BUNKER WITH YOUR LIFE", 3);
+  endingAnnounce(runtime, 5, `[BUNKER ENDING] HOLD OUT FOR ${Math.trunc(BUNKER_CONFIG.defendTime - 5)}s`, 3);
+  endingCountdown(runtime, BUNKER_CONFIG.defendTime, "[BUNKER ENDING] THE OUTSIDE WILL CRUMBLE IN");
   try {
     for (const shape of ["floor", "platform", "wall"]) {
       const template = state.templates.get(shape);
@@ -8090,7 +8485,7 @@ function startBunkerEnding(stageSnapshot, sourceRuntime) {
     }
     spawnBunkerGeometry(runtime);
     if (runtime.remaining <= 0) throw new Error("BUNKER produced no terrain spawn requests");
-    announce("BUNKER ending terrain is generating");
+    message("BUNKER ending terrain is generating");
     return runtime;
   } catch (error) {
     destroyEndingRuntime(runtime, "startup_failed");
@@ -8296,7 +8691,8 @@ function finishBridgeCollapse(runtime) {
   if (!runtime || runtime.collapseFinishedAt !== undefined) return;
   runtime.collapseFinishedAt = Instance.GetGameTime();
   runtime.lifecycle = "collapsing";
-  endingTask(runtime, 5, () => announce(`BRIDGE: kill all zombies within ${BRIDGE_CONFIG.delaySlayTime - 5} seconds`));
+  if (BRIDGE_CONFIG.delaySlayTime - 5 > 0) endingTask(runtime, 5, () => announceRepeated(
+    `[BRIDGE ENDING] KILL ALL ZOMBIES WITHIN ${sqNumber(BRIDGE_CONFIG.delaySlayTime - 5)}s TO WIN`));
   runtime.timeoutTask = endingTask(runtime, BRIDGE_CONFIG.delaySlayTime, () => {
     const counts = bunkerTeamCounts();
     if (counts.zombies <= 0 && counts.humans > 0) {
@@ -8356,10 +8752,10 @@ function startBridgeCollapse(runtime, scheduledAt) {
   runtime.crumblePosition = add(runtime.anchor, mul(runtime.left, BRIDGE_CONFIG.crumbleLeftRightTravel));
   runtime.crumbleTravelled = 0;
   runtime.crumbleLeft = false;
-  endingAnnounce(runtime, 0, "BRIDGE ENDING: THE BRIDGE IS STARTING TO CRUMBLE");
+  endingAnnounce(runtime, 0, "[BRIDGE ENDING] THE BRIDGE IS STARTING TO CRUMBLE", 3);
   endingTask(runtime, 1, () => enableEndingSpawnKiller(runtime));
-  endingAnnounce(runtime, 2.03, "BRIDGE ENDING: RESPAWN IS DISABLED");
-  endingAnnounce(runtime, 3.06, "BRIDGE ENDING: DEFEND!");
+  endingAnnounce(runtime, 2.03, "[BRIDGE ENDING] RESPAWN IS DISABLED", 3);
+  endingAnnounce(runtime, 3.06, "[BRIDGE ENDING] DEFEND!", 3);
   endingTask(runtime, 1.5, () => {
     for (const part of runtime.layout.parts.filter((entry) => entry.startBlock)) {
       for (const entity of part.entities) destroyEndingEntity(runtime, entity);
@@ -8379,9 +8775,9 @@ function startBridgeEnding(stageSnapshot, sourceRuntime) {
                                                                             
   scheduleBridgeTimeline(runtime);
   playEndingMusic(runtime, ENDING_MUSIC.BRIDGE);
-  endingAnnounce(runtime, 0, "BRIDGE ENDING");
-  endingAnnounce(runtime, 1.05, `BRIDGE ENDING: HOLD THE BRIDGE FOR ${BRIDGE_CONFIG.holdTime + 1}s`);
-  endingCountdown(runtime, BRIDGE_CONFIG.holdTime, "BRIDGE ENDING: BRIDGE CRUMBLING IN");
+  endingAnnounce(runtime, 0, "[BRIDGE ENDING]", 3);
+  endingAnnounce(runtime, 1.05, `[BRIDGE ENDING] HOLD THE BRIDGE FOR ${sqNumber(BRIDGE_CONFIG.holdTime + 1)}s`, 3);
+  endingCountdown(runtime, BRIDGE_CONFIG.holdTime, "[BRIDGE ENDING] BRIDGE CRUMBLING IN");
   try {
     for (const shape of ["floor", "platform", "wall", "detail"]) {
       const template = state.templates.get(shape);
@@ -8395,7 +8791,7 @@ function startBridgeEnding(stageSnapshot, sourceRuntime) {
     }
     spawnBridgeGeometry(runtime);
     if (runtime.remaining <= 0) throw new Error("BRIDGE produced no terrain spawn requests");
-    announce("BRIDGE ending terrain is generating");
+    message("BRIDGE ending terrain is generating");
     return runtime;
   } catch (error) {
     destroyEndingRuntime(runtime, "startup_failed");
@@ -8551,6 +8947,7 @@ function startHuntEnding(stageSnapshot, sourceRuntime) {
   runtime.timeoutTask = endingTask(runtime, HUNT_CONFIG.slayTime, () => {
     if (runtime.timeoutTriggered || runtime.lifecycle !== "active") return;
     runtime.timeoutTriggered = true;
+    announce("[HUNT ENDING] YOU RAN OUT OF TIME - YOU LOSE!");
                                                                           
                                                                          
                                                      
@@ -8574,13 +8971,17 @@ function startHuntEnding(stageSnapshot, sourceRuntime) {
     });
   });
   playEndingMusic(runtime, ENDING_MUSIC.HUNT);
-  endingAnnounce(runtime, 0, "HUNT ENDING");
-  endingAnnounce(runtime, 1.03, "HUNT ENDING: zombies have low HP - kill them all!");
-  endingAnnounce(runtime, 2.1, `HUNT ENDING: the stage-end rift grants ${HUNT_CONFIG.teleportInfectionImmunity}s infection immunity`);
-  endingAnnounce(runtime, 5, `HUNT ENDING: YOU HAVE ${HUNT_CONFIG.slayTime - 5}s TO KILL THE ZOMBIES`);
-  endingAnnounce(runtime, 6, "HUNT ENDING: IF THE TIME RUNS OUT YOU LOSE");
-  endingAnnounce(runtime, HUNT_CONFIG.spawnKillerDelay + 0.2, "HUNT ENDING: RESPAWN IS DISABLED");
-  endingCountdown(runtime, HUNT_CONFIG.slayTime, "HUNT ENDING: YOU HAVE", [60, 30, 10, 5, 4, 3, 2, 1]);
+  endingAnnounce(runtime, 0, "[HUNT ENDING]", 3);
+  endingAnnounce(runtime, 1.03, "[HUNT ENDING] zombies have low HP - kill them all!", 3);
+  endingAnnounce(runtime, 2.1, "[HUNT ENDING] the human stage-end TP brings you back to the stage-start "
+    + `(with ${sqNumber(HUNT_CONFIG.teleportInfectionImmunity)}s infect-immunity)`);
+  if (HUNT_CONFIG.slayTime > 5) {
+    endingAnnounce(runtime, 5, `[HUNT ENDING] YOU HAVE ${Math.trunc(HUNT_CONFIG.slayTime - 5)}s TO KILL THE ZOMBIES`);
+    endingAnnounce(runtime, 6, "[HUNT ENDING] IF THE TIME RUNS OUT YOU LOSE");
+  }
+  endingAnnounce(runtime, HUNT_CONFIG.spawnKillerDelay + 0.2, "[HUNT ENDING] RESPAWN IS DISABLED", 3);
+  endingCountdown(runtime, HUNT_CONFIG.slayTime, "[HUNT ENDING] YOU HAVE", [60, 30, 10, 5, 4, 3, 2, 1],
+    " LEFT TO KILL THE ZOMBIES");
   return runtime;
 }
 
@@ -8986,7 +9387,7 @@ function scheduleRiseTimeline(runtime) {
       }
       resolveStageEnding(false);
     },
-    rise_announce_0: () => announce("[RISE ENDING]"),
+    rise_announce_0: () => announceRepeated("[RISE ENDING]"),
     rise_announce_1: () => announce("[RISE ENDING] DEFEND YOUR WAY TO THE TOP"),
     rise_announce_2: () => announce("[RISE ENDING] THE VERY END IS YOUR SAFE HAVEN"),
     rise_announce_3: () => announce("[RISE ENDING] THE HILL WILL GRADUALLY COLLAPSE"),
@@ -9275,10 +9676,20 @@ function processClimbCrumble(runtime, now) {
   runtime.crumbleRemoved = (runtime.crumbleRemoved ?? 0) + 1;
 }
 
+// Count actual live bodies, including sleeping ones. Invalid engine-killed bodies
+// release their slot before any new model/physics/trigger entity is created.
+function rubbleCapacityAvailable(limit = CONFIG.maxActiveRubble) {
+  for (const entity of state.activeRubblePieces) {
+    if (!validEntity(entity)) state.activeRubblePieces.delete(entity);
+  }
+  return state.activeRubblePieces.size < Math.min(CONFIG.maxActiveRubble, limit);
+}
+
 function spawnClimbDebris(runtime, now) {
   if (!runtime || runtime.lifecycle !== "active" || !runtime.debrisEnabled) return;
   runtime.nextDebrisAt ??= now;
-  if (now < runtime.nextDebrisAt) return;
+  if (now < runtime.nextDebrisAt || now < state.nextRubbleSpawnAt || !rubbleCapacityAvailable()
+    || (runtime.activeFallingPieces ?? 0) >= ENDING_NATIVE_FALL_CONFIG.maxActivePieces) return;
   runtime.nextDebrisAt = now + CLIMB_CONFIG.debrisRateMin
     + Math.random() * (CLIMB_CONFIG.debrisRateMax - CLIMB_CONFIG.debrisRateMin);
   const targets = allLivingPawns().filter((pawn) => pawn.GetTeamNumber?.() === 3);
@@ -9315,6 +9726,8 @@ function spawnClimbDebris(runtime, now) {
     if (!physics) return;
     piece.visual = physics;
     runtime.debrisPieces.add(piece);
+    state.activeRubblePieces.add(piece.visual);
+    state.nextRubbleSpawnAt = now + CONFIG.rubbleSpawnInterval;
   } catch (error) {
     runtime.debrisSpawnError = String(error);
   }
@@ -9401,14 +9814,16 @@ function scheduleClimbTimeline(runtime) {
       for (const pawn of allLivingPawns()) pawn.TakeDamage?.({ damage: 999999, damageFlags: CSDamageFlags.FORCE_DEATH ?? 0 });
       resolveStageEnding(false);
     },
-    climb_announce_0: () => announce("[CLIMB ENDING] WE MUST CLIMB THE TOWER"),
-    climb_announce_1: () => announce("[CLIMB ENDING] ONLY THE VERY TOP WILL BE SAFE"),
-    climb_announce_go: () => announce("[CLIMB ENDING] NOW GO!"),
-    climb_announce_rain: () => announce("[CLIMB ENDING] RAIN IS STARTING"),
+    climb_announce_0: () => announceRepeated("[CLIMB ENDING] WE MUST CLIMB THE TOWER"),
+    climb_announce_1: () => announceRepeated("[CLIMB ENDING] ONLY THE VERY TOP WILL BE SAFE"),
+    climb_announce_go: () => announceRepeated("[CLIMB ENDING] NOW GO!"),
+    climb_announce_survive: () => announceRepeated(
+      `[CLIMB ENDING] SURVIVE FOR ${Math.trunc(CLIMB_CONFIG.crumbleTime - 13)}s`),
     climb_announce_crumble: () => announce("[CLIMB ENDING] THE TOWER IS STARTING TO CRUMBLE"),
+    // Source StartCrumble() repeats the spawn-killer notice 0.20s later.
+    climb_announce_respawn: () => announceRepeated("[CLIMB ENDING] RESPAWN IS DISABLED"),
     climb_announce_flight: () => announce("[CLIMB ENDING] THE ANGELS ARE DEAD"),
   };
-  runtime.climbTimelineHandlers = handlers;
   const delays = {
     climb_precipitation: CLIMB_CONFIG.precipitationDelay,
     climb_boost: CLIMB_CONFIG.boostEnableDelay,
@@ -9421,10 +9836,24 @@ function scheduleClimbTimeline(runtime) {
     climb_announce_0: 0,
     climb_announce_1: 1.03,
     climb_announce_go: CLIMB_CONFIG.boostEnableDelay,
-    climb_announce_rain: CLIMB_CONFIG.precipitationDelay,
+    climb_announce_survive: 13,
     climb_announce_crumble: CLIMB_CONFIG.crumbleTime,
+    climb_announce_respawn: CLIMB_CONFIG.crumbleTime + 0.2,
     climb_announce_flight: CLIMB_CONFIG.flightSlayTime,
   };
+  if (!(13 < CLIMB_CONFIG.crumbleTime)) delete handlers.climb_announce_survive;
+  for (const [prefix, total, checkpoints] of [
+    ["[CLIMB ENDING] THE TOWER WILL CRUMBLE IN", CLIMB_CONFIG.crumbleTime, [80, 60, 30, 10, 5, 4, 3, 2, 1]],
+    ["[CLIMB ENDING] THE ANGELS WILL DIE IN", CLIMB_CONFIG.flightSlayTime, [30, 20, 10, 5, 4, 3, 2, 1]],
+  ]) {
+    for (const seconds of checkpoints) {
+      if (total - seconds <= 0) continue;
+      const key = `climb_announce_${total}_${seconds}`;
+      handlers[key] = () => announce(`${prefix} ${seconds}s`);
+      delays[key] = total - seconds;
+    }
+  }
+  runtime.climbTimelineHandlers = handlers;
   for (const [key, callback] of Object.entries(handlers)) endingTaskAt(runtime, at(delays[key]), callback, key);
 }
 
@@ -9859,7 +10288,7 @@ function finishConflictSpawn(runtime) {
     runtime.timeRemaining = CONFLICT_CONFIG.battleTime;
   }, "prepare");
   scheduleConflictItems(runtime);
-  announce(`CONFLICT ending started; defend the flag for ${CONFLICT_CONFIG.battleTime} seconds`);
+  message(`CONFLICT ending started; defend the flag for ${CONFLICT_CONFIG.battleTime} seconds`);
 }
 
 function startConflictEnding(stageSnapshot, sourceRuntime) {
@@ -9875,6 +10304,11 @@ function startConflictEnding(stageSnapshot, sourceRuntime) {
   }
   const runtime = createEndingRuntime("CONFLICT", stageSnapshot, sourceRuntime);
   playEndingMusic(runtime, CONFLICT_CONFIG.music);
+  endingAnnounce(runtime, 0, "[CONFLICT ENDING]", 3);
+  endingAnnounce(runtime, 1.03, "[CONFLICT ENDING] prepare for battle");
+  endingAnnounce(runtime, 2.04, "[CONFLICT ENDING] gather items to defend your flag");
+  endingAnnounce(runtime, 3.05, "[CONFLICT ENDING] if the zombies capture the flag you lose");
+  endingAnnounce(runtime, 4.06, `[CONFLICT ENDING] survive for ~${sqNumber(CONFLICT_CONFIG.battleTime)}s`);
   buildConflictGeometry(runtime);
   return runtime;
 }
@@ -10104,11 +10538,13 @@ function raceLevelRecord(runtime, level, slot, mirrored, entry, incoming, rows, 
     raceSurfaceCounts: Object.create(null),
     raceFeatureCounts: Object.create(null), raceRequestCounts: Object.create(null),
     raceCoverage: new Map(), raceSkippedTiles: [], raceFeatureFallbacks: [],
+    previewTiles: level.tiles.slice(),
     previewRows: rows.map((row) => row.slice()),
     raceBridgeLayerCells: [], raceBridgeLayerCount: 0,
     left,
   };
   state.levels.set(index, record);
+  trackRoundReportLevel(record);
   runtime.raceLevels ??= [];
   runtime.raceLevels.push(record);
   runtime.raceHistory ??= [];
@@ -10230,7 +10666,7 @@ function buildRaceLevel(runtime, slot) {
       raceCount(record, "raceTileCounts", tile);
       const nearest = nearestFloor(rows, x, y);
       const feature = featureKind(tile);
-      const elevation = feature ? sourceNeighborElevation(rows, x, y) : nearest.elevation;
+      const elevation = feature || tile === 90 ? sourceNeighborElevation(rows, x, y) : nearest.elevation;
       const position = raceGridWorld(entry, incoming, markers.entryCenter, x, y, elevation, elevations.entry);
                                                                            
                                                                             
@@ -10342,7 +10778,10 @@ function buildRaceLevel(runtime, slot) {
       const explicit = explicitElevation(tile);
       let terrainPosition = position;
       let terrainAngles = anglesFor(incoming);
-      if (isFloorFamily(family) && explicit !== undefined) {
+      if (family === "wall") {
+        // Walls extend below their origin; retain the ordinary/source +30 levels.
+        terrainPosition = add(position, vec(0, 0, 30 * CONFIG.elevationStep));
+      } else if (isFloorFamily(family) && explicit !== undefined) {
         const slope = slopeShape(family, rows, x, y, explicit, incoming, terrainAngles);
         if (slope.shape.includes("_slope")) {
           record.slopeTemplateBlocked = true;
@@ -10353,6 +10792,11 @@ function buildRaceLevel(runtime, slot) {
         }
       }
       enqueueRaceTerrain(runtime, record, family, terrainPosition, terrainAngles, tile);
+      if (family === "detail") {
+        // DETAIL decorates a road cell; its small model cannot support that cell.
+        const support = sourceNeighborTerrainData(rows, x, y, CONFIG.defaultElevation);
+        enqueueRaceTerrain(runtime, record, support.family ?? "platform", position, terrainAngles, tile);
+      }
     }
   }
   runtime.raceBuildCell = undefined;
@@ -10407,6 +10851,8 @@ function buildRaceLevel(runtime, slot) {
   record.raceSpawnQueuedAt = Instance.GetGameTime();
   runtime.raceLevelBuilds ??= [];
   runtime.raceLevelBuilds.push({ slot, record, queued: record.remaining, requestedAt: runtime.runStartedAt + RACE_CONFIG.generateRequestTimes[slot] });
+  // Source RACE keeps noprint until tofs+16.50, so only checkout maps print.
+  if (Instance.GetGameTime() >= runtime.runStartedAt + 21.5) announceLevelEntry(level);
   return record;
 }
 
@@ -10451,9 +10897,10 @@ function finalizeRaceCheckout(runtime, request, record) {
   while ((runtime.raceLevels?.length ?? 0) > RACE_CONFIG.checkoutHistory) {
     const old = runtime.raceLevels.shift();
     if (!old || old === runtime.raceCurrentLevel) break;
-    destroyEntities(old.entities ?? []);
-    state.spawnQueue = state.spawnQueue.filter((entry) => entry.levelIndex !== old.index);
-    state.levels.delete(old.index);
+    // Retire feature state and callbacks too; native road removal yields across
+    // Thinks instead of killing hundreds of entities in this checkout frame.
+    if (state.levels.get(old.index) === old) destroyLevel(old.index, false, true);
+    else queueEntityKills(old.entities ?? []);
   }
 }
 
@@ -10519,10 +10966,10 @@ function raceConfigureKinematicKartBody(controller) {
   return true;
 }
 
-function setRacePawnControlLocked(pawn, locked) {
+function setRacePawnControlLocked(pawn, locked, restoreMoveType = 1) {
   if (!validEntity(pawn)) return false;
   // CS2 CSMoveType: NONE=0, WALK=1, FLYGRAVITY=2 (not the Source 1 numbering).
-  const moveType = locked ? 0 : 1;
+  const moveType = locked ? 0 : restoreMoveType;
   let applied = false;
   try {
     if (typeof pawn.SetMoveType === "function") {
@@ -10582,7 +11029,9 @@ function enableRaceKartMotion(controller, at = Instance.GetGameTime()) {
     return true;
   }
   if (validEntity(controller.body)) {
-    raceSetCollisionGroup(controller.body, controller.collisionGroup ?? RACE_CONFIG.raceCollisionGroup);
+    // Keep the template's native debris filtering when enabling motion.
+    // RACE may spend seconds frozen after spawning; refresh when released too.
+    queueKartCollisionFilter(controller);
                                                                            
                                                                            
                                                                         
@@ -10599,7 +11048,8 @@ function enableRaceKartMotion(controller, at = Instance.GetGameTime()) {
 }
 
 function kartBodyOrigin(controller) {
-  return controller?.body?.GetAbsOrigin?.() ?? controller?.position;
+  const body = controller?.body;
+  return (validEntity(body) ? body.GetAbsOrigin() : undefined) ?? controller?.position;
 }
 
 function raceKartGroundPosition(position, ignoreEntity) {
@@ -10917,6 +11367,10 @@ function kartMount(controller, pawn, now = Instance.GetGameTime()) {
                                                                        
                                                                      
   controller.previousBodyOwner = controller.body?.GetOwner?.();
+  // RACE preparation may already have frozen the pawn (NONE); release that
+  // case to WALK, while ordinary riders keep their pre-mount movement mode.
+  const moveType = pawn.GetMoveType?.();
+  controller.riderMoveType = Number.isInteger(moveType) && moveType > 0 ? moveType : 1;
   controller.body?.SetOwner?.(pawn);
   const bodyPosition = kartBodyOrigin(controller) ?? controller.position;
   const seatPosition = add(bodyPosition, vec(0, 0, kartRiderLocalZ(controller)));
@@ -10934,6 +11388,7 @@ function kartDismount(controller, now = Instance.GetGameTime(), moveRider = true
     if (controller) {
       if (validEntity(controller.body)) controller.body.SetOwner?.(controller.previousBodyOwner);
       controller.previousBodyOwner = undefined;
+      controller.riderMoveType = undefined;
       controller.rider = undefined;
       controller.pawn = undefined;
       controller.team = undefined;
@@ -10941,11 +11396,16 @@ function kartDismount(controller, now = Instance.GetGameTime(), moveRider = true
     }
     return false;
   }
-  fireTarget(rider, "ClearParent", "");
-  controller.body?.SetOwner?.(controller.previousBodyOwner);
+  // Manual seat sync never parents the rider. Do not queue a ClearParent
+  // after control has been restored, or touch the walking pawn's hierarchy.
+  if (controller.parented) {
+    if (typeof rider.SetParent === "function") rider.SetParent(undefined);
+    else fireTarget(rider, "ClearParent", "");
+  }
+  if (validEntity(controller.body)) controller.body.SetOwner?.(controller.previousBodyOwner);
   controller.previousBodyOwner = undefined;
-  try { rider.SetParent?.(undefined); } catch {                                 }
-  setRacePawnControlLocked(rider, false);
+  setRacePawnControlLocked(rider, false, controller.riderMoveType ?? 1);
+  controller.riderMoveType = undefined;
   if (moveRider) {
     const bodyPosition = kartBodyOrigin(controller) ?? rider.GetAbsOrigin?.();
     if (bodyPosition) rider.Teleport?.({ position: add(bodyPosition, vec(0, 0, KART_CONFIG.dismountZOffset)), velocity: vec() });
@@ -10977,6 +11437,11 @@ function cleanupKartController(runtime, controller, killRider = false) {
   }
   controller.spent = true;
   controller.cleaned = true;
+  // Ending cars cannot be remounted. Retire their update entry as well as
+  // their entities, including cars consumed by a jihad explosion.
+  for (const [pawn, kart] of runtime?.karts ?? []) {
+    if (kart === controller) runtime.karts.delete(pawn);
+  }
 }
 
 function applyKartVisualPose(controller) {
@@ -11022,7 +11487,11 @@ function queueKartCollisionFilter(controller) {
     if (token.round !== state.roundBootstrapSerial || !state.running || state.fatal || !validEntity(pair)) return;
                                                                             
                                                                              
-    fireTarget(pair, "DisableCollisionsWith", "collective_kart_physics");
+    // Both authored attachment sets select all kart bodies. The With input
+    // describes only the first attachment against a supplied second target.
+    // Refresh both sets, including late spawns, after native name registration.
+    fireTarget(pair, "DisableCollisions", "");
+    fireTarget(pair, "DisableCollisions", "", 0.05);
   });
   return true;
 }
@@ -11049,6 +11518,10 @@ function spawnKartController(runtime, position, angles, options = {}) {
     runtime.entities.delete(entity);
   }
   if (!body) throw new Error(`${mode} kart body failed to spawn`);
+  // Physics props can otherwise crush players independently of scripted kart
+  // combat. Track exact spawned entities; do not exempt a rider's other attacks.
+  state.kartImpactEntities.add(body);
+  if (visual) state.kartImpactEntities.add(visual);
   const heading = Number.isFinite(angles?.yaw) ? angles.yaw : 0;
   body.Teleport?.({ position: spawnPosition, angles: { pitch: 0, yaw: heading, roll: 0 }, velocity: vec() });
   if (visual !== body) {
@@ -11104,13 +11577,13 @@ function spawnKartController(runtime, position, angles, options = {}) {
     driveArmed: true,
     physicsTicks: 0, lookTicks: 0, lookAccumulator: 0, lastControl: undefined, fallRescues: 0,
   };
-  raceSetCollisionGroup(body, controller.collisionGroup);
+  // Collision filtering is authored on template_race_kart at physics creation.
+  // SetCollisionGroup is not a supported prop I/O input in the current FGD.
   if (controller.frozen) fireTarget(body, "DisableMotion", "");
   else enableRaceKartMotion(controller);
   applyKartVisualPose(controller);
   queueKartCollisionFilter(controller);
   if (options.rider) kartMount(controller, options.rider, Instance.GetGameTime());
-  if (mode === "ending") raceLog(runtime, `kart motion=physics terrain=physics collisiongroup=${controller.collisionGroup} rider=seat_sync`);
   return controller;
 }
 
@@ -11129,15 +11602,43 @@ function raceKillPawn(pawn) {
   pawn.TakeDamage?.({ damage: 999999, damageFlags: (CSDamageFlags.FORCE_DEATH ?? 0) | (CSDamageFlags.IGNORE_ARMOR ?? 0) });
 }
 
+// Reuse the authored worldtext; deleting it would break the next round.
+function hideRaceDirectionHint(runtime) {
+  const hint = runtime?.raceDirectionHint;
+  if (runtime) runtime.raceDirectionHint = undefined;
+  if (!validEntity(hint)) return;
+  fireTarget(hint, "Disable");
+  hint.Teleport({ position: vec(0, 0, -16384), angles: { pitch: 0, yaw: 0, roll: 0 }, velocity: vec() });
+}
+
+function showRaceDirectionHint(runtime) {
+  const hint = state.raceAnchors?.directionHint;
+  if (!validEntity(hint)) {
+    raceLog(runtime, "GO THIS WAY worldtext missing; check ending_race_direction_hint in the map build");
+    return;
+  }
+  runtime.raceDirectionHint = hint;
+  const position = add(runtime.raceStart, add(mul(runtime.direction, 2000),
+    add(mul(leftOf(runtime.direction), 500), vec(0, 0, 175))));
+  // Source 2 worldtext uses the same upright basis as the spawn-stage label.
+  const angles = { pitch: 0, yaw: normalizeYaw(yawOf(runtime.direction) - 90), roll: 90 };
+  hint.Teleport({ position, angles, velocity: vec() });
+  fireTarget(hint, "SetMessage", "GO THIS WAY");
+  fireTarget(hint, "SetTextColor", "255 255 255");
+  fireTarget(hint, "Enable");
+  endingTaskAt(runtime, Instance.GetGameTime() + 20, () => {
+    if (runtime.raceDirectionHint === hint) hideRaceDirectionHint(runtime);
+  }, `race_${runtime.sequence}_direction_hint_hide`);
+}
+
 function beginRace(runtime) {
-  if (!runtime || runtime.lifecycle !== "active" || runtime.raceStarted) return;
-  runtime.raceStarted = true;
-  runtime.raceStartedAt = Instance.GetGameTime();
-  runtime.raceCheckoutReadyAt = runtime.raceStartedAt + RACE_CONFIG.checkoutGrace;
+  if (!runtime || runtime.lifecycle !== "active" || runtime.raceStarted || runtime.raceKartPreparation) return;
+  runtime.raceKartPreparation = { queue: [], cursor: 0, spawned: 0, maxJobMs: 0, startedAt: Instance.GetGameTime() };
   runtime.raceFrozen = true;
   runtime.orientationCorrections = [];
   runtime.raceStart ??= add(runtime.anchor, vec(0, 0, 12));
   runtime.humanRaceStart ??= add(runtime.raceStart, mul(runtime.direction, 1320));
+  showRaceDirectionHint(runtime);
   const teams = new Map([[2, []], [3, []]]);
   for (const pawn of allLivingPawns()) teams.get(pawn.GetTeamNumber?.())?.push(pawn);
   for (const [team, pawns] of teams) {
@@ -11146,10 +11647,66 @@ function beginRace(runtime) {
     const rowDirection = team === 3 ? -1 : 1;
     for (const [index, slot] of raceStartSlots(pawns.length).entries()) {
       const offset = add(mul(runtime.left, slot.lateral), mul(runtime.direction, rowDirection * slot.row * RACE_CONFIG.startRowSpacing));
-      spawnRaceKart(runtime, pawns[index], add(base, offset));
+      runtime.raceKartPreparation.queue.push({ pawn: pawns[index], team, position: add(base, offset) });
     }
   }
-  announce("RACE ending: GO");
+}
+
+// A kart is atomic (body, visual and mounted rider), but a whole grid is not.
+// Charge initialization as well as ForceSpawn against the shared Think budget.
+function processRaceKartPreparation(runtime) {
+  return withGenerationBudget(() => {
+    const preparation = runtime?.raceKartPreparation;
+    if (!preparation || runtime.lifecycle !== "active" || runtime.raceStarted) return;
+    let jobs = 0;
+    while (preparation.cursor < preparation.queue.length
+      && jobs < RACE_CONFIG.kartSpawnPerThink && generationWorkAvailable()) {
+      const request = preparation.queue[preparation.cursor];
+      if (!validEntity(request.pawn) || !request.pawn.IsAlive?.()
+        || request.pawn.GetTeamNumber?.() !== request.team) {
+        preparation.cursor++;
+        continue;
+      }
+      try {
+        runGenerationWork(() => {
+          const start = generationClock();
+          spawnRaceKart(runtime, request.pawn, request.position);
+          preparation.maxJobMs = Math.max(preparation.maxJobMs, generationClock() - start);
+          preparation.spawned++;
+        });
+      } catch (error) {
+        // One car failing (often a transient world-limit spike) must not end
+        // the round for everyone. Drop that car; its stashed, control-locked
+        // rider cannot race, so remove them instead of leaving them in the sky.
+        preparation.failed = (preparation.failed ?? 0) + 1;
+        const partial = runtime.karts.get(request.pawn);
+        if (partial) cleanupKartController(runtime, partial, false);
+        runtime.raceDiagnostics ??= [];
+        runtime.raceDiagnostics.push(`kart preparation skipped team=${request.team}: ${error}`);
+        message(`[RACE] kart skipped team=${request.team} (${preparation.failed} failed): ${error}`);
+        raceKillPawn(request.pawn);
+      }
+      preparation.cursor++;
+      jobs++;
+    }
+    if (preparation.cursor < preparation.queue.length) return;
+    runtime.raceKartPreparation = undefined;
+    // Every car failing means the kart template itself is broken.
+    if (preparation.spawned === 0 && preparation.failed > 0) {
+      failRuntime(`RACE kart preparation failed: all ${preparation.failed} karts failed to spawn`);
+      return;
+    }
+    runtime.raceStarted = true;
+    runtime.raceStartedAt = Instance.GetGameTime();
+    runtime.raceCheckoutReadyAt = runtime.raceStartedAt + RACE_CONFIG.checkoutGrace;
+    runtime.lastRaceTickAt = runtime.raceStartedAt;
+    // Preserve all countdown/audio/win offsets if preparation outlasts its slot.
+    runtime.raceTimelineDelay = Math.max(0,
+      runtime.raceStartedAt - (runtime.runStartedAt + RACE_CONFIG.startAt));
+    scheduleRaceDrivingTimeline(runtime);
+    raceLog(runtime, `karts ready=${preparation.spawned} failed=${preparation.failed ?? 0} preparation=${(runtime.raceStartedAt - preparation.startedAt).toFixed(2)}s maxJob=${preparation.maxJobMs.toFixed(2)}ms`);
+    message("RACE ending: GO");
+  });
 }
 
 // Source spawned karts at RandomFloat(-280,280) as non-colliding debris
@@ -11413,7 +11970,8 @@ function updateKartController(runtime, controller, elapsed, now = Instance.GetGa
     }
     pawn.Teleport?.({
       position: bodyPosition ? add(bodyPosition, vec(0, 0, kartRiderLocalZ(controller))) : undefined,
-      velocity,
+      // The body owns vehicle momentum; the locked pawn only follows its seat.
+      velocity: vec(),
     });
     controller.riderSyncedAt = now;
     controller.riderSyncedPosition = bodyPosition ? add(bodyPosition, vec(0, 0, kartRiderLocalZ(controller))) : undefined;
@@ -11434,21 +11992,25 @@ function updateRaceKart(runtime, controller, elapsed) {
 }
 
 function processRaceKartFall(runtime, controller, now) {
+  if (!controller || controller.cleaned || controller.spent) return;
   const pawn = controller.rider ?? controller.pawn;
+  // A removed body or pawn keeps its wrapper; reading it throws and used to
+  // abort every later kart, rubble and the checkout for the rest of the round.
+  const pawnOrigin = () => (validEntity(pawn) ? pawn.GetAbsOrigin() : undefined);
   const bodyOrigin = controller.kinematic
     ? controller.position
-    : controller.body?.GetAbsOrigin?.();
+    : validEntity(controller.body) ? controller.body.GetAbsOrigin() : undefined;
   const origin = controller.kinematic
-    ? (bodyOrigin ?? pawn?.GetAbsOrigin?.())
+    ? (bodyOrigin ?? pawnOrigin())
     : controller.physicsSupported
-      ? (bodyOrigin ?? pawn?.GetAbsOrigin?.())
-      : pawn?.GetAbsOrigin?.();
+      ? (bodyOrigin ?? pawnOrigin())
+      : pawnOrigin();
   if (!origin || origin.z >= RACE_CONFIG.absoluteFallZ) return;
                                                                           
                                                                             
                                                                           
                                                               
-  raceSetCollisionGroup(controller.body, controller.collisionGroup ?? RACE_CONFIG.raceCollisionGroup);
+  // Teleporting a fallen kart preserves its authored debris collision filter.
   if (controller.team === 2 && now <= runtime.raceStartedAt + RACE_CONFIG.fallenZombieGrace) {
     const side = Math.random() * (RACE_CONFIG.fallenReturnSide * 2) - RACE_CONFIG.fallenReturnSide;
     const target = add(add(runtime.raceStart, mul(runtime.direction, RACE_CONFIG.fallenReturnOffset)), add(mul(runtime.left, side), vec(0, 0, 40)));
@@ -11474,6 +12036,7 @@ function processRaceKartFall(runtime, controller, now) {
   }
   raceKillPawn(pawn);
   controller.fallenAt = now;
+  cleanupKartController(runtime, controller, false);
 }
 
 function requestKartJihadExplosion(runtime, zombie, target, now) {
@@ -11504,14 +12067,23 @@ function requestKartJihadExplosion(runtime, zombie, target, now) {
 
 function processKartJihad(runtime, controllers, now) {
   const humans = allLivingPawns().filter((pawn) => pawn.GetTeamNumber?.() === 3 && pawn.IsAlive?.());
+  // Native origin reads used to scale as zombies * humans on every Think.
+  // Cache only for this synchronous pass; do not retain positions next frame.
+  let targets;
   for (const zombie of controllers) {
     const rider = zombie.rider ?? zombie.pawn;
     if (zombie.team !== 2 || zombie.exploded || zombie.spent || !rider?.IsAlive?.()) continue;
     const zo = kartBodyOrigin(zombie) ?? rider.GetAbsOrigin?.();
-    const target = humans.find((pawn) => {
-      const ho = pawn.GetAbsOrigin?.();
-      return pawn !== rider && zo && ho && Math.hypot(zo.x - ho.x, zo.y - ho.y, zo.z - ho.z) <= zombie.jihadRange;
-    });
+    if (!zo) continue;
+    targets ??= humans.map(pawn => ({ pawn, position: pawn.GetAbsOrigin?.() }));
+    const radius = zombie.jihadRange;
+    const target = targets.find(({ pawn, position: ho }) => {
+      if (pawn === rider || !ho || !(radius >= 0)) return false;
+      const dx = zo.x - ho.x, dy = zo.y - ho.y, dz = zo.z - ho.z;
+      return dx * dx + dy * dy + dz * dz <= radius * radius
+        // A previous explosion can synchronously kill or infect this target.
+        && validEntity(pawn) && pawn.IsAlive?.() && pawn.GetTeamNumber?.() === 3;
+    })?.pawn;
     if (!target) continue;
     zombie.jihadTouches = (zombie.jihadTouches ?? 0) + 1;
     zombie.exploded = true;
@@ -11533,13 +12105,16 @@ function spawnRacePhysicsRubbleFallback(runtime, request, model) {
                                                                            
                                                                            
                                                                              
-  const candidates = [
+  const preferred = { 25: "race_rubble_elevatorbig", 3: "race_rubble_ladder",
+    95: "race_rubble_holdgeneric", 91: "race_rubble_blockwall" }[request.tile];
+  const candidates = [...new Set([
+    preferred,
     "race_rubble_elevatorbig",
     "race_rubble_blockwall",
     "race_rubble_holdgeneric",
     "race_rubble_ladder",
     "race_kart",
-  ];
+  ].filter(Boolean))];
   for (const key of candidates) {
     const template = state.featureTemplates.get(key);
     if (!template?.IsValid?.() || typeof template.ForceSpawn !== "function") continue;
@@ -11580,9 +12155,10 @@ function spawnRacePhysicsRubbleFallback(runtime, request, model) {
 }
 
 function spawnRaceRubblePiece(runtime, target, now) {
+  const profile = runtime.rubbleProfile ?? RACE_CONFIG;
+  if (!rubbleCapacityAvailable(profile.maxActiveRubble)) return;
   const targetPosition = target.GetAbsOrigin?.();
   if (!targetPosition) return;
-  const profile = runtime.rubbleProfile ?? RACE_CONFIG;
   const angle = Math.random() * Math.PI * 2;
   const distance = profile.rubbleHorizontalMin + Math.random() * (profile.rubbleHorizontalMax - profile.rubbleHorizontalMin);
   const offset = typeof profile.rubbleOffset === "function"
@@ -11597,7 +12173,10 @@ function spawnRaceRubblePiece(runtime, target, now) {
   const themeName = runtime?.kind === "FINALE" && runtime.finaleThemeRandom
     ? chooseFinaleThemeName(runtime)
     : themeProfile(stageSnapshotForRuntime(runtime).theme).name;
-  const themeShape = profile.rubbleThemeShapes[tile] ?? "floor";
+  // Source RACE replaces FLOOR/PLATFORM in the model catalog, including debris.
+  // Keep the original per-tile damage bounds and Finale's model catalog.
+  const raceRoad = runtime.kind === "RACE" && (tile === 25 || tile === 5);
+  const themeShape = raceRoad ? "race_surface" : profile.rubbleThemeShapes[tile] ?? "floor";
   const model = chooseTerrainModel(themeName, themeShape);
                                                                               
                                                                              
@@ -11612,11 +12191,12 @@ function spawnRaceRubblePiece(runtime, target, now) {
     expiresAt: now + profile.rubbleLifetime,
     motionEnableAt: now + 0.10,
     motionDisabledUntil: now + 0.10,
-    collisionGroup: profile.rubbleCollisionGroup,
-    solid: profile.fallSolid,
+    collisionGroup: profile.kinematicFall ? undefined : profile.rubbleCollisionGroup,
+    solid: profile.kinematicFall ? 0 : RACE_CONFIG.fallSolid,
     playerCollision: false,
-    terrainCollision: true,
-    terrainCollisionMode: "physics",
+    terrainCollision: profile.kinematicFall !== true,
+    terrainCollisionMode: profile.kinematicFall ? "none" : "physics",
+    lastUpdateAt: now + 0.10,
     kinematicFall: profile.kinematicFall === true,
     kinematicGravity: profile.kinematicGravity ?? 800,
     damage: profile.debrisDamage ?? RACE_CONFIG.debrisDamage,
@@ -11625,79 +12205,52 @@ function spawnRaceRubblePiece(runtime, target, now) {
     visual: undefined,
   };
   try {
-    const templateKind = tile === 25 ? "elevatorbig" : tile === 3 ? "ladder" : tile === 95 ? "holdgeneric" : tile === 91 ? "blockwall" : undefined;
-    const template = templateKind ? state.featureTemplates.get(`race_rubble_${templateKind}`) : undefined;
-    if (template?.IsValid?.() && typeof template.ForceSpawn === "function") {
-      const spawned = spawnRoundEntities(template, position, rubbleAngles) ?? [];
-      const physics = spawned.find((entity) => validEntity(entity) && String(entity.GetClassName?.() ?? "").toLowerCase() === "prop_physics_override");
-      if (physics) {
-        finalizeSpawned(runtime, { position, angles: rubbleAngles, velocity: vec(), feature: `race_rubble_${tile}`, tile }, spawned);
-        for (const entity of spawned) {
-          if (entity === physics || !validEntity(entity)) continue;
-          entity.Kill?.();
-          runtime.entities.delete(entity);
-        }
-        if (typeof physics.SetModel === "function") {
-          physics.SetModel(model);
-          physics.Teleport?.({ position, angles: rubbleAngles, velocity: vec() });
-          piece.visual = physics;
-          piece.templateKind = templateKind;
-        } else {
-          physics.Kill?.();
-          runtime.entities.delete(physics);
-          piece.visual = spawnRacePhysicsRubbleFallback(runtime, { position, angles: rubbleAngles, velocity: vec(), feature: `race_rubble_${tile}`, tile }, model);
-          piece.templateFallback = true;
-          piece.physicsFallback = true;
-        }
-      } else {
-        for (const entity of spawned) entity?.Kill?.();
-        piece.visual = spawnRacePhysicsRubbleFallback(runtime, { position, angles: rubbleAngles, velocity: vec(), feature: `race_rubble_${tile}`, tile }, model);
-        piece.templateFallback = true;
-        piece.physicsFallback = true;
-      }
+    const request = {
+      position, angles: rubbleAngles, feature: `race_rubble_${tile}`, tile,
+      themeName, themeShape,
+      renderColor: genericRenderColor(tile, themeName) ?? (themeName === "generic" && tile === 91
+        ? { r: 136, g: 84, b: 55, a: 255 } : undefined),
+    };
+    if (piece.kinematicFall) {
+      // Preserve the elevator's existing straight-through trajectory.
+      piece.visual = spawnVisual(runtime, request, model);
+      if (!validEntity(piece.visual)
+        || !["prop_dynamic", "prop_dynamic_override"].includes(piece.visual.GetClassName?.()))
+        throw new Error("elevator rubble requires a dynamic visual");
+      for (const delay of [0, 0.05, 0.3]) fireTarget(piece.visual, "DisableCollision", "", delay);
+      const visualRecord = state.silentHillWorld.visuals.get(piece.visual);
+      if (visualRecord) visualRecord.restore = () => fireTarget(piece.visual, "DisableCollision");
     } else {
-      piece.visual = spawnRacePhysicsRubbleFallback(runtime, { position, angles: rubbleAngles, velocity: vec(), feature: `race_rubble_${tile}`, tile }, model);
-      piece.templateFallback = true;
-      piece.physicsFallback = true;
-      runtime.raceRubbleVisualFallback = true;
-      runtime.raceRubbleVisualNote = "race_rubble_* unavailable; used a prop_physics_override fallback with the same real-physics fall contract";
+      piece.visual = spawnRacePhysicsRubbleFallback(runtime, request, model);
+      if (!raceConfigureFallingDebris(piece.visual, profile.rubbleCollisionGroup ?? RACE_CONFIG.rubbleCollisionGroup))
+        throw new Error("rubble physics body did not spawn");
+      // The engine owns gravity, rotation and terrain collisions after release.
+      fireTarget(piece.visual, "DisableMotion");
+      applyTerrainAppearance(piece.visual, 0, request.renderColor);
+      fireTarget(piece.visual, "SetRenderAlpha", "255");
+      fireTarget(piece.visual, "EnableMotion", "", 0.10);
     }
-    raceConfigureFallingDebris(piece.visual, RACE_CONFIG.rubbleCollisionGroup);
-    if (!validEntity(piece.visual)) throw new Error("rubble physics body did not spawn");
-    spawnRaceRubbleTouch(runtime, piece);
     fireTarget(piece.visual, "Kill", "", profile.rubbleLifetime);
-                                                                           
-                                                                             
-                                                                       
-                                                        
-    if (validEntity(piece.visual)) {
-                                                                            
-                                                                          
-                                                                           
-                              
-      try {
-        piece.visual.SetColor?.({ r: 255, g: 255, b: 255, a: 255 });
-        fireTarget(piece.visual, "SetRenderAlpha", "255");
-      } catch {                                                        }
-      if (piece.kinematicFall) {
-        fireTarget(piece.visual, "DisableMotion");
-        piece.motionEnableQueued = false;
-        piece.scriptMotionQueued = true;
-      } else {
-        fireTarget(piece.visual, "EnableMotion", "", 0.10);
-        piece.motionEnableQueued = true;
-        piece.scriptMotionQueued = false;
-      }
-    }
+    spawnRaceRubbleTouch(runtime, piece);
   } catch (error) {
     cleanupRaceRubblePiece(runtime, piece);
     runtime.raceDiagnostics ??= [];
     runtime.raceDiagnostics.push(`rubble generation failed: ${error}`);
-    failRuntime(`RACE/FINALE falling rubble generation failed: ${error}`);
+    // Rubble is decoration plus chip damage; a failed piece must not end the
+    // round. Back off the shared stream so repeated failures stay cheap.
+    runtime.rubbleFailures = (runtime.rubbleFailures ?? 0) + 1;
+    runtime.rubbleConsecutiveFailures = (runtime.rubbleConsecutiveFailures ?? 0) + 1;
+    const backoff = Math.min(RACE_CONFIG.rubbleFailureBackoffMax,
+      RACE_CONFIG.rubbleFailureBackoff * runtime.rubbleConsecutiveFailures);
+    state.nextRubbleSpawnAt = now + backoff;
+    message(`[RUBBLE] piece skipped (${runtime.rubbleFailures} failed, retry in ${backoff}s): ${error}`);
     return;
   }
+  runtime.rubbleConsecutiveFailures = 0;
   runtime.rubblePieces ??= [];
   runtime.rubblePieces.push(piece);
+  state.activeRubblePieces.add(piece.visual);
+  state.nextRubbleSpawnAt = now + CONFIG.rubbleSpawnInterval;
 }
 
 // Source SpawnDebris used a parented trigger_multiple and OnStartTouch.
@@ -11719,28 +12272,50 @@ function spawnRaceRubbleTouch(runtime, piece) {
   raceSetCollisionGroup(piece.touch, 10);
   piece.touch.SetParent(piece.visual);
   piece.touch.Teleport({ position: piece.position, angles: piece.angles, velocity: vec() });
-  piece.touchConnection = connectOwnedOutput(runtime, piece.touch, "OnStartTouch", (event) => {
-    const now = Instance.GetGameTime();
-    if (state.fatal || piece.expired || now < piece.motionEnableAt || now >= piece.expiresAt
-      || ["destroyed", "outcome_pending", "resolved"].includes(runtime.lifecycle)
-      || !validEntity(piece.visual) || !validEntity(piece.touch)) return;
-    const pawn = resolvePawn(event?.activator);
-    if (!validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 3 || piece.hitPawns.has(pawn)) return;
-    // Reserve before TakeDamage: synchronous damage outputs cannot re-enter
-    // and apply this piece a second time. Roll back only if damage failed.
-    piece.hitPawns.add(pawn);
-    try {
-      if (!damageRaceRubblePawn(pawn, piece.damage, piece.visual)) piece.hitPawns.delete(pawn);
-    } catch (error) {
-      piece.hitPawns.delete(pawn);
-      cleanupRaceRubblePiece(runtime, piece);
-      message(`[RUBBLE] contact damage failed: ${String(error)}`);
-    }
-  });
-  if (piece.touchConnection === undefined || piece.touchConnection === null)
-    throw new Error("rubble OnStartTouch connection failed");
+  state.rubbleTouchRoutes.set(piece.touch, { runtime, piece });
+  // The compiled marker guarantees the five contact templates report through map I/O.
+  // Older compiled maps retain one shared-dispatcher connection per piece.
+  if (!state.rubbleOutputWiringCompiled) {
+    runtime.outputConnections ??= new Set();
+    piece.touchConnection = connectOwnedOutput(runtime, piece.touch, "OnStartTouch", rubbleStartTouch);
+    if (piece.touchConnection === undefined || piece.touchConnection === null)
+      throw new Error("rubble OnStartTouch connection failed");
+  }
   fireTarget(piece.touch, "Enable", "", 0.10);
   fireTarget(piece.touch, "Kill", "", piece.expiresAt - piece.spawnedAt);
+}
+
+// Both native map I/O and the legacy output dispatcher use caller identity.
+function rubbleStartTouch(event) {
+  const route = state.rubbleTouchRoutes.get(event?.caller);
+  if (!route) return;
+  const { runtime, piece } = route;
+  const now = Instance.GetGameTime();
+  if (state.fatal || piece.expired || now < piece.motionEnableAt || now >= piece.expiresAt
+    || ["destroyed", "outcome_pending", "resolved"].includes(runtime.lifecycle)
+    || !validEntity(piece.visual) || !validEntity(piece.touch)) return;
+  const pawn = resolvePawn(event?.activator);
+  if (!validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 3 || piece.hitPawns.has(pawn)) return;
+  // Reserve before TakeDamage: synchronous damage outputs cannot re-enter
+  // and apply this piece a second time. Roll back only if damage failed.
+  piece.hitPawns.add(pawn);
+  try {
+    if (!damageRaceRubblePawn(pawn, piece.damage, piece.visual)) piece.hitPawns.delete(pawn);
+  } catch (error) {
+    piece.hitPawns.delete(pawn);
+    cleanupRaceRubblePiece(runtime, piece);
+    message(`[RUBBLE] contact damage failed: ${String(error)}`);
+  }
+}
+
+function stepRaceRubblePiece(piece, now) {
+  const start = clone(piece.position);
+  const dt = Math.min(0.1, Math.max(0, now - piece.lastUpdateAt));
+  piece.lastUpdateAt = now;
+  piece.velocity.z -= piece.kinematicGravity * dt;
+  const next = add(start, mul(piece.velocity, dt));
+  piece.position = next;
+  piece.visual.Teleport({ position: next, angles: piece.angles, velocity: vec() });
 }
 
 function damageRaceRubblePawn(pawn, damage, inflictor) {
@@ -11761,6 +12336,7 @@ function damageRaceRubblePawn(pawn, damage, inflictor) {
 
 function cleanupRaceRubblePiece(runtime, piece) {
   piece.expired = true;
+  state.rubbleTouchRoutes.delete(piece.touch);
   if (piece.touchConnection !== undefined && piece.touchConnection !== null) {
     if (state.outputConnections.has(piece.touchConnection)) disconnectEntityOutput(piece.touchConnection);
     runtime.outputConnections?.delete(piece.touchConnection);
@@ -11768,55 +12344,61 @@ function cleanupRaceRubblePiece(runtime, piece) {
     piece.touchConnection = undefined;
   }
   for (const entity of [piece.touch, piece.hurt, piece.visual]) {
+    state.activeRubblePieces.delete(entity);
     if (validEntity(entity)) entity.Kill?.();
     runtime.entities.delete(entity);
+    state.roundEntities.delete(entity);
+    state.silentHillWorld.visuals.delete(entity);
   }
 }
 
 function processRaceRubble(runtime, now) {
+  if (state.fatal || ["destroyed", "outcome_pending", "resolved"].includes(runtime.lifecycle)) {
+    for (const piece of runtime.rubblePieces ?? []) cleanupRaceRubblePiece(runtime, piece);
+    runtime.rubblePieces = [];
+    runtime.rubbleTarget = undefined;
+    return;
+  }
   const rubbleActive = runtime.raceRubbleStarted || runtime.finaleElevatorDebrisStarted;
   if (!rubbleActive) return;
   const profile = runtime.rubbleProfile ?? RACE_CONFIG;
   runtime.rubbleSpawnedCount ??= 0;
   runtime.nextRubbleAt ??= now;
   const underLimit = profile.spawnLimit === undefined || runtime.rubbleSpawnedCount < profile.spawnLimit;
-  if (!runtime.raceRubbleStopped && underLimit && now >= runtime.nextRubbleAt) {
-    const humans = runtime.finaleElevatorDebrisStarted ? []
-      : allLivingPawns().filter((pawn) => pawn.GetTeamNumber?.() === 3 && pawn.IsAlive?.());
-                                                                        
-                                                                            
-                                                                     
-    const elevatorOrigin = runtime.finaleElevatorDebrisOrigin ?? runtime.finaleElevatorTarget
-      ?? runtime.bossArena?.center ?? runtime.anchor;
-    const target = runtime.finaleElevatorDebrisStarted
-      ? { GetAbsOrigin: () => clone(elevatorOrigin) }
-      : humans[Math.floor(Math.random() * Math.max(1, humans.length))];
-    if (target) spawnRaceRubblePiece(runtime, target, now);
-    if (target) runtime.rubbleSpawnedCount++;
-    runtime.nextRubbleAt = now + profile.rubbleIntervalMin + Math.random() * (profile.rubbleIntervalMax - profile.rubbleIntervalMin);
+  if (!runtime.raceRubbleStopped && underLimit && now >= runtime.nextRubbleAt && now >= state.nextRubbleSpawnAt
+    && rubbleCapacityAvailable(profile.maxActiveRubble)) {
+    let target;
+    if (runtime.finaleElevatorDebrisStarted) {
+      const elevatorOrigin = runtime.finaleElevatorDebrisOrigin ?? runtime.finaleElevatorTarget
+        ?? runtime.bossArena?.center ?? runtime.anchor;
+      target = { GetAbsOrigin: () => clone(elevatorOrigin) };
+    } else {
+      // Source TickFinaleRubble keeps its target until it stops being a living CT.
+      target = runtime.rubbleTarget;
+      if (!validEntity(target) || !target.IsAlive?.() || target.GetTeamNumber?.() !== 3) {
+        const humans = allLivingPawns().filter(pawn => pawn.GetTeamNumber?.() === 3);
+        target = runtime.rubbleTarget = humans.length
+          ? humans[Math.floor(Math.random() * humans.length)] : undefined;
+      }
+    }
+    if (!target || runGenerationWork(() => spawnRaceRubblePiece(runtime, target, now))) {
+      if (target) runtime.rubbleSpawnedCount++;
+      runtime.nextRubbleAt = now + profile.rubbleIntervalMin + Math.random() * (profile.rubbleIntervalMax - profile.rubbleIntervalMin);
+    }
   }
   if (!underLimit && runtime.finaleElevatorDebrisStarted) runtime.finaleElevatorDebrisDone = true;
   for (const piece of runtime.rubblePieces ?? []) {
-                                                                          
-                                                                          
+    if (state.fatal || ["destroyed", "outcome_pending", "resolved"].includes(runtime.lifecycle)) break;
     if (piece.expiresAt <= now || piece.damageMode !== "native_touch" || piece.hurt
       || !validEntity(piece.visual) || !validEntity(piece.touch)) {
       cleanupRaceRubblePiece(runtime, piece);
       continue;
     }
-    if (piece.kinematicFall) {
-      const t = Math.max(0, now - piece.motionEnableAt);
-      const drop = 0.5 * piece.kinematicGravity * t * t;
-      piece.visual.Teleport?.({
-        position: vec(piece.position.x, piece.position.y, piece.position.z - drop),
-        angles: piece.angles,
-        velocity: vec(0, 0, -piece.kinematicGravity * t),
-      });
-    }
-    // The engine moves the child trigger and emits contact outputs. This
-    // pass only retires bodies/connections; no piece-by-player polling.
+    if (now < piece.motionEnableAt) continue;
+    // Native physics moves ordinary rubble and its child trigger.
+    if (piece.kinematicFall) stepRaceRubblePiece(piece, now);
   }
-  runtime.rubblePieces = runtime.rubblePieces.filter((piece) => !piece.expired);
+  runtime.rubblePieces = runtime.rubblePieces.filter(piece => !piece.expired);
 }
 
 function racePawnInStageBox(runtime, pawn) {
@@ -11963,13 +12545,16 @@ function clearRaceOldTransient(runtime) {
 
 function cleanupRaceRuntime(runtime) {
   if (!runtime || runtime.kind !== "RACE" || runtime.raceCleanupDone) return;
+  hideRaceDirectionHint(runtime);
   for (const controller of runtime.karts?.values?.() ?? []) {
     cleanupKartController(runtime, controller, false);
   }
   releaseRacePreparationPlayers(runtime);
   runtime.karts?.clear?.();
+  runtime.raceKartPreparation = undefined;
   for (const piece of runtime.rubblePieces ?? []) cleanupRaceRubblePiece(runtime, piece);
   runtime.rubblePieces = [];
+  runtime.rubbleTarget = undefined;
   for (const record of runtime.raceLevels ?? []) {
     if (state.levels.get(record.index) === record) destroyLevel(record.index, false);
     else destroyEntities(record.entities ?? []);
@@ -12064,6 +12649,19 @@ function scheduleRaceTimeline(runtime) {
     runtime.tpCapturedAt = Instance.GetGameTime();
   });
   at(RACE_CONFIG.startAt, "start", () => beginRace(runtime));
+  // Source ENDINGS.RACE.Run() chat (tofs = 5s).
+  for (const [time, text, times] of [[5, "[RACE ENDING]", 3], [6.03, "[RACE ENDING] prepare to race..."],
+    [7.04, `[RACE ENDING] survive for ${sqNumber(RACE_CONFIG.winTime - 23)}s (or z-team-death) to win`],
+    [8.05, "[RACE ENDING] zombies jihad-explode if they touch you"],
+    [9.06, "[RACE ENDING] drive fast to stay away from them"],
+    [10.07, "[RACE ENDING] may only the best racist win!"]]) {
+    at(time, `chat_${time}`, () => announceRepeated(text, times ?? 1));
+  }
+}
+
+function scheduleRaceDrivingTimeline(runtime) {
+  const at = (time, key, callback) => endingTaskAt(runtime,
+    runtime.runStartedAt + time + runtime.raceTimelineDelay, callback, `race_${runtime.sequence}_${key}`);
   for (let index = 0; index < RACE_CONFIG.orientationCount; index++) {
     at(RACE_CONFIG.orientationStart + index * RACE_CONFIG.orientationInterval, `orientation_${index}`, () => applyRaceOrientation(runtime));
   }
@@ -12084,8 +12682,14 @@ function scheduleRaceTimeline(runtime) {
   at(RACE_CONFIG.musicAt, "music", () => {
     playRaceMusic(runtime);
     runtime.raceBgmStartedAt = Instance.GetGameTime();
-    runtime.nextRaceMusicAt = runtime.runStartedAt + RACE_CONFIG.musicAt + RACE_CONFIG.musicRepeat;
+    runtime.nextRaceMusicAt = runtime.runStartedAt + runtime.raceTimelineDelay + RACE_CONFIG.musicAt + RACE_CONFIG.musicRepeat;
   });
+  // Source schedules these at win_time - N without tofs, i.e. 5s before EndWin.
+  for (const seconds of [80, 60, 30, 10, 5, 4, 3, 2, 1]) {
+    if (RACE_CONFIG.winTime - seconds <= 0) continue;
+    at(RACE_CONFIG.winTime - seconds, `human_win_${seconds}`,
+      () => announce(`[RACE ENDING] HUMAN-WIN IN ${seconds}s`));
+  }
   at(RACE_CONFIG.killZombiesAt, "kill_zombies", () => finishRaceRound(runtime));
   at(RACE_CONFIG.massFallbackAt, "mass_fallback", () => {
     runtime.massFallbackAt = Instance.GetGameTime();
@@ -12125,7 +12729,7 @@ function finishRaceSpawn(runtime) {
     kart: state.featureTemplates.has("race_kart"),
     surfaceFlat: state.featureTemplates.has("race_surface_flat"),
     surfaceSlope: [0, 90, 180, 270].every((yaw) => state.featureTemplates.has(`race_surface_slope_yaw${yaw}`)),
-    rubble: ["elevatorbig", "blockwall", "holdgeneric", "ladder"].every((kind) => state.featureTemplates.has(`race_rubble_${kind}`)),
+    rubble: validEntity(state.featureTemplates.get("model")),
     jihad: state.featureTemplates.has("race_jihad"),
     directionHint: validEntity(state.raceAnchors?.directionHint),
     fade: validEntity(state.raceAnchors?.fade),
@@ -12161,9 +12765,7 @@ function finishRaceSpawn(runtime) {
     maxY: Math.max(runtime.raceStart.y, runtime.raceFinish.y) + RACE_CONFIG.gridSize * 10,
   };
   scheduleRaceTimeline(runtime);
-  endingAnnounce(runtime, 0, "RACE ENDING: GET READY TO RACE");
-  endingCountdown(runtime, RACE_CONFIG.startAt, "RACE ENDING STARTS IN", [10, 5, 3, 2, 1]);
-  announce("RACE ending started; authored RACE levels are generating");
+  message("RACE ending started; authored RACE levels are generating");
 }
 
 function startRaceEnding(stageSnapshot, sourceRuntime) {
@@ -12186,6 +12788,13 @@ function startRaceEnding(stageSnapshot, sourceRuntime) {
   }
   if (RACE_LEVELS.length !== 50) throw new Error(`RACE requires exactly 50 playable authored levels after removing the simplified course, got ${RACE_LEVELS.length}`);
   const runtime = createEndingRuntime("RACE", stageSnapshot, sourceRuntime);
+  // Author-approved deviation: Source lets BLOODLUST tick on into RACE, where the
+  // ~23s kart preparation gives humans nothing to shoot and drains them at 4 HP/s.
+  for (const event of [...state.genericEvents.active.values()]) {
+    if (event.name !== "BLOODLUST") continue;
+    endGenericEvent(event);
+    announceRepeated("The bloodthirst has ended!");
+  }
   runtime.raceProfile = undefined;
   runtime.remaining = 0;
   finishRaceSpawn(runtime);
@@ -12199,6 +12808,7 @@ function processRaceEnding(runtime = state.endingRuntime) {
                                                                           
                                                              
     lockRacePreparationPlayers(runtime, runtime.playersStashedAt !== undefined);
+    processRaceKartPreparation(runtime);
     return;
   }
   if (runtime.nextRaceMusicAt !== undefined && now + 1e-6 >= runtime.nextRaceMusicAt) {
@@ -12209,9 +12819,22 @@ function processRaceEnding(runtime = state.endingRuntime) {
     const elapsed = Math.max(RACE_CONFIG.physicsTick, Math.min(0.1, now - (runtime.lastRaceTickAt ?? now)));
     runtime.lastRaceTickAt = now;
     for (const controller of runtime.karts.values()) {
-      updateRaceKart(runtime, controller, elapsed);
-      processRaceKartFall(runtime, controller, now);
-      if (controller.team === 2 && (controller.pawn.GetHealth?.() ?? 0) > RACE_CONFIG.zombieHealthCap) controller.pawn.SetHealth?.(RACE_CONFIG.zombieHealthCap);
+      // One broken kart must not stop the others, the rubble or the checkout.
+      try {
+        const pawn = controller.rider ?? controller.pawn;
+        if (controller.cleaned || controller.spent || controller.exploded
+          || !validEntity(controller.body) || !validEntity(pawn) || !pawn.IsAlive?.()) {
+          cleanupKartController(runtime, controller, false);
+          continue;
+        }
+        updateRaceKart(runtime, controller, elapsed);
+        processRaceKartFall(runtime, controller, now);
+        if (controller.team === 2 && validEntity(controller.pawn)
+          && (controller.pawn.GetHealth?.() ?? 0) > RACE_CONFIG.zombieHealthCap) controller.pawn.SetHealth?.(RACE_CONFIG.zombieHealthCap);
+      } catch (error) {
+        reportGuardedError(`raceKart(team=${controller.team}, body=${validEntity(controller.body)}, `
+          + `pawn=${validEntity(controller.pawn)}, rider=${validEntity(controller.rider)}, kinematic=${!!controller.kinematic})`, error);
+      }
     }
   }
   processRaceJihad(runtime, now);
@@ -12227,15 +12850,22 @@ function finaleStructurePosition(runtime, forwardCell, sideCell, elevation = 0) 
 }
 
 function spawnFinaleItemList(runtime, names, team, basePosition, rolePrefix, options = {}) {
+  return drainGenerationSteps(spawnFinaleItemListSteps(runtime, names, team, basePosition, rolePrefix, options));
+}
+
+function* spawnFinaleItemListSteps(runtime, names, team, basePosition, rolePrefix, options = {}) {
   if (!runtime || !Array.isArray(names) || !basePosition) return 0;
   let spawned = 0;
   for (let index = 0; index < names.length; index++) {
     const name = names[index];
-    const position = add(basePosition, vec(
+    const offset = options.sideSpread !== undefined
+      ? add(mul(runtime.left, (Math.random() * 2 - 1) * options.sideSpread), vec(0, 0, Number(options.zOffset ?? 40)))
+      : vec(
       Math.floor(Math.random() * 341) - 170,
       Math.floor(Math.random() * 341) - 170,
       Number(options.zOffset ?? 40),
-    ));
+    );
+    const position = add(basePosition, offset);
     try {
       spawnItemFeature(runtime, {
         kind: "feature",
@@ -12255,11 +12885,16 @@ function spawnFinaleItemList(runtime, names, team, basePosition, rolePrefix, opt
       runtime.finaleItemErrors.push({ team, name, index, error: String(error) });
       message(`[FINALE DEBUG] ${rolePrefix} item '${name}' failed: ${error}`);
     }
+    yield;
   }
   return spawned;
 }
 
 function spawnFinaleHumanItems(runtime) {
+  return drainGenerationSteps(spawnFinaleHumanItemSteps(runtime));
+}
+
+function* spawnFinaleHumanItemSteps(runtime) {
   if (!runtime || runtime.bossMode !== "boss" || runtime.finaleHumanItemsSpawned) return 0;
   const structure = runtime.finaleStructure;
                                                                      
@@ -12272,7 +12907,7 @@ function spawnFinaleHumanItems(runtime) {
     (structure?.bridgeHeight ?? 0) + FINALE_STRUCTURE_CONFIG.elevatorFloorElevation,
   );
   const names = runtime.infinite ? FINALE_ITEM_CONFIG.humanInfinite : FINALE_ITEM_CONFIG.human;
-  const count = spawnFinaleItemList(runtime, names, 3, base, "finale_human", { zOffset: 70 });
+  const count = yield* spawnFinaleItemListSteps(runtime, names, 3, base, "finale_human", { zOffset: 70 });
   runtime.finaleHumanItemsSpawned = true;
   runtime.finaleHumanItemsSpawnedAt = Instance.GetGameTime();
   runtime.finaleHumanItemCount = count;
@@ -12296,11 +12931,17 @@ function finaleZombieItemAnchor(runtime) {
 }
 
 function spawnFinaleZombieItems(runtime) {
+  return drainGenerationSteps(spawnFinaleZombieItemSteps(runtime));
+}
+
+function* spawnFinaleZombieItemSteps(runtime) {
   if (!runtime || runtime.bossMode !== "boss" || runtime.finaleZombieItemsSpawned) return 0;
   const base = finaleZombieItemAnchor(runtime);
   if (!base) return 0;
   const names = runtime.infinite ? FINALE_ITEM_CONFIG.zombieInfinite : FINALE_ITEM_CONFIG.zombie;
-  const count = spawnFinaleItemList(runtime, names, 2, base, "finale_zombie", { zOffset: 0 });
+  // Source spreads along the long side only; forward jitter can leave this narrow platform.
+  const sideSpread = (FINALE_BOSS_CONFIG.zPlatformLength - 0.5) * CONFIG.gridSize / 2;
+  const count = yield* spawnFinaleItemListSteps(runtime, names, 2, base, "finale_zombie", { zOffset: 0, sideSpread });
   runtime.finaleZombieItemsSpawned = true;
   runtime.finaleZombieItemsSpawnedAt = Instance.GetGameTime();
   runtime.finaleZombieItemCount = count;
@@ -12416,6 +13057,40 @@ function finaleLowgravGeometry(request) {
     mins: { x: -width, y: -width, z: -depth },
     maxs: { x: width, y: width, z: 0 },
   };
+}
+
+// Per-Think lowgrav polling data in the runtime's along/side frame. Rebuilt
+// when the request list is replaced or grows.
+function finaleLowgravZones(runtime, structure) {
+  const requests = structure.lowgravRequests ?? [];
+  const cached = structure.lowgravZoneCache;
+  if (cached && cached.requests === requests && cached.count === requests.length
+    && cached.direction === runtime.direction) return cached;
+  const zones = { requests, count: requests.length, direction: runtime.direction, list: [],
+    minAlong: Infinity, maxAlong: -Infinity, minSide: Infinity, maxSide: -Infinity,
+    minZ: Infinity, maxZ: -Infinity };
+  for (const request of requests) {
+    const geometry = finaleLowgravGeometry(request);
+    const zone = {
+      role: request.role,
+      source: `${runtime.index}:finale_lowgrav:${request.role}`,
+      along: request.position.x * runtime.direction.x + request.position.y * runtime.direction.y,
+      side: request.position.x * runtime.left.x + request.position.y * runtime.left.y,
+      halfAlong: geometry.maxs.x,
+      halfSide: geometry.maxs.y,
+      minZ: request.position.z + geometry.mins.z,
+      maxZ: request.position.z + geometry.maxs.z,
+    };
+    zones.list.push(zone);
+    zones.minAlong = Math.min(zones.minAlong, zone.along - zone.halfAlong);
+    zones.maxAlong = Math.max(zones.maxAlong, zone.along + zone.halfAlong);
+    zones.minSide = Math.min(zones.minSide, zone.side - zone.halfSide);
+    zones.maxSide = Math.max(zones.maxSide, zone.side + zone.halfSide);
+    zones.minZ = Math.min(zones.minZ, zone.minZ);
+    zones.maxZ = Math.max(zones.maxZ, zone.maxZ);
+  }
+  structure.lowgravZoneCache = zones;
+  return zones;
 }
 
 function queueFinaleLowgravVisual(runtime, position, role, height) {
@@ -12565,6 +13240,13 @@ function buildFinaleTower(runtime) {
 }
 
 function createFinaleNativeLift(runtime, pieces, displacement, speed, feature, onArrived) {
+  const steps = createFinaleNativeLiftSteps(runtime, pieces, displacement, speed, feature, onArrived);
+  let result;
+  do { result = steps.next(); } while (!result.done);
+  return result.value;
+}
+
+function* createFinaleNativeLiftSteps(runtime, pieces, displacement, speed, feature, onArrived) {
   const members = pieces.filter(piece => (piece.entities ?? []).some(validEntity));
   const first = members[0]?.entities.find(validEntity);
   if (!first) throw new Error(`${feature}: no spawned lift pieces`);
@@ -12575,6 +13257,7 @@ function createFinaleNativeLift(runtime, pieces, displacement, speed, feature, o
   runtime.finaleNativeLifts ??= new Set();
   runtime.finaleNativeLifts.add(lift);
   try {
+    yield;
     for (const piece of members) {
       for (const entity of piece.entities ?? []) {
         if (!validEntity(entity)) continue;
@@ -12582,6 +13265,7 @@ function createFinaleNativeLift(runtime, pieces, displacement, speed, feature, o
         const angles = entity.GetAbsAngles?.();
         entity.SetParent(lift.driver);
         entity.Teleport({ position, ...(angles ? { angles } : {}), velocity: vec() });
+        yield;
       }
     }
     lift.connections.push(connectOwnedOutput(runtime, lift.driver, "OnFullyOpen", () => {
@@ -12614,12 +13298,30 @@ function retireFinaleNativeLift(runtime, lift) {
   releaseNativeMoverLeg(runtime, lift);
 }
 
+function* prepareFinaleTowerDoorSteps(runtime) {
+  const door = runtime.finaleStructure.towerDoor;
+  try {
+    door.nativeLift = yield* createFinaleNativeLiftSteps(runtime, door.panelPieces,
+      vec(0, 0, 10 * CONFIG.elevationStep), door.speed, "finaleTowerDoor",
+      () => { door.offset = 10 * CONFIG.elevationStep; });
+    door.nativeLift.connections.push(connectOwnedOutput(runtime, door.nativeLift.driver, "OnFullyClosed", () => {
+      door.offset = 0;
+    }));
+    // An opening deadline can pass while the shared build budget is busy.
+    // Apply the latest request only after every panel has been attached.
+    if (door.state === "open") fireTarget(door.nativeLift.driver, "Open");
+  } finally {
+    door.preparing = false;
+  }
+}
+
 function setFinaleTowerDoorState(runtime, stateName) {
   const door = runtime?.finaleStructure?.towerDoor;
   if (!door || runtime.finaleStructure.approachCleanupDone) return false;
   const state = stateName === "open" ? "open" : "closed";
   door.state = state;
   door.targetOffset = state === "open" ? 10 * CONFIG.elevationStep : 0;
+  if (door.preparing) return true;
   if (!door.nativeLift) {
     door.nativeLift = createFinaleNativeLift(runtime, door.panelPieces, vec(0, 0, 10 * CONFIG.elevationStep),
       door.speed, "finaleTowerDoor", () => { door.offset = 10 * CONFIG.elevationStep; });
@@ -12752,7 +13454,9 @@ function spawnFinaleLowgravTriggers(runtime) {
     return;
   }
   runtime.finaleStructure.lowgravSupported = true;
-  for (const request of runtime.finaleStructure.lowgravRequests) {
+  for (const request of runtime.finaleStructure.lowgravRequests) queueFinaleBuildJob(runtime, () => {
+    // Queued jobs may run after disableFinaleLowgrav; do not respawn then.
+    if (runtime.finaleStructure.lowgravDisabled) return;
     try {
       const geometry = finaleLowgravGeometry(request);
       const trigger = spawnTriggerVolume(runtime, {
@@ -12795,14 +13499,15 @@ function spawnFinaleLowgravTriggers(runtime) {
       runtime.finaleStructure.notes.push(`lowgrav trigger ${request.role} failed: ${error}`);
       message(`[FINALE DEBUG] lowgrav trigger '${request.role}' failed: ${error}`);
     }
-  }
+  });
 }
 
 function spawnFinaleLowgravVisuals(runtime) {
   const structure = runtime?.finaleStructure;
   if (!runtime || !structure || structure.lowgravVisualsSpawned) return;
   structure.lowgravVisualsSpawned = true;
-  for (const request of structure.lowgravVisualRequests ?? []) {
+  for (const request of structure.lowgravVisualRequests ?? []) queueFinaleBuildJob(runtime, () => {
+    if (structure.lowgravDisabled) return;
     try {
       const visual = spawnVisual(runtime, {
         position: request.position,
@@ -12832,7 +13537,7 @@ function spawnFinaleLowgravVisuals(runtime) {
       structure.notes.push(`lowgrav visual ${request.role} failed: ${error}`);
       message(`[FINALE DEBUG] lowgrav visual '${request.role}' failed: ${error}`);
     }
-  }
+  }, { manualTile: true });
 }
 
 function disableFinaleLowgrav(runtime) {
@@ -12874,9 +13579,17 @@ function queueFinaleBossArena(runtime) {
 }
 
 function spawnFinaleZElevators(runtime) {
+  return drainGenerationSteps(spawnFinaleZElevatorSteps(runtime));
+}
+
+function* spawnFinaleZElevatorSteps(runtime) {
   const arena = runtime.bossArena;
   if (!arena || arena.zElevators.length > 0) return;
+  const left = runtime.left ?? leftOf(runtime.direction);
   for (const platform of arena.zPlatform) {
+    // Source spawns one elevator per qualifying y (outside the width loop),
+    // at forward size+dist-1 and lateral y, not on the tile row center y+0.5.
+    if ((platform.width ?? 0) !== 0) continue;
     if (platform.y % FINALE_BOSS_CONFIG.zPlatformElevatorModulo !== 0) continue;
                                                                               
                                                                           
@@ -12886,7 +13599,9 @@ function spawnFinaleZElevators(runtime) {
     const model = chooseTerrainModel(theme, "elevator");
                                                                          
                                                                          
-    const start = add(platform.position, mul(runtime.direction, -CONFIG.gridSize));
+    const lateral = Number.isFinite(platform.side) ? platform.y - platform.side : 0;
+    const start = add(platform.position, add(mul(runtime.direction, -CONFIG.gridSize),
+      mul(left, lateral * CONFIG.gridSize)));
     const visual = spawnModelBlock(runtime, {
       position: start,
       angles: anglesFor(runtime.direction, true),
@@ -12900,7 +13615,7 @@ function spawnFinaleZElevators(runtime) {
       target: add(start, mul(runtime.direction, -(FINALE_BOSS_CONFIG.zPlatformDistance - 1) * CONFIG.gridSize)),
       position: clone(start),
       speed: FINALE_BOSS_CONFIG.zPlatformElevatorSpeed,
-      startAt: undefined,
+      startAt: Infinity,
       started: false,
       waitUntil: undefined,
       direction: 1,
@@ -12918,6 +13633,7 @@ function spawnFinaleZElevators(runtime) {
       mover.direction = 1;
       mover.waitUntil = Instance.GetGameTime() + FINALE_BOSS_CONFIG.zPlatformElevatorWait;
     }));
+    yield;
   }
                                                                            
                                                                            
@@ -12952,16 +13668,16 @@ function finishFinaleBossArenaSpawn(runtime) {
   runtime.lifecycleHistory.push("active");
   runtime.finaleStructure.arenaSpawned = true;
   if (runtime.debugDirectBoss !== true) {
-    spawnFinaleZElevators(runtime);
-    spawnFinaleZombieItems(runtime);
-    spawnFinaleBossIdleEyes(runtime);
+    queueFinaleBuildJob(runtime, spawnFinaleZElevatorSteps(runtime), { fatal: "Finale Z elevators" });
+    queueFinaleBuildJob(runtime, spawnFinaleZombieItemSteps(runtime), { fatal: "Finale zombie items" });
+    queueFinaleBuildJob(runtime, spawnFinaleBossIdleEyeSteps(runtime), { fatal: "Finale boss idle eyes" });
   }
   if (runtime.debugDirectBoss === true) {
     const structure = runtime.finaleStructure;
     structure.zPlatformTp = add(runtime.bossArena.center,
       add(mul(runtime.direction, (FINALE_BOSS_CONFIG.arenaHalfSize + FINALE_BOSS_CONFIG.zPlatformDistance) * CONFIG.gridSize),
         vec(0, 0, FINALE_BOSS_CONFIG.zPlatformHeight * CONFIG.elevationStep + 8)));
-    moveTeleportDestination(structure.zPlatformTp, runtime.direction, true);
+    moveTeleportDestination(structure.zPlatformTp, mul(runtime.direction, -1));
     structure.bossReady = true;
     runtime.finalBossReadyAt = Instance.GetGameTime();
     startFinaleBossFight(runtime);
@@ -12973,7 +13689,7 @@ function finishFinaleBossArenaSpawn(runtime) {
       const spot = team === 3 ? humanSpot : team === 2 ? zombieSpot : undefined;
       if (spot) pawn.Teleport?.({ position: spot, angles: anglesFor(runtime.direction), velocity: vec() });
     }
-    announce("DEBUG: direct Boss arena ready");
+    consoleNotice("DEBUG: direct Boss arena ready");
   }
   flushEndingTimeline(runtime, {
     finaleArenaTeleport: () => releaseFinaleArenaTeleport(runtime),
@@ -12990,6 +13706,10 @@ function startFinaleStructureTimeline(runtime) {
   runtime.finaleStructurePhase = "bridge";
   runtime.finalBossReadyAt = undefined;
   structure.bossReady = false;
+  // Prepare the pusher and attach panels under the shared generation budget,
+  // before the long low-gravity visual queue. Opening then only sends I/O.
+  structure.towerDoor.preparing = true;
+  queueFinaleBuildJob(runtime, prepareFinaleTowerDoorSteps(runtime), { fatal: "Finale tower door" });
                                                                             
                                                                           
                                                                             
@@ -13009,7 +13729,7 @@ function startFinaleStructureTimeline(runtime) {
                                                                          
                                                                               
                                              
-  spawnFinaleHumanItems(runtime);
+  queueFinaleBuildJob(runtime, spawnFinaleHumanItemSteps(runtime), { fatal: "Finale human items" });
   endingTaskAt(runtime, runtime.runStartedAt + FINALE_STRUCTURE_CONFIG.antiBoostStartDelay, () => {
     structure.antiBoostEnabled = true;
     structure.nextAntiBoostAt = Instance.GetGameTime();
@@ -13097,7 +13817,7 @@ function releaseFinaleArenaTeleport(runtime) {
   structure.zPlatformTp = add(runtime.bossArena.center,
     add(mul(runtime.direction, (FINALE_BOSS_CONFIG.arenaHalfSize + FINALE_BOSS_CONFIG.zPlatformDistance) * CONFIG.gridSize),
       vec(0, 0, FINALE_BOSS_CONFIG.zPlatformHeight * CONFIG.elevationStep + 8)));
-  moveTeleportDestination(structure.zPlatformTp, runtime.direction, true);
+  moveTeleportDestination(structure.zPlatformTp, mul(runtime.direction, -1));
   for (const piece of runtime.finaleTowerPieces ?? []) {
     if (!String(piece?.role ?? "").startsWith("finale_tower_tp_floor_")) continue;
     for (const entity of piece.entities ?? []) destroyEndingEntity(runtime, entity);
@@ -13136,18 +13856,36 @@ function cleanupFinaleApproach(runtime) {
   structure.approachCleanedAt = Instance.GetGameTime();
 }
 
+// Source ::finalecpf, switched by InfiniteCheckOut().
+function finaleChatPrefix(runtime) {
+  return runtime?.infinite === true ? "[INFINITE FINALE]" : "[FINALE]";
+}
+
+// Source final-result decorations: ::legit_win + SID, and the infinite tally
+// "(finale_checkout_mapspawnindex levels | maps.len() map_pool)".
+function finaleLegitTag(congratulate) {
+  const sid = `(SID:${state.reportSessionId})`;
+  if (state.campaign.legitWin === false) return `*NOT LEGIT* ${sid}`;
+  return congratulate ? `CONGRATULATIONS! ${sid}` : sid;
+}
+
+function finaleCheckoutTally(runtime, levels = runtime?.stageSnapshot?.checkoutValue) {
+  return `(${levels ?? 0} levels | ${finaleMapPoolCount(runtime)} map_pool)`;
+}
+
 function scheduleFinaleElevatorCountdown(runtime, readyAt, leaveAt) {
   const leaveTime = leaveAt - readyAt;
-  endingTaskAt(runtime, readyAt, () => announce(`FINALE: elevator leaves in ${Math.round(leaveTime)}s`),
+  const prefix = finaleChatPrefix(runtime);
+  endingTaskAt(runtime, readyAt, () => announce(`${prefix} elevator leaves in ${sqNumber(leaveTime)}s`),
     `finale_elevator_countdown_${runtime.sequence}`);
   for (const seconds of [30, 10, 5]) {
     if (leaveTime - seconds <= 0) continue;
-    endingTaskAt(runtime, leaveAt - seconds, () => announce(`FINALE: elevator leaves in ${seconds}s`),
+    endingTaskAt(runtime, leaveAt - seconds, () => announce(`${prefix} elevator leaves in ${seconds}s`),
       `finale_elevator_countdown_${seconds}_${runtime.sequence}`);
   }
-  endingTaskAt(runtime, leaveAt, () => announce("FINALE: elevator is leaving"),
+  endingTaskAt(runtime, leaveAt, () => announce(`${prefix} elevator is leaving`),
     `finale_elevator_leaving_${runtime.sequence}`);
-  endingTaskAt(runtime, leaveAt + 1.01, () => announce("FINALE: prepare for the end"),
+  endingTaskAt(runtime, leaveAt + 1.01, () => announce(`${prefix} prepare for the end`),
     `finale_elevator_prepare_${runtime.sequence}`);
 }
 
@@ -13251,7 +13989,7 @@ function processFinaleElevatorDebris(runtime, now) {
     };
     runtime.rubbleSpawnedCount = 0;
     runtime.nextRubbleAt = now;
-    announce("FINALE: watch out from above!");
+    announceRepeated(`${finaleChatPrefix(runtime)} watch out from above!`);
   }
   if (runtime.finaleElevatorDebrisStarted) {
     processRaceRubble(runtime, now);
@@ -13387,7 +14125,11 @@ function startFinaleThunder(runtime, now = Instance.GetGameTime()) {
     tickCount: 0,
     primaryPlayed: 0,
     secondaryPlayed: 0,
-    visualSupported: state.featureTemplates.has("finaleThunder"),
+    visualSupported: FINALE_THUNDER_CONFIG.visualEnabled && state.featureTemplates.has("finaleThunder"),
+    strikeSupported: FINALE_THUNDER_CONFIG.strikeEnabled
+      && state.featureTemplates.has(FINALE_THUNDER_CONFIG.strikeTemplateKey),
+    strikesLive: 0,
+    strikeCount: 0,
     precipitationSupported: state.featureTemplates.has("finaleRain"),
     precipitationRequested: 2,
     note: FINALE_THUNDER_CONFIG.visualNote,
@@ -13415,11 +14157,28 @@ function processFinaleThunder(runtime, now = Instance.GetGameTime()) {
   const radius = 10000 + Math.random() * 5000;
   const position = add(center, vec(Math.cos(angle) * radius, Math.sin(angle) * radius, 2000 + Math.random() * 6000));
   for (const axis of ["x", "y", "z"]) position[axis] = Math.max(-14000, Math.min(14000, position[axis]));
-  const flash = spawnFinaleWeatherParticle(runtime, "finaleThunder", position);
-  endingTask(runtime, 0.35, () => {
-    if (validEntity(flash)) flash.Kill();
-    runtime.entities.delete(flash);
-  });
+  if (FINALE_THUNDER_CONFIG.visualEnabled) {
+    const flash = spawnFinaleWeatherParticle(runtime, "finaleThunder", position);
+    endingTask(runtime, 0.35, () => {
+      if (validEntity(flash)) flash.Kill();
+      runtime.entities.delete(flash);
+    });
+  }
+  if (thunder.strikeSupported && thunder.strikesLive < FINALE_THUNDER_CONFIG.strikeMaxLive) {
+    // Sky point has no ground under it, so place the bolt base directly; thunder audio stays below.
+    const strike = strikeLightning(add(position, vec(0, 0, -FINALE_THUNDER_CONFIG.strikeBaseDrop)),
+      { snap: false, sound: false, template: FINALE_THUNDER_CONFIG.strikeTemplateKey });
+    if (strike) {
+      thunder.strikesLive++;
+      thunder.strikeCount++;
+      runtime.entities.add(strike);
+      endingTask(runtime, LIGHTNING_STRIKE_CONFIG.lifetime, () => {
+        thunder.strikesLive = Math.max(0, thunder.strikesLive - 1);
+        if (validEntity(strike)) strike.Kill();
+        runtime.entities.delete(strike);
+      });
+    }
+  }
   let primaryPlayed = false;
   let secondaryPlayed = false;
   if (Math.random() * 100 <= FINALE_THUNDER_CONFIG.soundChance) {
@@ -13459,30 +14218,129 @@ function stopFinaleThunder(runtime) {
   return wasEnabled;
 }
 
+// Ground point under `position`, or undefined when nothing solid is within the trace distance.
+function lightningStrikeGround(position) {
+  if (typeof Instance.TraceLine !== "function") return undefined;
+  const trace = Instance.TraceLine({
+    start: add(position, vec(0, 0, 16)),
+    end: add(position, vec(0, 0, -LIGHTNING_STRIKE_CONFIG.groundTraceDistance)),
+    ignorePlayers: true,
+  });
+  const end = trace?.position ?? trace?.end;
+  return (trace?.didHit ?? trace?.hit) && end && Number.isFinite(end.z) ? clone(end) : undefined;
+}
+
+// One-shot lightning strike at `position` (snapped to the ground below unless options.snap
+// is false). Cosmetic only: no damage. options.template picks the feature template key
+// (default "lightningStrike"; "lightningStrikeSky" is the 3x finale variant). Returns the
+// particle entity, or undefined when the map lacks the template. The engine removes the
+// particle after the config lifetime.
+function strikeLightning(position, options = {}) {
+  if (!position) return undefined;
+  const key = options.template ?? "lightningStrike";
+  const template = state.featureTemplates.get(key);
+  if (!validEntity(template)) {
+    state.lightningStrikeTemplateWarned ??= new Set();
+    if (!state.lightningStrikeTemplateWarned.has(key)) {
+      state.lightningStrikeTemplateWarned.add(key);
+      message(`WARNING: ${FEATURE_TEMPLATE_NAMES[key]} missing from map; lightning strike skipped`);
+    }
+    return undefined;
+  }
+  const ground = options.snap === false ? clone(position) : lightningStrikeGround(position) ?? clone(position);
+  // Random yaw swings the bolt's sky end around the impact so repeated strikes differ.
+  const angles = { pitch: 0, yaw: Math.random() * 360, roll: 0 };
+  const spawned = spawnRoundEntities(template, ground, angles) ?? [];
+  if (spawned.length !== 1 || !validEntity(spawned[0]) || spawned[0].GetClassName?.() !== "info_particle_system") {
+    destroyEntities(spawned);
+    message(`WARNING: ${FEATURE_TEMPLATE_NAMES[key]} must spawn exactly one info_particle_system`);
+    return undefined;
+  }
+  const particle = spawned[0];
+  particle.Teleport({ position: ground, angles, velocity: vec() });
+  fireTarget(particle, "Start");
+  fireTarget(particle, "Kill", undefined, LIGHTNING_STRIKE_CONFIG.lifetime);
+  if (options.sound !== false) {
+    const sounds = LIGHTNING_STRIKE_CONFIG.sounds;
+    playCatalogSound(sounds[Math.floor(Math.random() * sounds.length)], ground, {
+      radius: LIGHTNING_STRIKE_CONFIG.soundRadius, lifetime: 0.5,
+      pitch: 90 + Math.floor(Math.random() * 21),
+    });
+  }
+  return particle;
+}
+
+// Source builds and tears down the finale through ::Process queues that run a
+// few entities per tick. Doing whole spawn loops or a bridge segment's collapse
+// in one Think cost 12-80 ms here, since every piece is a ForceSpawn and that
+// engine cost grows over a map session. Jobs run in order under the same
+// per-Think wall-clock cap as level generation (at least one per Think).
+function queueFinaleBuildJob(runtime, job, { fatal, manualTile = false } = {}) {
+  (runtime.finaleBuildJobs ??= []).push({ job, fatal, manualTile });
+}
+
+function processFinaleBuildJobs(runtime) {
+  return withGenerationBudget(() => processFinaleBuildJobsBudgeted(runtime));
+}
+
+function processFinaleBuildJobsBudgeted(runtime) {
+  if (!runtime || !["active", "spawning"].includes(runtime.lifecycle)) return;
+  const jobs = runtime.finaleBuildJobs;
+  if (!jobs?.length) return;
+  while (jobs.length && generationWorkAvailable()) {
+    const entry = jobs[0];
+    const { job, fatal, manualTile } = entry;
+    const structure = manualTile ? runtime.finaleStructure : undefined;
+    const now = Instance.GetGameTime();
+    if (structure && now < (structure.nextTileSpawnAt ?? 0)) return;
+    try {
+      runGenerationWork(() => {
+        if (typeof job === "function") { jobs.shift(); job(); }
+        else if (job.next().done) jobs.shift();
+        // Low-gravity visual blocks also came from CSS's manual tile queue.
+        if (structure) structure.nextTileSpawnAt = now + FINALE_STRUCTURE_CONFIG.manualSpawnInterval;
+      });
+    }
+    catch (error) {
+      if (jobs[0] === entry) jobs.shift();
+      if (fatal) { failRuntime(`${fatal} failed: ${error}`); return; }
+      reportGuardedError("finaleBuildJob", error);
+    }
+    if (state.fatal || !["active", "spawning"].includes(runtime.lifecycle)) return;
+  }
+}
+
 function processFinaleStructure(runtime, now) {
   const structure = runtime?.finaleStructure;
   if (!runtime || !structure || !["active", "spawning"].includes(runtime.lifecycle)) return;
+  processFinaleBuildJobs(runtime);
   if (!structure.lowgravDisabled) {
+    // Runs every Think for every pawn, so read each origin once and test
+    // against precomputed zones; most pawns are outside the whole tower box.
+    const zones = finaleLowgravZones(runtime, structure);
     const insideByPawn = runtime.finaleLowgravInside ??= new Map();
     for (const pawn of allLivingPawns()) {
       let active = insideByPawn.get(pawn);
+      const origin = pawn.GetAbsOrigin?.() ?? vec();
+      const along = origin.x * runtime.direction.x + origin.y * runtime.direction.y;
+      const side = origin.x * runtime.left.x + origin.y * runtime.left.y;
+      const nearAny = along >= zones.minAlong && along <= zones.maxAlong
+        && side >= zones.minSide && side <= zones.maxSide
+        && origin.z >= zones.minZ && origin.z <= zones.maxZ;
+      if (!nearAny && !active?.size) continue;
       if (!active) insideByPawn.set(pawn, active = new Set());
-      for (const request of structure.lowgravRequests ?? []) {
-        const geometry = finaleLowgravGeometry(request);
-        const delta = sub(pawn.GetAbsOrigin?.() ?? vec(), request.position);
-        const along = delta.x * runtime.direction.x + delta.y * runtime.direction.y;
-        const side = delta.x * runtime.left.x + delta.y * runtime.left.y;
-        const inside = Math.abs(along) <= geometry.maxs.x
-          && Math.abs(side) <= geometry.maxs.y
-          && delta.z >= geometry.mins.z && delta.z <= geometry.maxs.z;
-        const source = `${runtime.index}:finale_lowgrav:${request.role}`;
-        if (inside && !active.has(request.role)) {
-          active.add(request.role);
-          addGravitySource(runtime, pawn, source, CONFIG.lowGravity, { engine: true, simulate: false });
+      for (const zone of zones.list) {
+        const inside = nearAny
+          && Math.abs(along - zone.along) <= zone.halfAlong
+          && Math.abs(side - zone.side) <= zone.halfSide
+          && origin.z >= zone.minZ && origin.z <= zone.maxZ;
+        if (inside && !active.has(zone.role)) {
+          active.add(zone.role);
+          addGravitySource(runtime, pawn, zone.source, CONFIG.lowGravity, { engine: true, simulate: false });
           capGravitySlideVelocity(pawn);
-        } else if (!inside && active.has(request.role)) {
-          active.delete(request.role);
-          removeGravitySource(pawn, source);
+        } else if (!inside && active.has(zone.role)) {
+          active.delete(zone.role);
+          removeGravitySource(pawn, zone.source);
           capGravitySlideVelocity(pawn);
         }
       }
@@ -13518,7 +14376,10 @@ function processFinaleStructure(runtime, now) {
     for (const piece of structure.bridge ?? []) {
       if (piece.forward > threshold || piece.cleaned) continue;
       piece.cleaned = true;
-      for (const entity of piece.entities ?? []) if (validEntity(entity)) beginEndingEntityFall(runtime, entity, 6, 80);
+      for (const entity of piece.entities ?? []) if (validEntity(entity)) {
+        queueFinaleBuildJob(runtime, () => beginEndingEntityFall(runtime, entity,
+          FINALE_STRUCTURE_CONFIG.bridgeFallLifetime, FINALE_STRUCTURE_CONFIG.bridgeFallMaxActive));
+      }
     }
     if (structure.bridgeCleanupDone && !structure.spawnPlatformFired) {
       structure.spawnPlatformFired = true;
@@ -13532,7 +14393,7 @@ function processFinaleStructure(runtime, now) {
       structure.towerCleanupNextAt += FINALE_STRUCTURE_CONFIG.towerCleanupRate;
       for (const entity of piece.entities ?? []) {
         if (!validEntity(entity)) continue;
-        beginEndingEntityFall(runtime, entity, 2, 40);
+        queueFinaleBuildJob(runtime, () => beginEndingEntityFall(runtime, entity, 2, 40));
         piece.cleaned = true;
       }
     }
@@ -13547,7 +14408,7 @@ function processFinaleStructure(runtime, now) {
     runtime.finaleElevatorRiding = false;
   }
   if (structure.bossReady && structure.arenaSpawned && runtime.bossMode === "boss"
-    && !runtime.bossPhase && now >= (runtime.finalBossReadyAt ?? now)) {
+    && !runtime.bossPhase && !runtime.finaleBuildJobs?.length && now >= (runtime.finalBossReadyAt ?? now)) {
     startFinaleBossFight(runtime);
   }
   updateFinaleZElevators(runtime, now, elapsed);
@@ -13596,7 +14457,7 @@ function startFinaleDefense(runtime) {
   if (!runtime || runtime.lifecycle !== "active") return;
   runtime.defenseStartedAt = Instance.GetGameTime();
   runtime.defending = true;
-  announce(`FINALE: defend the pyramid for ${FINALE_CONFIG.finalHoldTime} seconds`);
+  announceRepeated(`${finaleChatPrefix(runtime)} DEFEND FOR ${sqNumber(FINALE_CONFIG.finalHoldTime)}s`);
 }
 
 // Source RaiseFinalElevator(): ::Process(pq,0.20) reaches its third entry at
@@ -13662,7 +14523,7 @@ function processFinaleTopCollapse(runtime, now) {
 function finaleMassKill(runtime, scheduledAt) {
   if (!runtime || runtime.lifecycle !== "active" || runtime.massKillTriggeredAt !== undefined) return;
   runtime.massKillTriggeredAt = scheduledAt;
-  announce("FINALE: YOU TOOK TOO LONG - SLAYING");
+  message("FINALE: YOU TOOK TOO LONG - SLAYING");
   endingMassKillAll(runtime);
   resolveStageEnding(false);
 }
@@ -13689,7 +14550,15 @@ function raiseFinaleTop(runtime) {
   // Source RaiseFinalElevator() fires EnableSpawnKiller(), which also slays flight.
   enableEndingSpawnKiller(runtime);
   const zombies = allLivingPawns().filter((pawn) => pawn.GetTeamNumber?.() === 2);
-  if (zombies.length <= 0) resolveStageEnding(true);
+  if (zombies.length <= 0) {
+    // Source RaiseFinalElevator() declares this win itself and registers no
+    // round-end result line for it.
+    runtime.finaleDefaultWin = true;
+    announceRepeated(runtime.infinite === true
+      ? `[INFINITE FINALE ENDING] NO ZOMBIES ALIVE - YOU WON BY DEFAULT! ${finaleLegitTag(false)} ${finaleCheckoutTally(runtime)}`
+      : `[FINALE ENDING] NO ZOMBIES ALIVE - YOU WON BY DEFAULT! ${finaleLegitTag(false)}`);
+    resolveStageEnding(true);
+  }
 }
 
 function updateFinaleElevators(runtime, elapsed) {
@@ -13710,7 +14579,7 @@ function finishFinaleSpawn(runtime) {
                                                                                
                                    
     startFinaleStructureTimeline(runtime);
-    announce("FINALE ending started; the tower bridge is rising");
+    message("FINALE ending started; the tower bridge is rising");
     return;
   }
   const runAt = runtime.runStartedAt;
@@ -13733,9 +14602,10 @@ function finishFinaleSpawn(runtime) {
     runtime.raceRubbleStopped = true;
     runtime.finalePyramidRubbleStoppedAt = Instance.GetGameTime();
   }, "finale_pyramid_rubble_stop");
-  endingTaskAt(runtime, runAt, () => announce("FINALE: YOU REACHED THE END"), "finale_pyramid_reached");
-  endingTaskAt(runtime, runAt + 8, () => announce("FINALE: THE TOP OF THE PYRAMID IS YOUR ESCAPE"), "finale_pyramid_escape_hint");
-  endingTaskAt(runtime, runAt + 9, () => announce("FINALE: DEFEND IT WITH YOUR LIFE"), "finale_pyramid_defend_hint");
+  const prefix = finaleChatPrefix(runtime);
+  endingTaskAt(runtime, runAt, () => announceRepeated(`${prefix} YOU REACHED THE END`), "finale_pyramid_reached");
+  endingTaskAt(runtime, runAt + 8, () => announceRepeated(`${prefix} THE TOP OF THE PYRAMID IS YOUR ESCAPE`), "finale_pyramid_escape_hint");
+  endingTaskAt(runtime, runAt + 9.03, () => announceRepeated(`${prefix} DEFEND IT WITH YOUR LIFE`), "finale_pyramid_defend_hint");
   endingTaskAt(runtime, runAt + FINALE_KAMIKAZE_CONFIG.delay,
     () => startFinaleKamikaze(runtime, "pyramid"), "finale_pyramid_kamikaze");
   endingTaskAt(runtime, runAt + FINALE_CONFIG.elevatorSetupDelay,
@@ -13746,10 +14616,10 @@ function finishFinaleSpawn(runtime) {
     () => raiseFinaleTop(runtime), "finale_pyramid_rise");
   for (const seconds of [30, 20, 10, 5, 4, 3, 2, 1]) {
     const at = runAt + FINALE_CONFIG.defenseStartDelay + FINALE_CONFIG.finalHoldTime - seconds;
-    endingTaskAt(runtime, at, () => announce(`FINALE: RISING IN ${seconds}s`), `finale_pyramid_rising_${seconds}`);
+    endingTaskAt(runtime, at, () => announce(`${prefix} RISING IN ${seconds}s`), `finale_pyramid_rising_${seconds}`);
   }
   endingTaskAt(runtime, runAt + FINALE_CONFIG.defenseStartDelay + FINALE_CONFIG.finalHoldTime,
-    () => announce("FINALE: RISING"), "finale_pyramid_rising_now");
+    () => announceRepeated(`${prefix} RISING`), "finale_pyramid_rising_now");
   endingTaskAt(runtime, runAt + FINALE_CONFIG.defenseStartDelay + FINALE_CONFIG.finalHoldTime + FINALE_CONFIG.massKillDelay,
     () => {
                                                                               
@@ -13768,18 +14638,18 @@ function finishFinaleSpawn(runtime) {
     finale_pyramid_defense: () => startFinaleDefense(runtime),
     finale_pyramid_rise: () => raiseFinaleTop(runtime),
     finale_pyramid_kamikaze: () => startFinaleKamikaze(runtime, "pyramid"),
-    finale_pyramid_rising_30: () => announce("FINALE: RISING IN 30s"),
-    finale_pyramid_rising_20: () => announce("FINALE: RISING IN 20s"),
-    finale_pyramid_rising_10: () => announce("FINALE: RISING IN 10s"),
-    finale_pyramid_rising_5: () => announce("FINALE: RISING IN 5s"),
-    finale_pyramid_rising_4: () => announce("FINALE: RISING IN 4s"),
-    finale_pyramid_rising_3: () => announce("FINALE: RISING IN 3s"),
-    finale_pyramid_rising_2: () => announce("FINALE: RISING IN 2s"),
-    finale_pyramid_rising_1: () => announce("FINALE: RISING IN 1s"),
-    finale_pyramid_rising_now: () => announce("FINALE: RISING"),
+    finale_pyramid_rising_30: () => announce(`${prefix} RISING IN 30s`),
+    finale_pyramid_rising_20: () => announce(`${prefix} RISING IN 20s`),
+    finale_pyramid_rising_10: () => announce(`${prefix} RISING IN 10s`),
+    finale_pyramid_rising_5: () => announce(`${prefix} RISING IN 5s`),
+    finale_pyramid_rising_4: () => announce(`${prefix} RISING IN 4s`),
+    finale_pyramid_rising_3: () => announce(`${prefix} RISING IN 3s`),
+    finale_pyramid_rising_2: () => announce(`${prefix} RISING IN 2s`),
+    finale_pyramid_rising_1: () => announce(`${prefix} RISING IN 1s`),
+    finale_pyramid_rising_now: () => announceRepeated(`${prefix} RISING`),
     finale_pyramid_masskill: () => finaleMassKill(runtime, Instance.GetGameTime()),
   });
-  announce("FINALE ending started; the pyramid is your escape");
+  message("FINALE ending started; the pyramid is your escape");
 }
 
                                                                                     
@@ -13834,6 +14704,7 @@ function startFinaleEnding(stageSnapshot, sourceRuntime) {
   runtime.infinite = stageSnapshot?.finaleInfiniteMusic === true
     || sourceRuntime?.finaleInfiniteMusic === true;
   runtime.eventEvaluateInfiniteEnabled = runtime.infinite;
+  applySilentHillEndingFog();
   if (runtime.infinite) runtime.nextGenericEventAt = runtime.runStartedAt + genericInfiniteFinaleDelay();
                                                                              
                                                                             
@@ -13893,10 +14764,18 @@ function prepareInfiniteFinaleEntrance(runtime) {
       const visual = state.silentHillWorld.visuals.get(entity);
       if (visual) visual.runtime = source;
     }
+    // The handoff left teledest at the retiring stage's start; until bridge
+    // cleanup takes over the TP queue, send zombies to the Finale bridge head.
+    const structure = runtime.finaleStructure;
+    if (structure && !structure.bridgeCleanupStarted) {
+      const entrance = finaleStructurePosition(runtime, 1, 0, 0);
+      entrance.z += 8;
+      moveTeleportDestination(entrance, runtime.direction);
+    }
     beginLevelFade(source);
     source.sourceCleanupScheduled = true;
     const duration = Math.ceil((255 - 3) / source.fadeStep) * source.fadeInterval + 0.05;
-    endingTask(runtime, duration, () => destroyLevel(source.index, false));
+    endingTask(runtime, duration, () => destroyLevel(source.index, false, true));
   });
 }
 
@@ -13907,6 +14786,9 @@ function processFinaleEnding(runtime = state.endingRuntime) {
   if (["spawning", "active"].includes(runtime.lifecycle)) processFinaleSky(runtime);
   processInfiniteFinaleEvents(runtime, Instance.GetGameTime());
   processFinaleThunder(runtime, Instance.GetGameTime());
+  // The boss loop outlives the boss: escape and the final pyramid (bossMode
+  // "pyramid", bossPhase cleared) must keep restarting it.
+  if (["spawning", "active"].includes(runtime.lifecycle)) processFinaleMusic(runtime, Instance.GetGameTime());
   if (runtime.lifecycle === "spawning") {
                                                                         
                                                                            
@@ -13921,7 +14803,6 @@ function processFinaleEnding(runtime = state.endingRuntime) {
   if (runtime.lifecycle !== "active") return;
   if (runtime.bossMode === "boss" || runtime.bossPhase) {
     const now = Instance.GetGameTime();
-    processFinaleMusic(runtime, now);
     if (runtime.bossPhase === "escape" || runtime.bossPhase === "boss_defeated") {
                                                                           
                                                                               
@@ -13937,6 +14818,7 @@ function processFinaleEnding(runtime = state.endingRuntime) {
     }
     processFinaleStructure(runtime, now);
     if (runtime.bossPhase === "boss_active" || runtime.bossPhase === "boss_intro") processFinaleBossFight(runtime);
+    if (runtime.debugSkipToEscape && runtime.bossPhase === "boss_active") debugSkipFinaleBoss(runtime, now);
     return;
   }
   const now = Instance.GetGameTime();
@@ -13962,24 +14844,32 @@ function finaleBossArenaCenter(runtime) {
   return clone(runtime?.topCenter ?? runtime?.anchor ?? vec());
 }
 
+// Source only runs SetupFinaleSky + the black finale fog for the campaign Finale (stage == STAGES.len()).
+// The infinite-mode checkout calls StartFinale() directly and keeps the current infinite theme sky/fog.
+function finaleUsesFinaleSky(runtime) {
+  return runtime?.kind === "FINALE" && runtime.infinite !== true;
+}
+
 function setupFinaleSky(runtime) {
-  if (!runtime || runtime.kind !== "FINALE") return false;
+  if (!finaleUsesFinaleSky(runtime)) return false;
   if (runtime.finaleSky) return runtime.finaleSky.clouds.length > 0;
   clearThemeModelSky();
                                                                          
                                                                        
-  setCollectiveSkybox("generic");
+  if (!setCollectiveSkybox(FINALE_SKY_CONFIG.skybox, true)) setCollectiveSkybox("generic");
   setFinaleSkyFog();
   const center = finaleSkyCenter(runtime);
   const clouds = [];
   const groups = [
-    { name: "red", count: FINALE_SKY_CONFIG.cloudCount.red, color: FINALE_SKY_CONFIG.redColor, direction: 1 },
-    { name: "black", count: FINALE_SKY_CONFIG.cloudCount.black, color: FINALE_SKY_CONFIG.blackColor, direction: -1 },
+    { name: "red", count: FINALE_SKY_CONFIG.cloudCount.red, skin: FINALE_SKY_CONFIG.redSkin, direction: 1 },
+    { name: "black", count: FINALE_SKY_CONFIG.cloudCount.black, skin: FINALE_SKY_CONFIG.blackSkin, direction: -1 },
   ];
+  let layer = 0;
   for (const group of groups) {
     for (let index = 0; index < group.count; index++) {
       const yaw = Math.floor(Math.random() * 361);
-      const position = add(center, vec(0, 0, FINALE_SKY_CONFIG.cloudOffsetZ));
+      const position = add(center, vec(0, 0, finaleSkyCloudOffsetZ()));
+      const layerScale = 1 + FINALE_SKY_CONFIG.layerScaleStep * layer++;
       try {
         const visual = spawnVisual(runtime, {
           position,
@@ -13987,8 +14877,9 @@ function setupFinaleSky(runtime) {
           feature: `finaleSky_${group.name}_${index}`,
         }, FINALE_SKY_CONFIG.model);
         if (!validEntity(visual)) throw new Error("cloud visual did not spawn");
-        visual.SetModelScale?.(FINALE_SKY_CONFIG.modelScale);
-        visual.SetColor?.(group.color);
+        visual.SetModelScale?.(finaleSkyCloudScale() * layerScale);
+        visual.SetColor?.(FINALE_SKY_CONFIG.cloudColor);
+        applyThemeSkin(visual, group.skin);
         fireTarget(visual, "SetDefaultAnimation", "baseidle");
         fireTarget(visual, "SetAnimation", "baseidle");
                                                                              
@@ -14002,6 +14893,7 @@ function setupFinaleSky(runtime) {
           visual,
           group: group.name,
           center: clone(center),
+          layerScale,
           yaw,
           direction: group.direction,
         });
@@ -14012,7 +14904,8 @@ function setupFinaleSky(runtime) {
   }
   runtime.finaleSky = {
     clouds,
-    rotating: clouds.length > 0,
+    rotating: false,
+    speed: 0,
     rotation: 0,
     startedAt: Instance.GetGameTime(),
     lastTickAt: Instance.GetGameTime(),
@@ -14024,6 +14917,11 @@ function setupFinaleSky(runtime) {
     return false;
   }
   return true;
+}
+
+function finaleSkyCloudScale() { return skyCloudScaleOverride ?? FINALE_SKY_CONFIG.modelScale; }
+function finaleSkyCloudOffsetZ() {
+  return FINALE_SKY_CONFIG.cloudOffsetZ;
 }
 
 function finaleSkyCenter(runtime) {
@@ -14040,29 +14938,38 @@ function setFinaleSkyFog() {
   fireTarget(fog, "SetFogStartDistance", String(FINALE_SKY_CONFIG.fogStart));
   fireTarget(fog, "SetFogEndDistance", String(FINALE_SKY_CONFIG.fogEnd));
   fireTarget(fog, "SetFogMaxOpacity", String(FINALE_SKY_CONFIG.fogOpacity));
+  fireTarget(fog, "SetFogFalloffExponent", FOG_LINEAR_FALLOFF);
   fireTarget(fog, "Enable");
   return true;
 }
 
 function processFinaleSky(runtime, now = Instance.GetGameTime(), elapsed) {
   const sky = runtime?.finaleSky;
-  if (!sky?.rotating || sky.clouds.length === 0) return false;
+  if (!sky || sky.clouds.length === 0) return false;
+  // Still clouds keep following end.z like Source's 5s UpdateSkyboxPos Move().
                                                                           
                                                                    
   if (sky.lastTickAt >= now) return false;
   const delta = elapsed ?? now - (sky.lastTickAt ?? now);
-  const step = FINALE_SKY_CONFIG.rotationSpeed * Math.max(0, Math.min(0.1, Number(delta) || 0));
+  const dt = Math.max(0, Math.min(0.1, Number(delta) || 0));
+  const target = sky.rotating ? FINALE_SKY_CONFIG.rotationSpeed : 0;
+  const change = FINALE_SKY_CONFIG.rotationAcceleration * dt;
+  const speed = sky.speed ?? 0;
+  sky.speed = speed < target ? Math.min(target, speed + change) : Math.max(target, speed - change);
+  const step = sky.speed * dt;
   sky.rotation = normalizeYaw(sky.rotation + step);
   const center = finaleSkyCenter(runtime);
   for (const cloud of sky.clouds) {
     if (!validEntity(cloud.visual)) continue;
+    // Still clouds only move when end.z changes; no per-tick Teleport while nothing changed.
+    if (step === 0 && cloud.center?.z === center.z) continue;
     const angles = {
       pitch: 0,
       yaw: normalizeYaw(cloud.yaw + cloud.direction * sky.rotation),
       roll: 0,
     };
     cloud.visual.Teleport?.({
-      position: add(center, vec(0, 0, FINALE_SKY_CONFIG.cloudOffsetZ)),
+      position: add(center, vec(0, 0, finaleSkyCloudOffsetZ())),
       angles,
       velocity: vec(),
     });
@@ -14070,6 +14977,15 @@ function processFinaleSky(runtime, now = Instance.GetGameTime(), elapsed) {
   }
   sky.lastTickAt = now;
   sky.tickCount = (sky.tickCount ?? 0) + 1;
+  return true;
+}
+
+// Source StartFinaleBoss: EntFire finale_skyboxrot Start (spins up from still).
+function startFinaleSky(runtime) {
+  const sky = runtime?.finaleSky;
+  if (!sky || sky.rotating || sky.clouds.length === 0) return false;
+  sky.rotating = true;
+  sky.startedRotatingAt = Instance.GetGameTime();
   return true;
 }
 
@@ -14083,6 +14999,19 @@ function stopFinaleSky(runtime) {
 
 function finaleBossAliveHumans() {
   return allLivingPawns().filter((pawn) => pawn.GetTeamNumber?.() === 3 && pawn.IsAlive?.());
+}
+
+// CS2 CSMoveType NOCLIP=4, OBSERVER=5. Script damage (TakeDamage/SetHealth)
+// ignores move type, so every Finale hazard must check it before hurting.
+function finalePawnNoclipping(pawn) {
+  if (pawn?.IsNoclipping?.() === true) return true;
+  const moveType = pawn?.GetMoveType?.();
+  return moveType === 4 || moveType === 5;
+}
+
+function finaleBossCanHurtPawn(pawn) {
+  return validEntity(pawn) && pawn.IsAlive?.() === true
+    && pawn.GetTeamNumber?.() === 3 && !finalePawnNoclipping(pawn);
 }
 
 function finaleMapPoolCount(runtime) {
@@ -14143,6 +15072,12 @@ function finaleBossHealth(runtime, aliveHumans, count, infinite = false) {
 
 function finaleBossEntityPosition(entity, fallback) {
   return clone(entity?.GetAbsOrigin?.() ?? fallback ?? vec());
+}
+
+function moveFinaleBossEntity(entity, transform) {
+  if (!validEntity(entity)) return;
+  if (typeof entity.Move === "function") entity.Move(transform);
+  else entity.Teleport?.(transform);
 }
 
 function finaleBossSyncHitbox(boss, hitbox, position) {
@@ -14288,9 +15223,17 @@ function pointInsideFinaleBox(position, center, angles, mins, maxs) {
     && localZ >= mins.z && localZ <= maxs.z;
 }
 
-function finaleBossPieceTouchesPawn(piece, pawn) {
-  const hull = playerCollisionHull(pawn);
+// Bounding spheres of the piece box (46,46,15) and the standing hull
+// (16,16,36); pairs farther apart than their sum cannot overlap.
+const FINALE_BOSS_PIECE_TOUCH_REACH = Math.hypot(46, 46, 15) + Math.hypot(16, 16, 36) + 1;
+
+function finaleBossPieceTouchesPawn(piece, pawn, hull = playerCollisionHull(pawn)) {
   if (!piece?.position || !hull) return false;
+  const reach = FINALE_BOSS_PIECE_TOUCH_REACH + 15;
+  const dx = hull.center.x - piece.position.x;
+  const dy = hull.center.y - piece.position.y;
+  const dz = hull.center.z - piece.position.z;
+  if (dx * dx + dy * dy + dz * dz > reach * reach) return false;
                                                                          
                                                                           
                                                                          
@@ -14319,7 +15262,7 @@ function finaleBossPieceTouchesPawn(piece, pawn) {
 }
 
 function finaleBossFallTouch(runtime, pawn, now = Instance.GetGameTime()) {
-  if (!runtime || !pawn?.IsAlive?.()) return false;
+  if (!runtime || !pawn?.IsAlive?.() || finalePawnNoclipping(pawn)) return false;
   const center = finaleBossArenaCenter(runtime);
   const origin = add(center, vec(0, 0, -FINALE_BOSS_CONFIG.fallTriggerZOffset));
   const position = pawn.GetAbsOrigin?.();
@@ -14401,7 +15344,7 @@ function finaleBossIsGrenade(entity) {
 }
 
 function finaleBossTouchDamage(runtime, boss, pawn, amount, source) {
-  if (!pawn?.IsAlive?.() || pawn.GetTeamNumber?.() !== 3 || boss.dead) return false;
+  if (!finaleBossCanHurtPawn(pawn) || boss.dead) return false;
   const now = Instance.GetGameTime();
   const until = boss.touchCooldowns.get(pawn) ?? 0;
   if (until > now) return false;
@@ -14866,7 +15809,7 @@ function explodeFinaleKamikaze(runtime, reason = "impact") {
   event.explodedAt = Instance.GetGameTime();
   const origin = clone(event.position ?? event.pawn?.GetAbsOrigin?.() ?? runtime.anchor);
   const radius = FINALE_KAMIKAZE_CONFIG.explodeRadius;
-  const humans = allLivingPawns().filter((pawn) => pawn.GetTeamNumber?.() === 3 && pawn.IsAlive?.());
+  const humans = allLivingPawns().filter(finaleBossCanHurtPawn);
   let hitCount = 0;
   for (const pawn of humans) {
     const position = pawn.GetAbsOrigin?.();
@@ -14878,6 +15821,7 @@ function explodeFinaleKamikaze(runtime, reason = "impact") {
     hitCount++;
   }
   event.hitCount = hitCount;
+  message(`[KAMIKAZE] exploded reason=${reason} hits=${hitCount} flight=${(event.explodedAt - event.startedAt).toFixed(2)}s`);
   for (let index = 0; index < 5; index++) {
     playCatalogSound(FINALE_KAMIKAZE_CONFIG.soundExplosion, origin, {radius:FINALE_KAMIKAZE_CONFIG.soundExplosion === FINALE_KAMIKAZE_CONFIG.soundExplosion ? 15000 : 500000,lifetime:2,...{ pitch: 95 + Math.floor(Math.random() * 6) }});
     playCatalogSound(FINALE_KAMIKAZE_CONFIG.soundExplosionTail, origin, {radius:FINALE_KAMIKAZE_CONFIG.soundExplosion === FINALE_KAMIKAZE_CONFIG.soundExplosionTail ? 15000 : 500000,lifetime:2,...{ pitch: 95 + Math.floor(Math.random() * 6) }});
@@ -14903,9 +15847,10 @@ function explodeFinaleKamikaze(runtime, reason = "impact") {
   return true;
 }
 
-function startFinaleKamikaze(runtime, reason = "pyramid") {
+// options.pawn / options.target let ze_debug_kamikaze force a pilot and aim point.
+function startFinaleKamikaze(runtime, reason = "pyramid", options = {}) {
   if (!runtime || runtime.lifecycle !== "active" || runtime.kamikaze || runtime.bossPhase === "boss_active") return false;
-  const candidates = finaleKamikazeCandidates();
+  const candidates = options.pawn ? [options.pawn] : finaleKamikazeCandidates();
   if (candidates.length === 0) {
     runtime.kamikazeHistory ??= [];
     runtime.kamikazeHistory.push({ startedAt: Instance.GetGameTime(), skipped: true, reason: "no-zombie-candidate" });
@@ -14914,7 +15859,7 @@ function startFinaleKamikaze(runtime, reason = "pyramid") {
     return false;
   }
   const pawn = candidates[Math.floor(Math.random() * candidates.length)];
-  const target = finaleKamikazeTarget(runtime);
+  const target = options.target ? clone(options.target) : finaleKamikazeTarget(runtime);
   const radial = finaleKamikazeNormalize(vec(-target.x, -target.y, 0), mul(runtime.direction ?? vec(1, 0, 0), -1));
   const start = add(add(target, mul(radial, FINALE_KAMIKAZE_CONFIG.startDistance)), vec(0, 0, FINALE_KAMIKAZE_CONFIG.startHeight));
   start.z = Math.max(-14000, Math.min(16000, start.z));
@@ -14980,6 +15925,9 @@ function startFinaleKamikaze(runtime, reason = "pyramid") {
   event.explodeTask = endingTaskAt(runtime, event.explodeAt, () => {
     if (runtime.kamikaze === event) explodeFinaleKamikaze(runtime, "timeout");
   }, `finale_kamikaze_explode_${runtime.sequence}_${Math.round(now * 100)}`);
+  // Source EVENTS.KAMIKAZE plane spawn; the finale reuses the same event.
+  announceRepeated("KAMIKAZE INCOMING!");
+  schedule(1.03, () => announceRepeated("SHOOT IT DOWN OR TAKE COVER"));
   return true;
 }
 
@@ -14993,27 +15941,30 @@ function processFinaleKamikaze(runtime, now = Instance.GetGameTime()) {
   }
   const elapsed = Math.max(0, Math.min(0.1, now - (event.lastAt ?? now)));
   event.lastAt = now;
-  const origin = pawn.GetAbsOrigin?.() ?? event.position;
-  event.position = clone(origin);
+  // The script-owned flight path is authoritative. If anything else moves the
+  // pilot (deferred Teleport, map teleports, other features), following the
+  // pawn would drag the plane back to the ground and detonate it in place.
+  const origin = clone(event.position);
+  const actual = pawn.GetAbsOrigin?.();
+  if (actual && Math.hypot(actual.x - origin.x, actual.y - origin.y, actual.z - origin.z) > 512
+    && now - (event.driftLoggedAt ?? -Infinity) > 1) {
+    event.driftLoggedAt = now;
+    message(`[KAMIKAZE] pilot drifted from flight path; re-teleporting `
+      + `actual=${Math.round(actual.x)},${Math.round(actual.y)},${Math.round(actual.z)} `
+      + `flight=${Math.round(origin.x)},${Math.round(origin.y)},${Math.round(origin.z)}`);
+  }
   const humans = allLivingPawns().filter((candidate) => candidate.GetTeamNumber?.() === 3 && candidate.IsAlive?.());
-  let targetHuman;
-  let targetDistance = Infinity;
   for (const human of humans) {
-    const position = human.GetAbsOrigin?.();
-    if (!position) continue;
-    const distance = Math.hypot(position.x - origin.x, position.y - origin.y, position.z - origin.z);
-    if (distance < targetDistance) {
-      targetDistance = distance;
-      targetHuman = position;
-    }
     if (projectileTouchesPlayerHull(human, origin, add(origin, mul(event.direction, FINALE_KAMIKAZE_CONFIG.explodeTraceDistance)), 24)) {
       explodeFinaleKamikaze(runtime, "human-contact");
       return;
     }
   }
-  if (targetHuman) {
-    const desired = finaleKamikazeNormalize(sub(targetHuman, origin), event.direction);
-    event.direction = finaleKamikazeNormalize(add(event.direction, mul(desired, 0.07 * FINALE_KAMIKAZE_CONFIG.turnSpeed)), event.direction);
+  // Source steers by the pilot's own eye direction: dir += eye * 0.07 per 0.05s tick.
+  const eye = viewAngles(pawn);
+  if (eye) {
+    const weight = 0.07 * FINALE_KAMIKAZE_CONFIG.turnSpeed * (elapsed / FINALE_KAMIKAZE_CONFIG.tickRate);
+    event.direction = finaleKamikazeNormalize(add(event.direction, mul(forwardFromAngles(eye), weight)), event.direction);
   }
   const next = add(origin, mul(event.direction, FINALE_KAMIKAZE_CONFIG.flySpeed * elapsed));
   if (next.z <= event.bottomLimit) {
@@ -15021,7 +15972,8 @@ function processFinaleKamikaze(runtime, now = Instance.GetGameTime()) {
     return;
   }
   const trace = typeof Instance.TraceLine === "function"
-    ? Instance.TraceLine({ start: origin, end: next, ignoreEntity: pawn, ignorePlayers: true })
+    ? Instance.TraceLine({ start: origin, end: next,
+      ignoreEntity: [pawn, event.visual, event.damageHitbox].filter(validEntity), ignorePlayers: true })
     : undefined;
   if (trace?.didHit || trace?.hit) {
     explodeFinaleKamikaze(runtime, "world-contact");
@@ -15029,7 +15981,8 @@ function processFinaleKamikaze(runtime, now = Instance.GetGameTime()) {
   }
   event.position = next;
   const angles = anglesFromDirection(event.direction);
-  pawn.Teleport?.({ position: next, angles, velocity: mul(event.direction, FINALE_KAMIKAZE_CONFIG.flySpeed) });
+  // No angles here: overriding them every tick locks the pilot's view, and the view is the steering input.
+  pawn.Teleport?.({ position: next, velocity: mul(event.direction, FINALE_KAMIKAZE_CONFIG.flySpeed) });
   if (validEntity(event.visual)) event.visual.Teleport?.({ position: next, angles, velocity: vec() });
   if (validEntity(event.damageHitbox)) {
     event.damageHitbox.Teleport?.({ position: next, angles, velocity: vec() });
@@ -15143,7 +16096,7 @@ function beginFinaleEscape(runtime) {
 
 
   if (runtime.infinite) scheduleNextFinaleInfiniteKamikaze(runtime, runtime.escapeStartedAt);
-  announce("FINALE: boss defeated; escape route is opening");
+  message("FINALE: boss defeated; escape route is opening");
 }
 
 function scheduleFinaleTopCollapse(runtime) {
@@ -15317,6 +16270,7 @@ function queueFinaleEscapeLevel(runtime) {
   selected.escapeNoItems = escape.flags.itemsDisabled;
   selected.escapeNoTraps = escape.flags.trapsDisabled;
   state.levels.set(selected.index, selected);
+  trackRoundReportLevel(selected);
   escape.current = selected;
   if (!escape.firstLevel) {
     escape.firstLevel = selected;
@@ -15424,6 +16378,9 @@ function processFinaleEscapeSpawn(runtime) {
   closeBlockSpawnSafety(level);
   if (level.lifecycle !== "active") {
     setLevelLifecycle(level, "active");
+    try { startHardCodedStageEvent(level); }
+    catch (error) { failRuntime(`escape stage event failed: ${error}`); return; }
+    announceLevelEntry(level);
     spawnEndIndicator(level);
     updateTerrainPreviewHud(level, "finale-escape-spawn-complete");
   }
@@ -15503,14 +16460,14 @@ function startFinalePyramidAfterEscape(runtime) {
   cancelEndingTasks(runtime);
   for (const lift of [...(runtime.finaleNativeLifts ?? [])]) retireFinaleNativeLift(runtime, lift);
   for (const boss of runtime.bosses ?? []) {
-    for (const hitbox of boss.hitboxes ?? []) if (validEntity(hitbox)) hitbox.Kill?.();
-    if (validEntity(boss.visual)) boss.visual.Kill?.();
+    queueFinaleEntityRetirement(runtime, boss.hitboxes ?? []);
+    queueFinaleEntityRetirement(runtime, [boss.visual]);
   }
   for (const piece of [...(runtime.finaleTowerPieces ?? []), ...(runtime.finaleArenaPieces ?? [])]) {
-    for (const entity of piece.entities ?? []) if (validEntity(entity)) entity.Kill?.();
+    queueFinaleEntityRetirement(runtime, piece.entities ?? []);
   }
   for (const platform of runtime.bossArena?.zPlatform ?? []) {
-    for (const entity of platform.entities ?? []) if (validEntity(entity)) entity.Kill?.();
+    queueFinaleEntityRetirement(runtime, platform.entities ?? []);
   }
   // Source FINALE_ENDING.Run() only queues the pyramid past the last exit;
   // the route humans are standing on stays until the round resets. Keep the
@@ -15526,7 +16483,7 @@ function startFinalePyramidAfterEscape(runtime) {
     transferPickedItemState(level, runtime);
     beginLevelFade(level);
     const duration = Math.ceil((255 - 3) / 50) * 0.05 + 0.05;
-    endingTask(runtime, duration, () => destroyLevel(level.index, false));
+    endingTask(runtime, duration, () => destroyLevel(level.index, false, true));
   }
   state.finaleEscapeActive = false;
 
@@ -15562,7 +16519,7 @@ function startFinalePyramidAfterEscape(runtime) {
   buildFinaleGeometry(runtime);
   if (runtime.remaining <= 0) throw new Error("FINALE final pyramid produced no terrain spawn requests");
   moveTeleportDestination(runtime.tpPosition, chase?.tp ? chase.incoming : runtime.direction);
-  announce("FINALE: escape route complete; the final pyramid is rising");
+  message("FINALE: escape route complete; the final pyramid is rising");
   return true;
 }
 
@@ -15614,17 +16571,19 @@ function processFinaleEscape(runtime) {
           expired.fadeInterval = 0.05;
           beginLevelFade(expired);
           const duration = Math.ceil((255 - 3) / 50) * 0.05 + 0.05;
-          endingTask(runtime, duration, () => destroyLevel(expired.index, false));
+          endingTask(runtime, duration, () => destroyLevel(expired.index, false, true));
         }, `finaleEscapeRetire_${current.escapeNumber}`);
       }
+      // Source EndFound() during the finale end-run says only this.
+      announce("***ESCAPE***");
       if (escape.levelCount >= escape.levelTarget) {
         escape.completedAt = now;
         runtime.raceRubbleStopped = true;
-        announce("FINALE: escape route complete; humans reached safety");
+        message("FINALE: escape route complete; humans reached safety");
         escape.lastEnd = clone(current.end);
         startFinalePyramidAfterEscape(runtime);
       } else {
-        announce(`FINALE ESCAPE: level ${escape.levelCount}/${escape.levelTarget} complete`);
+        message(`FINALE ESCAPE: level ${escape.levelCount}/${escape.levelTarget} complete`);
       }
       break;
     }
@@ -15716,6 +16675,10 @@ function finaleBossIdlePlacement(runtime) {
 }
 
 function spawnFinaleBossIdleEyes(runtime) {
+  return drainGenerationSteps(spawnFinaleBossIdleEyeSteps(runtime));
+}
+
+function* spawnFinaleBossIdleEyeSteps(runtime) {
   if (!runtime || runtime.kind !== "FINALE" || runtime.bossPhase || runtime.finaleBossIdleEyes) return 0;
   const count = finaleBossSpawnCount(runtime, runtime.infinite === true);
   runtime.finaleBossIdleEyes = [];
@@ -15730,6 +16693,7 @@ function spawnFinaleBossIdleEyes(runtime) {
     fireTarget(visual, "SetAnimation", "idle_closed");
     fireTarget(visual, "SetDefaultAnimation", "idle_closed", 0.01);
     runtime.finaleBossIdleEyes.push({ ...placement, visual });
+    yield;
   }
   return runtime.finaleBossIdleEyes.length;
 }
@@ -15849,6 +16813,8 @@ function spawnFinaleBoss(runtime, options = {}) {
       feature: `finaleBossVisual_${index}`,
     }, FINALE_BOSS_CONFIG.model);
     if (!validEntity(boss.visual)) throw new Error("FINALE boss visual did not spawn");
+    // Unique name so boss sounds can follow the eye (SetSourceEntity).
+    boss.visual.SetEntityName?.(`finale_boss_visual_${runtime.sequence}_${index}`);
     boss.visual.SetModelScale?.(FINALE_BOSS_CONFIG.modelScale);
     finaleBossSetAnimation(boss, "idle_closed", "idle_closed");
     boss.hitbox = finaleBossTrigger(runtime, boss, "eye", FINALE_BOSS_CONFIG.eyeMins, FINALE_BOSS_CONFIG.eyeMaxs);
@@ -15881,7 +16847,7 @@ function spawnFinaleBoss(runtime, options = {}) {
                                                                            
                                                   
   runtime.nextBossAliveCountAt = runtime.bossStartedAt + FINALE_BOSS_CONFIG.aliveHumanCheckInterval;
-  announce(`FINALE: ${count} boss eye${count === 1 ? "" : "s"} entered the arena`);
+  message(`FINALE: ${count} boss eye${count === 1 ? "" : "s"} entered the arena`);
   return runtime.bosses;
 }
 
@@ -16063,8 +17029,7 @@ function finaleBossMove(runtime, boss, elapsed, now) {
       boss.position = add(boss.position, mul(delta, fraction));
     }
     finaleBossAimAtTarget(boss);
-    boss.visual?.Teleport?.({ position: boss.position, angles: boss.angles, velocity: vec() });
-    boss.visual?.SetForwardVector?.(boss.forwardDirection);
+    moveFinaleBossEntity(boss.visual, { position: boss.position, angles: boss.angles });
     finaleBossSyncHitbox(boss, boss.hitbox, boss.position);
     finaleBossSyncHitbox(boss, boss.grenadeHitbox, boss.position);
     finaleBossSyncHitbox(boss, boss.damageHitbox, boss.position);
@@ -16075,8 +17040,7 @@ function finaleBossMove(runtime, boss, elapsed, now) {
                                                                             
   finaleBossAimAtTarget(boss);
   if (now < (boss.movementPauseUntil ?? 0) || now < (boss.stunUntil ?? 0) || boss.flingUntil > now) {
-    boss.visual?.Teleport?.({ position: boss.position, angles: boss.angles, velocity: vec() });
-    boss.visual?.SetForwardVector?.(boss.forwardDirection);
+    moveFinaleBossEntity(boss.visual, { position: boss.position, angles: boss.angles });
     finaleBossSyncHitbox(boss, boss.hitbox, boss.position);
     finaleBossSyncHitbox(boss, boss.grenadeHitbox, boss.position);
     finaleBossSyncHitbox(boss, boss.damageHitbox, boss.position);
@@ -16118,7 +17082,9 @@ function finaleBossMove(runtime, boss, elapsed, now) {
       || (!boss.tailAim && now >= (boss.tailAimForceUntil ?? 0))) {
       finaleBossSetTailAim(boss, !boss.tailAim, now);
     }
-    if (Math.random() * 100 <= FINALE_BOSS_CONFIG.lowDriftToggleChance) boss.lowDrift = !boss.lowDrift;
+    // Low drift lasts one movement; always recover before another low pass.
+    boss.lowDrift = !boss.lowDrift
+      && Math.random() * 100 < FINALE_BOSS_CONFIG.lowDriftToggleChance;
     boss.tailSnapLiftMult2 = boss.lowDrift ? 1 : 0;
     if (Math.random() * 100 <= FINALE_BOSS_CONFIG.playSoundChance) {
       playFinaleBossTerrorBurst(boss.position, 1, 3, 40, 120);
@@ -16148,9 +17114,11 @@ function finaleBossMove(runtime, boss, elapsed, now) {
     boss.interpolationProgress = Math.min(1,
       boss.interpolationProgress + boss.interpolationSpeed * iterations);
     const smooth = finaleBossSmootherStep(boss.interpolationProgress);
+    // Source 1 TickMovement uses the remaining displacement each tick,
+    // while anchoring the result at interpolation_startpos.
     boss.position = add(
       boss.interpolationStart,
-      mul(sub(boss.destination, boss.interpolationStart), smooth),
+      mul(sub(boss.destination, boss.position), smooth),
     );
   } else {
                                                                       
@@ -16167,8 +17135,7 @@ function finaleBossMove(runtime, boss, elapsed, now) {
   boss.lastPosition = clone(boss.position);
   finaleBossAimAtTarget(boss);
   boss.nextMovementAt = now + FINALE_BOSS_CONFIG.tickRate;
-  boss.visual?.Teleport?.({ position: boss.position, angles: boss.angles, velocity: vec() });
-  boss.visual?.SetForwardVector?.(boss.forwardDirection);
+  moveFinaleBossEntity(boss.visual, { position: boss.position, angles: boss.angles });
   finaleBossSyncHitbox(boss, boss.hitbox, boss.position);
   finaleBossSyncHitbox(boss, boss.grenadeHitbox, boss.position);
   finaleBossSyncHitbox(boss, boss.damageHitbox, boss.position);
@@ -16229,8 +17196,9 @@ function finaleBossCollectPieces(runtime, boss, now) {
                                                                              
                                                                        
                                     
-        try { entity.SetSolid?.(5); } catch {                                  }
-        fireTarget(entity, "SetSolid", "5");
+        // Touch damage is handled by script; moving terrain must not
+        // remain a solid collider in the engine.
+        fireTarget(entity, "DisableCollision");
         raceSetCollisionGroup(entity, FINALE_BOSS_CONFIG.collisionGroup);
         entity.SetColor?.({ r: 255, g: 255, b: 255, a: 255 });
       }
@@ -16256,7 +17224,7 @@ function finaleBossCollectPieces(runtime, boss, now) {
       mul(sub(targetPosition, piece.bossCollectStart), finaleBossSmootherStep(piece.bossCollectProgress)));
     piece.position = clone(position);
     for (const entity of piece.entities ?? []) {
-      entity.Teleport?.({ position, angles: piece.angles, velocity: vec() });
+      moveFinaleBossEntity(entity, { position, angles: piece.angles });
       entity.SetColor?.({ r: piece.bossCollectProgress < 1 ? 255 : 255, g: piece.bossCollectProgress < 1 ? 50 : 255, b: piece.bossCollectProgress < 1 ? 50 : 255, a: 255 });
     }
     if (piece.bossCollectProgress >= 1) {
@@ -16293,7 +17261,7 @@ function finaleBossSyncChain(boss) {
                                                                           
                                                                           
       for (const entity of piece.entities ?? []) {
-        if (validEntity(entity)) entity.Teleport?.({ position: firstPosition, velocity: vec() });
+        moveFinaleBossEntity(entity, { position: firstPosition });
       }
       lead = firstPosition;
       continue;
@@ -16368,8 +17336,7 @@ function finaleBossSyncChain(boss) {
     piece.angles = anglesFromDirection(pieceForward);
     for (const entity of piece.entities ?? []) {
       if (!validEntity(entity)) continue;
-      entity.Teleport?.({ position: newPosition, angles: piece.angles, velocity: vec() });
-      entity.SetForwardVector?.(pieceForward);
+      moveFinaleBossEntity(entity, { position: newPosition, angles: piece.angles });
     }
     lead = newPosition;
   }
@@ -16377,23 +17344,27 @@ function finaleBossSyncChain(boss) {
 }
 
 function finaleBossDamagePieceTouch(runtime, pawn, damage, now) {
-  if (!validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 3) return false;
+  if (!finaleBossCanHurtPawn(pawn)) return false;
                                                                          
                                                                             
   runtime.bossPieceTouchCooldowns ??= new Map();
   if ((runtime.bossPieceTouchCooldowns.get(pawn) ?? 0) > now) return false;
   runtime.bossPieceTouchCooldowns.set(pawn, now + FINALE_BOSS_CONFIG.pieceTouchCooldown);
   const health = pawn.GetHealth?.();
-                                                                             
-                                                                            
-  if (Number.isFinite(health) && health > damage && typeof pawn.SetHealth === "function") {
-    pawn.SetHealth(health - damage);
-  } else pawn.TakeDamage?.({ damage, damageFlags: CSDamageFlags.IGNORE_ARMOR ?? 0 });
+  // Health is an integer: stage-scaled damage can leave less than one HP.
+  // Never write zero with SetHealth; lethal hits need the engine death path.
+  const remainingHealth = Math.floor(health - damage);
+  if (Number.isFinite(remainingHealth) && remainingHealth > 0 && typeof pawn.SetHealth === "function") {
+    pawn.SetHealth(remainingHealth);
+  } else pawn.TakeDamage?.({ damage: Math.ceil(damage), damageFlags: CSDamageFlags.IGNORE_ARMOR ?? 0 });
   return true;
 }
 
-function finaleBossPieceDamage(runtime, boss, now) {
-  const humans = finaleBossAliveHumans();
+function finaleBossPieceDamage(runtime, boss, now, touchFrame) {
+  // One lazy hull cache shared by all bosses this tick. Cooldown players
+  // require neither native hull reads nor a geometric intersection test.
+  const { humans, hulls } = touchFrame ?? { humans: finaleBossAliveHumans(), hulls: new Map() };
+  if (!humans.length) return;
   const activePieces = new Set([
     ...(boss.pieces ?? []),
     ...(boss.collectingPieces ?? []),
@@ -16402,7 +17373,11 @@ function finaleBossPieceDamage(runtime, boss, now) {
     if (!piece.bossCollected && !piece.bossCollecting) continue;
     if (now < (piece.bossTouchActiveAt ?? Number.POSITIVE_INFINITY)) continue;
     for (const pawn of humans) {
-      if (!finaleBossPieceTouchesPawn(piece, pawn)) continue;
+      if ((runtime.bossPieceTouchCooldowns?.get(pawn) ?? 0) > now) continue;
+      if (!hulls.has(pawn)) hulls.set(pawn, playerCollisionHull(pawn));
+      const hull = hulls.get(pawn);
+      if (!hull) continue;
+      if (!finaleBossPieceTouchesPawn(piece, pawn, hull)) continue;
       const damage = (piece.isBullet
         ? FINALE_BOSS_CONFIG.pieceBulletDamage
         : boss.midspin
@@ -16428,7 +17403,7 @@ function finaleBossStartSpin(boss, now) {
     + (Math.random() * 2 - 1) * FINALE_BOSS_CONFIG.tailAimForceRandomOffset;
   boss.shouldMove = true;
   finaleBossSetAnimation(boss, "idle_open", "idle_open", 1.5, now);
-  playSourceAudioCue(14826, boss.position);
+  playSourceAudioCue(14826, boss.position, {parent:boss.visual});
   playFinaleBossTerrorBurst(boss.position, 2, 4, 20, 200);
 }
 
@@ -16593,46 +17568,87 @@ function processFinaleBossBullets(runtime, now) {
   }
 }
 
+// Reuse the original tinted boss afterimages without allocating props every cast.
+const FINALE_ATTACK_VISUAL_FEATURES = new Set([
+  "finaleBossAttack", "finaleBossFlingCharge", "finaleBossSight", "finaleBossFling",
+]);
+const FINALE_ATTACK_VISUAL_LIMIT = 30;
+
+function retireFinaleBossAttackVisual(runtime, projectile) {
+  if (validEntity(projectile.visual)) fireTarget(projectile.visual, "TurnOff");
+  if (projectile.slot?.lease === projectile) projectile.slot.lease = undefined;
+  runtime.bossAttackVisuals?.delete(projectile);
+}
+
+function clearFinaleBossAttackVisuals(runtime) {
+  for (const projectile of runtime.bossAttackVisuals ?? []) retireFinaleBossAttackVisual(runtime, projectile);
+  for (const slot of runtime.bossAttackVisualPool ?? []) {
+    if (validEntity(slot.visual)) slot.visual.Kill?.();
+    runtime.entities.delete(slot.visual);
+    state.silentHillWorld.visuals.delete(slot.visual);
+  }
+  runtime.bossAttackVisualPool?.clear();
+}
+
 function spawnFinaleBossAttackVisual(runtime, position, direction, color, speed, lifetime, scale = 2, feature = "finaleBossAttack", track = true) {
-  if (!runtime || !position || !direction) return undefined;
-  let visual;
+  if (!runtime || !position || !direction || runtime.lifecycle !== "active"
+    || !Number.isFinite(lifetime) || lifetime <= 0
+    || !FINALE_ATTACK_VISUAL_FEATURES.has(feature)) return undefined;
+  const now = Instance.GetGameTime();
+  runtime.bossAttackVisualPool ??= new Set();
+  runtime.bossAttackVisuals ??= new Set();
+  let slot;
   try {
-    visual = spawnVisual(runtime, {
-      position: clone(position),
-      angles: anglesFromDirection(direction),
-      feature,
-    }, FINALE_BOSS_CONFIG.model);
+    for (const entry of runtime.bossAttackVisualPool) {
+      if (!validEntity(entry.visual)) {
+        if (entry.lease) retireFinaleBossAttackVisual(runtime, entry.lease);
+        runtime.entities.delete(entry.visual);
+        state.silentHillWorld.visuals.delete(entry.visual);
+        runtime.bossAttackVisualPool.delete(entry);
+      } else if (!slot || (entry.lease?.expiresAt ?? -Infinity) < (slot.lease?.expiresAt ?? -Infinity)) slot = entry;
+    }
+    if ((!slot || slot.lease) && runtime.bossAttackVisualPool.size < FINALE_ATTACK_VISUAL_LIMIT) {
+      const visual = spawnVisual(runtime, {
+        position: clone(position), angles: anglesFromDirection(direction), feature,
+      }, FINALE_BOSS_CONFIG.model);
+      if (!validEntity(visual)) return undefined;
+      slot = { visual, lease: undefined };
+      runtime.bossAttackVisualPool.add(slot);
+    }
+    if (!slot) return undefined;
+    if (slot.lease) retireFinaleBossAttackVisual(runtime, slot.lease);
+    slot.visual.Teleport?.({ position: clone(position), angles: anglesFromDirection(direction), velocity: vec() });
+    // Reapply every lease: a yellow charge may reuse a blue sight afterimage.
+    slot.visual.SetModelScale?.(scale);
+    slot.visual.SetColor?.(color);
+    slot.visual.Glow?.(color);
+    fireTarget(slot.visual, "TurnOn");
   } catch (error) {
-    runtime.finaleStructure?.notes?.push?.(`${feature} visual unavailable: ${error}`);
+    if (!runtime.bossAttackVisualErrorReported) {
+      runtime.bossAttackVisualErrorReported = true;
+      message(`WARNING: boss attack visual unavailable: ${error}`);
+    }
     return undefined;
   }
-  if (!validEntity(visual)) return undefined;
-  visual.SetModelScale?.(scale);
-  visual.SetColor?.(color);
-                                                                          
-                                                   
-  visual.Glow?.(color);
-  const now = Instance.GetGameTime();
+  // Even untracked callers must expire their lease before the slot can be reused.
+  void track;
   const projectile = {
-    visual,
+    visual: slot.visual, slot,
     position: clone(position),
     direction: finaleKamikazeNormalize(direction),
     speed,
     expiresAt: now + lifetime,
     feature,
   };
-  if (track) {
-    runtime.bossAttackVisuals ??= new Set();
-    runtime.bossAttackVisuals.add(projectile);
-  }
+  slot.lease = projectile;
+  runtime.bossAttackVisuals.add(projectile);
   return projectile;
 }
 
 function processFinaleBossAttackVisuals(runtime, now, elapsed) {
   for (const projectile of [...(runtime?.bossAttackVisuals ?? [])]) {
-    if (!validEntity(projectile.visual) || now >= projectile.expiresAt) {
-      projectile.visual?.Kill?.();
-      runtime.bossAttackVisuals.delete(projectile);
+    if (runtime.lifecycle !== "active" || !validEntity(projectile.visual) || now >= projectile.expiresAt) {
+      retireFinaleBossAttackVisual(runtime, projectile);
       continue;
     }
     projectile.position = add(projectile.position, mul(projectile.direction, projectile.speed * elapsed));
@@ -16725,6 +17741,7 @@ function finaleBossSightAttack(runtime, boss, now) {
     : finaleBossChooseTarget(boss);
   if (!target?.pawn) return;
   const pawn = target.pawn;
+  if (!finaleBossCanHurtPawn(pawn)) return;
   const targetOrigin = pawn.GetAbsOrigin?.();
   const targetPosition = pawn.EyePosition?.()
     ?? pawn.GetEyePosition?.()
@@ -16770,6 +17787,7 @@ function finaleBossFlingAttack(runtime, boss, now) {
   if (!boss.flingAppliedAt) {
     boss.flingAppliedAt = now;
     for (const pawn of finaleBossAliveHumans()) {
+      if (finalePawnNoclipping(pawn)) continue;
       const position = pawn.GetAbsOrigin?.();
       if (!position || Math.hypot(position.x - boss.position.x, position.y - boss.position.y, position.z - boss.position.z) > FINALE_BOSS_CONFIG.attackFlingDistance) continue;
       const eyePosition = pawn.EyePosition?.()
@@ -16795,9 +17813,11 @@ function finaleBossFlingAttack(runtime, boss, now) {
     }
     for (let index = 0; index < 3; index++) {
       playSourceAudioCue(14726, boss.position, {
+        parent: boss.visual,
         pitch: 200 + Math.floor(Math.random() * 56),
       });
       playSourceAudioCue(14727, boss.position, {
+        parent: boss.visual,
         pitch: 200 + Math.floor(Math.random() * 56),
       });
     }
@@ -16826,7 +17846,7 @@ function processFinaleBossBlink(boss, now) {
       + Math.random() * (FINALE_BOSS_CONFIG.blinkPlaybackMax - FINALE_BOSS_CONFIG.blinkPlaybackMin),
     now,
   );
-  playSourceAudioCue(14895, boss.position);
+  playSourceAudioCue(14895, boss.position, {parent:boss.visual});
                                                                             
                                                                            
                                                                          
@@ -16854,8 +17874,7 @@ function processFinaleBossDeathMotion(runtime, boss, elapsed) {
                                                                              
                                                                            
   boss.forwardDirection = forwardFromAngles(boss.angles);
-  boss.visual.Teleport?.({ position: boss.position, angles: boss.angles, velocity: vec() });
-  boss.visual.SetForwardVector?.(boss.forwardDirection);
+  moveFinaleBossEntity(boss.visual, { position: boss.position, angles: boss.angles });
   finaleBossSyncHitbox(boss, boss.hitbox, boss.position);
   finaleBossSyncHitbox(boss, boss.grenadeHitbox, boss.position);
   finaleBossSyncHitbox(boss, boss.damageHitbox, boss.position);
@@ -16905,8 +17924,8 @@ function processFinaleBossFight(runtime) {
     for (const boss of runtime.bosses ?? []) {
       boss.eyelidOpen = true;
       finaleBossSetAnimation(boss, "open", "idle_open", 1, now);
-      playSourceAudioCue(14901, boss.position, { pitch: 20 + Math.floor(Math.random() * 21) });
-      playSourceAudioCue(14903, boss.position, { pitch: 65 + Math.floor(Math.random() * 11) });
+      playSourceAudioCue(14901, boss.position, { parent: boss.visual, pitch: 20 + Math.floor(Math.random() * 21) });
+      playSourceAudioCue(14903, boss.position, { parent: boss.visual, pitch: 65 + Math.floor(Math.random() * 11) });
     }
   }
   const humans = finaleBossAliveHumans();
@@ -16921,6 +17940,7 @@ function processFinaleBossFight(runtime) {
   for (const pawn of allLivingPawns()) finaleBossFallTouch(runtime, pawn, now);
   if (humans.length > 0) finaleBossApplyHumanDeathReduction(runtime, humans, now);
   processFinaleBossBullets(runtime, now, elapsed);
+  const touchFrame = { humans, hulls: new Map() };
   for (const boss of runtime.bosses ?? []) {
     if (boss.dead) {
       processFinaleBossDeathMotion(runtime, boss, elapsed);
@@ -16981,7 +18001,7 @@ function processFinaleBossFight(runtime) {
     processFinaleBossBlink(boss, now);
     finaleBossCollectPieces(runtime, boss, now);
     finaleBossSyncChain(boss);
-    finaleBossPieceDamage(runtime, boss, now);
+    finaleBossPieceDamage(runtime, boss, now, touchFrame);
     finaleBossFlingChargeTick(runtime, boss);
     finaleBossAttackTick(runtime, boss, now);
     finaleBossSightAttack(runtime, boss, now);
@@ -17005,6 +18025,7 @@ function startFinaleBossFight(runtime = state.endingRuntime, options = {}) {
   setSnowstormOverlayEnabled(false);
   spawnFinaleBoss(runtime, options);
   setupFinaleSky(runtime);
+  startFinaleSky(runtime);
   startFinaleBossMusic(runtime, runtime.bossStartedAt);
                                                                         
                                                                        
@@ -17025,6 +18046,7 @@ function removeAscendHumanMoonboosts(runtime) {
       }
     }
   }
+  if (runtime.humanMoonboostRemoved > 0) announce("[ASCEND ENDING] removing human moonboost item(s)");
 }
 
 function spawnAscendZombieItems(runtime) {
@@ -17057,6 +18079,11 @@ function spawnAscendZombieItems(runtime) {
   for (let index = 0; index < ASCEND_CONFIG.moonboostZombieAmount; index++) spawnOne("moonboost", index);
   for (let index = 0; index < ASCEND_CONFIG.flightZombieAmount; index++) spawnOne("flight", index);
   runtime.zombieItemsSpawnedAt = Instance.GetGameTime();
+  if (ASCEND_CONFIG.moonboostZombieAmount > 0 || ASCEND_CONFIG.flightZombieAmount > 0) {
+    announceRepeated(`[ASCEND ENDING] ${ASCEND_CONFIG.moonboostZombieAmount} Z-moonboost + `
+      + `${ASCEND_CONFIG.flightZombieAmount} Z-flight items spawned`);
+    endingTask(runtime, 1.03, () => announceRepeated("[ASCEND ENDING] (Available at TP/start of previous stage)"));
+  }
 }
 
 function clearAscendFlightItems(runtime) {
@@ -17150,7 +18177,7 @@ function beginAscension(runtime) {
   runtime.nextAscendTickAt = runtime.ascendStartedAt;
   runtime.fadeTicking = false;
   triggerAscendFade(runtime, "ascension", runtime.ascendStartedAt);
-  announce("ASCEND ending: the ascension has begun");
+  announceRepeated("[ASCEND ENDING] THE ASCENSION HAS BEGUN!");
 }
 
 function resolveAscension(runtime, { roundEnded = false } = {}) {
@@ -17173,6 +18200,11 @@ function resolveAscension(runtime, { roundEnded = false } = {}) {
   runtime.safeMovementType = "none";
   for (const pawn of survivors) freezeAscendSurvivor(runtime, pawn);
   if (roundEnded) return;
+  // Source ENDINGS.ASCEND.Win() prints the result itself, not at round end.
+  if (survivors.length <= 0) announceRepeated("[ASCEND ENDING] NO HUMANS ASCENDED - YOU LOSE!");
+  else if (runtime.roundLost === true) announceRepeated("[ASCEND ENDING] YOU FAILED DURING ASCENSION - YOU LOSE!");
+  else if (survivors.length === 1) announceRepeated("[ASCEND ENDING] 1 HUMAN ASCENDED - SOLO WIN!");
+  else announceRepeated(`[ASCEND ENDING] ${survivors.length} HUMANS ASCENDED - YOU WIN!`);
   clearAscendFlightItems(runtime);
   for (const pawn of allLivingPawns()) {
     if (runtime.safePlayers.has(pawn)) continue;
@@ -17220,7 +18252,11 @@ function startAscendEnding(stageSnapshot, sourceRuntime) {
   endingTaskAt(runtime, at(ASCEND_CONFIG.defendTime + ASCEND_CONFIG.winDelay), () => resolveAscension(runtime), "ascend_settlement");
   scheduleAscendFadeTick(runtime, at(ASCEND_CONFIG.fadeStartDelay));
   playEndingMusic(runtime, ASCEND_CONFIG.music);
-  announce(`ASCEND ending started; survive for ${ASCEND_CONFIG.defendTime} seconds`);
+  endingAnnounce(runtime, 0, "[ASCEND ENDING]", 3);
+  endingAnnounce(runtime, 1.05, "[ASCEND ENDING] YOU WILL SOON ASCEND TO THE HEAVENS", 3);
+  if (ASCEND_CONFIG.defendTime > 5) endingAnnounce(runtime, 5,
+    `[ASCEND ENDING] SURVIVE FOR ${Math.trunc(ASCEND_CONFIG.defendTime - 5)}s`, 3);
+  endingCountdown(runtime, ASCEND_CONFIG.defendTime, "[ASCEND ENDING] ASCENSION IN");
   return runtime;
 }
 
@@ -17321,6 +18357,13 @@ function distance2D(a, b) {
 }
 
 function message(text) {
+  if (!CONFIG.loggingEnabled) return;
+  Instance.Msg(`[ze_collective] ${text}`);
+}
+
+// Server console only, regardless of loggingEnabled: faults and debug-command
+// feedback an operator must see without spamming player chat.
+function consoleNotice(text) {
   Instance.Msg(`[ze_collective] ${text}`);
 }
 
@@ -17364,10 +18407,288 @@ function raceRequestContext(runtime, record, request, kind) {
   }
 }
 
+// Source PlayerNameMessage prints the nickname, never the entity name or slot.
+// Capture it now so delayed messages cannot refer to a reused player slot.
+function playerNameMessage(player, prefix = "", affix = "", delay = 0) {
+  let name;
+  try {
+    if (!validEntity(player)) return false;
+    const controller = typeof player.GetPlayerName === "function" ? player
+      : player.GetOriginalPlayerController?.() ?? player.GetPlayerController?.();
+    if (!validEntity(controller)) return false;
+    name = controller.GetPlayerName?.();
+  } catch {
+    return false;
+  }
+  if (typeof name !== "string" || !name.trim()) return false;
+  const text = `${prefix}${name}${affix}`;
+  if (delay > 0) schedule(delay, () => announce(text));
+  else announce(text);
+  return true;
+}
+
+// Player chat carries only Source's `say` lines (manager.nut). Diagnostics,
+// debug feedback and port-only status belong in message() (console).
 function announce(text) {
   message(text);
   const safe = String(text).replace(/[\r\n;"]/g, " ");
   Instance.ServerCommand(`say ${safe}`);
+}
+
+// Source stressed a line by re-sending it at +0.01s steps (3x, or 5x for
+// results); the duplicates land in the same chat burst.
+function announceRepeated(text, times = 3) {
+  for (let i = 0; i < times; i++) announce(text);
+}
+
+// Squirrel float tostring() is printf("%g"): 60.0 -> "60", 2/3 -> "0.666667".
+function sqNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(number);
+  if (number === 0) return "0";
+  const exponent = Math.floor(Math.log10(Math.abs(number)));
+  if (exponent < -4 || exponent >= 6) {
+    return number.toExponential(5).replace(/\.?0+e/, "e").replace(/e([+-])(\d)$/, "e$10$2");
+  }
+  return String(Number(number.toPrecision(6)));
+}
+
+function createTrollMessageState() {
+  return { enabled: TROLL_MESSAGE_CONFIG.enabled, nextAt: undefined,
+    nominations: new Map(), counts: new Map() };
+}
+
+function trollMessageText(value, limit = 256) {
+  // Keep names literal and safe for ordinary chat console commands.
+  return Array.from(String(value ?? "").replace(/[\x00-\x1f\x7f;"\\]/g, " ").trim()).slice(0, limit).join("");
+}
+
+function clearTrollMessages() {
+  state.trollMessages = createTrollMessageState();
+}
+
+function showTrollMessage(text) {
+  const safe = trollMessageText(text);
+  if (!safe) return false;
+  // Fake nominations and vote results belong in chat only.
+  announce(safe);
+  return true;
+}
+
+function trollMapNomination() {
+  const candidates = Instance.GetAllPlayerControllers().filter(controller => {
+    try {
+      return validEntity(controller) && controller.IsConnected?.() !== false && !controller.IsBot?.()
+        && trollMessageText(controller.GetPlayerName?.());
+    } catch { return false; }
+  });
+  if (!candidates.length || !TROLL_MESSAGE_CONFIG.maps.length) return false;
+  const controller = candidates[Math.floor(Math.random() * candidates.length)];
+  const name = trollMessageText(controller.GetPlayerName(), 64);
+  const prank = state.trollMessages;
+  const previous = prank.nominations.get(name);
+  const pool = TROLL_MESSAGE_CONFIG.maps.filter(map => map !== previous);
+  if (!pool.length) return false;
+  const map = pool[Math.floor(Math.random() * pool.length)];
+  if (previous) prank.counts.set(previous, Math.max(0, (prank.counts.get(previous) ?? 0) - 1));
+  const count = (prank.counts.get(map) ?? 0) + 1;
+  prank.nominations.set(name, map);
+  prank.counts.set(map, count);
+  // CS2Fixes uses the same line for first and changed nominations.
+  return showTrollMessage(`[CS2Fixes] ${map} was nominated by ${name}. It now has ${count} nomination${count === 1 ? "" : "s"}.`);
+}
+
+function trollMapVote() {
+  const pool = TROLL_MESSAGE_CONFIG.maps;
+  if (!pool.length) return false;
+  return showTrollMessage(`The vote has ended. ${pool[Math.floor(Math.random() * pool.length)]} will be the next map!`);
+}
+
+function processTrollMessages(now) {
+  const prank = state.trollMessages;
+  if (!prank.enabled || !state.running || state.fatal) return;
+  if (prank.nextAt === undefined) {
+    prank.nextAt = now + TROLL_MESSAGE_CONFIG.minimumDelay
+      + Math.random() * (TROLL_MESSAGE_CONFIG.maximumDelay - TROLL_MESSAGE_CONFIG.minimumDelay);
+    return;
+  }
+  if (now < prank.nextAt) return;
+  // Schedule from now: no catch-up flood after a long pause or stalled Think.
+  prank.nextAt = undefined;
+  if (Math.random() < TROLL_MESSAGE_CONFIG.voteChance) trollMapVote();
+  else trollMapNomination();
+  processTrollMessages(now);
+}
+
+function debugTrollMessageCommand(args) {
+  const command = String(args ?? "status").trim().toLowerCase() || "status";
+  if (command === "nom" || command === "nominate") {
+    if (!trollMapNomination()) message("[TROLL] no connected named human player available");
+  } else if (command === "vote") trollMapVote();
+  else if (command === "on" || command === "off") {
+    state.trollMessages.enabled = command === "on";
+    state.trollMessages.nextAt = undefined;
+    message(`[TROLL] automatic messages ${command.toUpperCase()}`);
+  } else if (command === "status") {
+    message(`[TROLL] automatic=${state.trollMessages.enabled} next=${state.trollMessages.nextAt ?? "not scheduled"}`);
+  } else message("usage: ze_debug_troll [nom|vote|on|off|status]");
+}
+
+function createReportSessionId() {
+  // Source wraps eight characters from UniqueString() in '#'. CS2 has no
+  // Squirrel UniqueString; retain its printable format with a local token.
+  return `#${Array.from({ length: 8 }, () => Math.floor(Math.random() * 36).toString(36)).join("")}#`;
+}
+
+// Retain values only: retiring terrain must neither erase statistics nor keep
+// its entities, output closures or planning queues alive until round end.
+function trackRoundReportLevel(runtime) {
+  if (!runtime || state.roundReportLevels.has(runtime.index)) return;
+  const record = {
+    index: runtime.index, id: String(runtime.id ?? "unknown"),
+    name: String(runtime.name ?? "unknown"), author: String(runtime.author ?? "unknown"),
+    center: clone(runtime.center ?? runtime.end ?? vec()),
+    stageLevel: runtime.stageLevel ?? 0,
+    special: runtime.raceLevel ? "race" : runtime.finaleEscape ? "escape" : undefined,
+    deaths: 0,
+  };
+  state.roundReportLevels.set(runtime.index, record);
+  state.roundReportRecent.push(record);
+  if (state.roundReportRecent.length > CONFIG.maxAreaHistory + 2) state.roundReportRecent.shift();
+}
+
+function recordRoundReportDeath(pawn, position = pawn?.GetAbsOrigin?.()) {
+  if (!state.running || state.roundReportPrinted || state.campaign.endingResolved
+    || !validEntity(pawn) || !position || state.roundReportVictims.has(pawn)) return;
+  // Source attributes human deaths/infections to the nearest recent map in
+  // XY, including retained history. Speculative preloads are never admitted.
+  const recent = state.roundReportRecent;
+  let nearest, distance = Infinity;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const candidate = recent[i];
+    const nextDistance = distance2D(position, candidate.center);
+    if (nextDistance < distance) { nearest = candidate; distance = nextDistance; }
+  }
+  if (!nearest) return;
+  nearest.deaths++;
+  state.roundReportVictims.add(pawn);
+}
+
+function captureRoundReport(ending) {
+  if (state.roundReportPrinted) return undefined;
+  const levels = [...state.roundReportLevels.values()];
+  const stage = ending?.stageSnapshot ?? state.currentLevel?.stageSnapshot
+    ?? state.pendingLevel?.stageSnapshot ?? campaignStageSnapshot();
+  const bosses = [...(ending?.bosses ?? [])];
+  return {
+    stage, levels, endingKind: ending?.kind,
+    debug: ending?.debugForced === true || !!state.debugStageId,
+    adminReset: state.campaign.adminSelection === "reset",
+    // Source reports mapspawnindex, incremented when a map is committed, even
+    // before construction finishes. Stage progress is a separate counter.
+    reached: levels.reduce((count, level) => level.special || !Number.isInteger(level.index)
+      ? count : Math.max(count, level.index), 0),
+    bossHealth: bosses.reduce((sum, boss) => sum + (boss.dead ? 0 : Math.max(0, boss.health || 0)), 0),
+    bossMaxHealth: bosses.reduce((sum, boss) => sum + Math.max(0, boss.maxHealth || 0), 0),
+    grenadeHits: ending?.bossGrenadeHitCount ?? 0,
+    escapeStarted: ending?.escapeStartedAt !== undefined,
+    escapeLevel: ending?.escape?.levelCount ?? levels.filter(level => level.special === "escape").length,
+    escapeTarget: ending?.escape?.levelTarget,
+    finalPyramid: ending?.finalPyramidStartedAt !== undefined,
+    finalRising: ending?.finalRising === true,
+    finaleDefaultWin: ending?.finaleDefaultWin === true,
+    infiniteFinale: ending?.kind === "FINALE" && ending?.infinite === true,
+    mapPool: ending?.kind === "FINALE" ? finaleMapPoolCount(ending) : undefined,
+  };
+}
+
+// Source ListenRoundEnd result lines per ending: [repeats, extra won line].
+const ENDING_RESULT_REPEATS = Object.freeze({ RISE: 3, BRIDGE: 3 });
+
+// Chat lines Source printed at round end for this outcome. Returns
+// { lines, summary, deferred }: summary false means Source stayed silent
+// (ending_called suppresses RoundEndMessagePost on a loss).
+function roundEndChat(report, humansWon) {
+  const kind = report.endingKind;
+  if (!kind || report.debug) return { lines: [], summary: true, deferred: [] };
+  if (kind === "FINALE") {
+    if (!report.finalRising) return { lines: [], summary: humansWon || !report.finalPyramid, deferred: [] };
+    const label = report.infiniteFinale ? "[INFINITE FINALE ENDING]" : "[FINALE ENDING]";
+    if (!humansWon) return { lines: [[`${label} YOU LOST!`, 1]], summary: false, deferred: [] };
+    if (report.finaleDefaultWin) return { lines: [], summary: true, deferred: [] };
+    const tally = report.infiniteFinale
+      ? ` (${report.stage.checkoutValue ?? report.reached} levels | ${report.mapPool} map_pool)` : "";
+    return { lines: [[`${label} YOU WON - ${finaleLegitTag(true)}${tally}`, 5]], summary: true, deferred: [] };
+  }
+  // ASCEND printed its own result at settlement.
+  if (kind === "ASCEND") return { lines: [], summary: humansWon, deferred: [] };
+  const repeats = ENDING_RESULT_REPEATS[kind] ?? 1;
+  const deferred = humansWon && kind === "RACE" ? [[1.01, "[RACE ENDING] YOU ARE TRUE RACISTS!"]] : [];
+  return { lines: [[`[${kind} ENDING] ${humansWon ? "YOU WON!" : "YOU LOST!"}`, repeats]],
+    summary: humansWon, deferred };
+}
+
+function roundReportSummary(report, humansWon) {
+  const stage = report.stage;
+  const finale = report.endingKind === "FINALE" || stage.stageIndex === FINALE_STAGE_INDEX;
+  const finaleName = stage.infiniteMode ? `infinite-finale(checkout:${stage.checkoutValue ?? report.reached})` : "finale";
+  if (report.adminReset) return "resetting map!";
+  if (report.debug) return `debug ${report.endingKind ?? "level"} run ended`;
+  if (humansWon) {
+    if (finale) return stage.infiniteMode
+      ? `YOU WON THE MAP IN INFINITE MODE (${stage.checkoutValue ?? report.reached} levels | ${report.mapPool ?? finaleMapPoolCount()} map_pool) - REPEATING INFINITY MODE`
+      : "YOU WON THE MAP - ENABLING INFINITY MODE";
+    const next = state.campaign.stageIndex >= FINALE_STAGE_INDEX ? "the finale"
+      : `stage ${state.campaign.stageIndex + 1} (${campaignStageSnapshot().theme})`;
+    return `you completed stage ${stage.stageNumber} (${stage.theme}) - moving on to ${next}`;
+  }
+  if (finale) {
+    if (report.finalPyramid) return `you lost during the ${finaleName} final pyramid defense`;
+    if (report.escapeStarted) return `you lost during the ${finaleName} ending-rush (level ${report.escapeLevel}/${report.escapeTarget ?? "?"})`;
+    if (report.bossMaxHealth > 0) {
+      const percent = Math.floor(report.bossHealth / report.bossMaxHealth * 100);
+      return `you lost during the ${finaleName} bossfight (${percent}% out of ${report.bossMaxHealth}hp left | ${report.grenadeHits} grenades hit)`;
+    }
+    return `you lost during the early ${finaleName}`;
+  }
+  const progress = `${report.reached}/${stage.infiniteMode ? "infinity" : stage.stageGoal}`;
+  if (report.endingKind) return `you lost during the ${report.endingKind} ending (level ${progress})`;
+  return `you reached level ${progress}`;
+}
+
+function printRoundReport(report, ending) {
+  if (!report || state.roundReportPrinted) return [];
+  state.roundReportPrinted = true;
+  let deferred = [];
+  // Settlement advances the campaign and clears its level counter. Report
+  // the pre-settlement stage and the ending's explicit outcome instead.
+  const humansWon = !report.debug && !state.adminSlayActive && ending?.outcome?.humansWon === true;
+  const summary = `${humansWon ? "[STAGE]" : "[ROUND END]"}${report.debug ? " [DEBUG]" : ""} ${roundReportSummary(report, humansWon)} (SID:${state.reportSessionId})`;
+  const chat = report.adminReset ? { lines: [], summary: true, deferred: [] } : roundEndChat(report, humansWon);
+  for (const [line, times] of chat.lines) announceRepeated(line, times);
+  // Debug runs and Source-silent outcomes keep the summary on the console.
+  if (chat.summary && !report.debug) announce(summary);
+  else message(summary);
+  deferred = chat.deferred;
+  message("[MAP DEATH SUMMARY]");
+  const levels = report.levels.slice().reverse();
+  if (!levels.length) message("     no generated levels");
+  for (const level of levels) {
+    message(`     index: ${level.index}   |   deaths: ${level.deaths}   |   id: ${level.id}`
+      + `   |   name: ${level.name}   |   author: ${level.author}`);
+  }
+  // Source suppresses compact chat export in single-player. Chunk long runs
+  // into bounded ASCII commands so no map IDs disappear through truncation.
+  if ((Instance.GetAllPlayerControllers()?.length ?? 0) <= 1) return deferred;
+  let chunk = "ID_DEATHS|";
+  for (const level of levels) {
+    const id = level.id.replace(/^#/, "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "unknown";
+    const token = `${id}_${level.deaths}|`;
+    if (chunk.length + token.length > 180) { announce(chunk); chunk = "ID_DEATHS|"; }
+    chunk += token;
+  }
+  if (levels.length) announce(chunk);
+  return deferred;
 }
 
 function findTerrainPreviewHud() {
@@ -17865,22 +19186,23 @@ function updateTerrainPreviewMetadata(hud, metadata) {
 
 function terrainPreviewTileClass(tile) {
   const value = Number(tile);
-  if (!Number.isInteger(value)) return "TileIndexUnknown";
-  if (value === 9998) return "TileIndex9998";
-  if (value >= 0 && value < 200) return `TileIndex${value}`;
-  return "TileIndexUnknown";
+  const key = !Number.isInteger(value) ? "Unknown"
+    : value === 9998 || (value >= 0 && value < 200) ? String(value) : "Unknown";
+  return `TileIndex${TERRAIN_PREVIEW_TILE_CLASS_ALIAS[key] ?? key}`;
 }
 
 function terrainPreviewRows(runtime) {
   if (!runtime) return [];
-  if (Array.isArray(runtime.previewRows)) return runtime.previewRows;
+  // Source tiles use the opposite row/column order from the authored image.
+  // GetRotatedMap(map, "east", false) in manager.nut is a transpose; keep
+  // the preview independent of world direction and runtime mirroring.
   if (Array.isArray(runtime.previewTiles)) {
-    const rows = [];
-    for (let y = 0; y < CONFIG.mapSize; y++) {
-      rows.push(runtime.previewTiles.slice(y * CONFIG.mapSize, (y + 1) * CONFIG.mapSize));
-    }
-    return rows;
+    const size = CONFIG.mapSize;
+    if (runtime.previewTiles.length !== size * size) return [];
+    return Array.from({ length: size }, (_, y) =>
+      Array.from({ length: size }, (_, x) => runtime.previewTiles[x * size + y]));
   }
+  if (Array.isArray(runtime.previewRows)) return runtime.previewRows;
   return [];
 }
 
@@ -17907,13 +19229,6 @@ function updateTerrainPreviewHud(runtime, reason = "queued") {
       const panelId = `pixel_${index}`;
       const previous = terrainPreviewHudTileClasses[index];
       if (previous && previous !== selected) hud.SetHasClass(panelId, previous, false);
-      if (!previous) {
-                                                                           
-                                                                            
-        for (const className of TERRAIN_PREVIEW_LEGACY_TILE_CLASSES) {
-          hud.SetHasClass(panelId, className, false);
-        }
-      }
       if (previous !== selected) {
         hud.SetHasClass(panelId, selected, true);
         terrainPreviewHudTileClasses[index] = selected;
@@ -17970,12 +19285,89 @@ function hideTerrainPreviewHud(reason = "round-end") {
   }
 }
 
+// A Think owns one budget, including work performed by ending/task callbacks
+// before ordinary generation. Standalone controllers (offline tests, inputs)
+// get the same accounting for their whole invocation. Never interrupt a native
+// spawn or a half-initialized feature; stop between complete jobs instead.
+let generationBudget;
+function drainGenerationSteps(steps) {
+  let next;
+  do { next = steps.next(); } while (!next.done);
+  return next.value;
+}
+const generationClock = typeof globalThis.performance?.now === "function"
+  ? () => globalThis.performance.now() : () => Date.now();
+
+function withGenerationBudget(callback) {
+  if (generationBudget) return callback();
+  generationBudget = { ms: 0, elapsedMs: 0, startedAt: generationClock(), units: 0, spawns: 0, depth: 0, jobs: 0,
+    maintenanceMs: 0, fadeChecks: 0, killChecks: 0, stormVisualJobs: 0, maintenanceMode: false,
+    maintenanceReserve: state.levelFades.size || deferredEntityKillCursor < deferredEntityKills.length
+      ? CONFIG.deferredKillMsPerThink : 0,
+    msLimit: state.finaleEscapeActive ? CONFIG.spawnMsPerThinkFast : CONFIG.spawnMsPerThink,
+    thinkMsLimit: state.finaleEscapeActive ? CONFIG.generationThinkMsLimitFast : CONFIG.generationThinkMsLimit };
+  try { return callback(); }
+  finally { generationBudget = undefined; }
+}
+
+function generationWorkAvailable() {
+  if (!generationBudget) return true;
+  const budget = generationBudget;
+  if (budget.maintenanceMode) return budget.ms < budget.msLimit
+    && budget.elapsedMs < budget.thinkMsLimit;
+  return budget.units < CONFIG.spawnBudgetPerThink
+    && (budget.jobs === 0 || (budget.ms < budget.msLimit - budget.maintenanceReserve
+      && budget.elapsedMs < budget.thinkMsLimit));
+}
+
+function backgroundGenerationWorkAvailable() {
+  // Background work also yields to time spent on players, tasks and gameplay.
+  // Foreground work may finish one job on a busy Think to guarantee progress;
+  // speculative work has no such minimum and yields before its first job.
+  return generationWorkAvailable() && (!generationBudget
+    || generationClock() - generationBudget.startedAt < generationBudget.msLimit);
+}
+
+function runGenerationWork(callback, chargeUnit = true) {
+  if (!generationWorkAvailable()) return false;
+  const budget = generationBudget;
+  if (!budget) return withGenerationBudget(() => runGenerationWork(callback, chargeUnit));
+  const start = generationClock(), before = budget.spawns;
+  budget.jobs++;
+  budget.depth++;
+  try { callback(); }
+  finally {
+    budget.depth--;
+    if (budget.depth === 0) {
+      const finishedAt = generationClock();
+      budget.ms += Math.max(0, finishedAt - start);
+      // Sample at complete-job boundaries. Rechecking a deadline between a
+      // queue's shift() and this function must not silently discard its job.
+      budget.elapsedMs = Math.max(0, finishedAt - budget.startedAt);
+    }
+    budget.units += chargeUnit ? Math.max(1, budget.spawns - before) : budget.spawns - before;
+  }
+  return true;
+}
+
 // PointTemplate creates entities before caller-side model/transform setup.
 // Keep every result reachable for round cleanup even if that setup throws.
 function spawnRoundEntities(template, ...args) {
-  const spawned = template.ForceSpawn(...args);
-  for (const entity of spawned ?? []) if (entity) state.roundEntities.add(entity);
-  return spawned;
+  const budget = generationBudget;
+  const direct = budget && budget.depth === 0;
+  const start = direct ? generationClock() : 0;
+  if (budget) { budget.spawns++; if (direct) { budget.units++; budget.jobs++; } }
+  try {
+    const spawned = template.ForceSpawn(...args);
+    for (const entity of spawned ?? []) if (entity) state.roundEntities.add(entity);
+    return spawned;
+  } finally {
+    if (direct) {
+      const finishedAt = generationClock();
+      budget.ms += Math.max(0, finishedAt - start);
+      budget.elapsedMs = Math.max(0, finishedAt - budget.startedAt);
+    }
+  }
 }
 
 function pruneRoundEntities(now) {
@@ -18054,13 +19446,22 @@ function processTasks(now) {
     try {
       if (!task.cancelled && task.round === state.roundBootstrapSerial) task.callback();
     } catch (error) {
-      failRuntime(`scheduled task failed: ${error}`);
-      return;
+      // One broken callback must not halt the round (Source wraps these in safe()).
+      reportGuardedError("scheduled task", error);
     }
   }
 }
 
+// Authored data and capability flags live for the whole script context. Keep
+// successful validation across rounds; a reload creates a fresh flag. Never
+// cache a partial/failed pass, so startup retries still reject invalid data.
+let levelDataValidated = false;
+
 function validateLevels() {
+  if (levelDataValidated) return;
+  // Avoid repeated global/builtin lookups in the one full catalogue scan.
+  const isArray = Array.isArray;
+  const isInteger = Number.isInteger;
   if (Object.keys(TILE_REGISTRY).length !== 201) throw new Error("expected 201 tile definitions");
   if (ALL_LEVELS.length !== 1360) throw new Error(`expected 1360 source levels, got ${ALL_LEVELS.length}`);
   if (RACE_LEVELS.length !== 50) throw new Error(`expected 50 playable authored RACE levels after removing the simplified course, got ${RACE_LEVELS.length}`);
@@ -18076,7 +19477,7 @@ function validateLevels() {
     throw new Error(`expected ${expectedPlayableLevels} active levels, got ${LEVELS.length}`);
   }
   for (const level of ALL_LEVELS) {
-    if (!level || !Array.isArray(level.tiles) || level.tiles.length !== 400) {
+    if (!level || !isArray(level.tiles) || level.tiles.length !== 400) {
       throw new Error(`${level?.id ?? "unknown"}: expected 400 tiles`);
     }
     if (!["forward", "left", "right"].includes(level.direction)) {
@@ -18084,23 +19485,30 @@ function validateLevels() {
     }
     let markerCount = 0;
     for (const tile of level.tiles) {
-      const colorTile = tile && Array.isArray(tile.color) && tile.color.length === 3;
-      if (!colorTile && (!Number.isInteger(tile) || !TILE_REGISTRY[tile])) throw new Error(`${level.id}: unknown tile '${tile}'`);
+      const colorTile = tile && isArray(tile.color) && tile.color.length === 3;
+      if (!colorTile && (!isInteger(tile) || !TILE_REGISTRY[tile])) throw new Error(`${level.id}: unknown tile '${tile}'`);
       if (tile === 2) markerCount++;
     }
     if (markerCount !== 4) {
       throw new Error(`${level.id}: expected four START_END tiles, got ${markerCount}`);
     }
   }
+  levelDataValidated = true;
 }
 
 function cacheEntities(parentCosmetics = true) {
+  state.rubbleOutputWiringCompiled = validEntity(Instance.FindEntityByName("collective_rubble_output_wiring_v1"));
   state.templates.clear();
   for (const [shape, name] of Object.entries(TEMPLATE_NAMES)) {
     const entity = Instance.FindEntityByName(name);
     if (entity && entity.IsValid() && typeof entity.ForceSpawn === "function") {
       state.templates.set(shape, entity);
     }
+  }
+  terrainPairTemplates.clear();
+  for (const [shape, name] of Object.entries(TERRAIN_PAIR_TEMPLATE_NAMES)) {
+    const entity = Instance.FindEntityByName(name);
+    if (validEntity(entity) && typeof entity.ForceSpawn === "function") terrainPairTemplates.set(shape, entity);
   }
   state.featureTemplates.clear();
   for (const [capability, name] of Object.entries(FEATURE_TEMPLATE_NAMES)) {
@@ -18301,7 +19709,7 @@ function failRuntime(reason) {
   clearSourceAudio();
   clearGenericEvents();
   clearThemeModelSky();
-  if (!state.fatal) announce(`FATAL: ${reason}`);
+  if (!state.fatal) consoleNotice(`FATAL: ${reason}`);
   stopThemeMusic("fatal");
   state.themeMusic.enabled = false;
   state.fatal = true;
@@ -18329,13 +19737,14 @@ const COLLECTIVE_SKYBOX_ENTITIES = Object.freeze({
   castle: "collective_sky_castle",
   factory: "collective_sky_factory",
   hell: "collective_sky_hell",
+  silenthill_light: "collective_sky_silenthill_light",
   silenthill_dark: "collective_sky_silenthill_dark",
 });
 let collectiveSkyboxSelection = "generic";
 
 function setCollectiveSkybox(key, quiet = false) {
   if (!Object.hasOwn(COLLECTIVE_SKYBOX_ENTITIES, key)) {
-    if (!quiet) message("skybox: use generic, castle, factory, hell or silenthill_dark");
+    if (!quiet) message("skybox: use generic, castle, factory, hell, silenthill_light or silenthill_dark");
     return false;
   }
                                                                        
@@ -18344,7 +19753,7 @@ function setCollectiveSkybox(key, quiet = false) {
                                                                          
                                                                        
   const missing = targets.filter(({ name, entity }) => !validEntity(entity)
-    && (name !== "silenthill_dark" || key === "silenthill_dark"));
+    && (!name.startsWith("silenthill_") || key === name));
   if (missing.length) {
     if (!quiet) message("skybox entities missing: " + missing.map(({ target }) => target).join(", "));
     return false;
@@ -18381,13 +19790,16 @@ const THEME_MODEL_SKY_PROFILES = Object.freeze({
     model: "skybox_factory", spread: 5000, z: [-5000,-4000], scale: [3,4], tint: [120,180,150] },
   temple: { sky: "castle", clouds: 2, color: [255,0,0], backgrounds: 4,
     model: "skybox_temple", spread: 10000, z: [-3000,3000], scale: [2,4], tint: [180,150,120], alpha: 254 },
+  // Source drew nature at 43x under fog_farz 600000; CS2's env_gradient_fog farz is 200000, which culled
+  // the whole model (nearest vertex ~72k, vines ~255k-473k). Scale and offsets shrink by the same 1/3 so
+  // the same part of the model stays inside the far plane.
   nature: { sky: "castle", clouds: 3, color: [50,150,0], backgrounds: 3,
-    model: "skybox_nature", spread: 1000, z: [-3000,3000], scale: [43,43], tint: [160,170,100] },
+    model: "skybox_nature", spread: 330, z: [-1000,1000], scale: [14,14], tint: [160,170,100] },
   hell: { sky: "hell", clouds: 1, color: [200,50,0], backgrounds: 5,
-    model: "skybox_hell", spread: 1000, z: [-3000,3000], scale: [4,5], gray: [100,120] },
+    model: "skybox_hell", spread: 1000, z: [-3000,3000], scale: [8,10], gray: [100,120] },
   frost: { sky: "generic", clouds: 2, color: [0,200,255], cloudExtraZ: -3500, backgrounds: 1,
     model: "skybox_frost", scale: [12,12], tint: [255,255,255], frost: true },
-  silenthill: { sky: "generic", clouds: 2, color: [100,100,100], backgrounds: 0 },
+  silenthill: { sky: "silenthill_light", clouds: 2, color: [100,100,100], backgrounds: 0 },
 });
 const themeModelSky = { active: undefined, retiring: [], serial: 0, nextTick: 0, override: undefined, failedTheme: undefined,
   silentHillDarkTarget: 0, silentHillDarkAmount: 0, missingSilentHillSkyWarned: false };
@@ -18421,7 +19833,7 @@ function themeSkyAlpha(record, alpha) {
   record.colorKey = colorKey;
 }
 function themeSkySpawn(scene, model, position, yaw, scale, tint, maxAlpha = 255, parent) {
-  const spawned = spawnRoundEntities(scene.template, position, {pitch: 0, yaw, roll: 0}) ?? [];
+  const { spawned, authored } = spawnAuthoredVisualEntities(model, position, {pitch: 0, yaw, roll: 0}, scene.template);
                                                              
   for (const entity of spawned) if (validEntity(entity)) scene.entities.add(entity);
   const visual = spawned.find(entity => validEntity(entity) && typeof entity.SetModel === "function");
@@ -18429,8 +19841,10 @@ function themeSkySpawn(scene, model, position, yaw, scale, tint, maxAlpha = 255,
   for (const entity of spawned) if (entity !== visual && validEntity(entity)) {
     entity.Kill(); scene.entities.delete(entity);
   }
-  visual.SetEntityName("theme_sky_" + scene.serial + "_" + scene.records.length);
-  visual.SetModel(model);
+  // Nothing looks sky parts up by name; one shared name avoids a new engine
+  // name string per part per theme change.
+  visual.SetEntityName("theme_sky");
+  if (!authored) visual.SetModel(model);
   visual.SetModelScale(scale);
                                                                           
                                                                             
@@ -18438,10 +19852,11 @@ function themeSkySpawn(scene, model, position, yaw, scale, tint, maxAlpha = 255,
     fireTarget(visual, "SetDefaultAnimation", "baseidle");
     fireTarget(visual, "SetAnimation", "baseidle");
   }
-  if (parent) visual.SetParent(parent);
                                                                          
   visual.Teleport({position, angles: {pitch: 0, yaw, roll: 0}, velocity: vec()});
-  const record = {visual, tint: [...tint], baseTint: [...tint], maxAlpha, alpha: undefined};
+  // Parent after placement so the position stays world space.
+  if (parent) visual.SetParent(parent);
+  const record = {visual, tint: [...tint], baseTint: [...tint], maxAlpha, alpha: undefined, position, scale};
   themeSkyAlpha(record, 0);
   scene.records.push(record);
   return record;
@@ -18458,7 +19873,7 @@ function moveThemeModelSky(scene, endZ) {
 function ensureThemeModelSky(theme, endZ = state.currentLevel?.end?.z ?? 0, force = false) {
                                                                         
                                                                            
-  if (!force && state.endingRuntime?.kind === "FINALE" && state.endingRuntime.finaleSky
+  if (!force && finaleUsesFinaleSky(state.endingRuntime) && state.endingRuntime.finaleSky
       && ["spawning", "active"].includes(state.endingRuntime.lifecycle)) return false;
   if (!force && themeModelSky.override === "off") return false;
   const key = !force && themeModelSky.override ? themeModelSky.override : theme;
@@ -18481,7 +19896,7 @@ function ensureThemeModelSky(theme, endZ = state.currentLevel?.end?.z ?? 0, forc
   try {
     for (let i = 0; i < profile.clouds; i++) {
       scene.clouds.push(themeSkySpawn(scene, "models/luffaren/collective_skybox_clouds.vmdl",
-        base, Math.floor(skyRandomRange(0, 361)), 100, profile.color));
+        base, Math.floor(skyRandomRange(0, 361)), skyCloudScale(), profile.color));
     }
     for (let i = 0; i < profile.backgrounds; i++) {
       const masterIndex = key === "factory" ? i : key === "temple" ? Math.floor(i / 2) : 0;
@@ -18517,7 +19932,7 @@ function ensureThemeModelSky(theme, endZ = state.currentLevel?.end?.z ?? 0, forc
   }
   themeModelSky.active = scene;
   themeModelSky.failedTheme = undefined;
-  setCollectiveSkybox(profile.sky);
+  if (!setCollectiveSkybox(profile.sky, true)) setCollectiveSkybox("generic");
   return true;
 }
 function processThemeModelSky(now = Instance.GetGameTime()) {
@@ -18649,7 +20064,7 @@ function spawnEndIndicator(runtime) {
       feature: "endindicator",
     }, END_INDICATOR_MODEL);
     if (!validEntity(indicator)) throw new Error("floor indicator did not spawn");
-    indicator.SetEntityName?.(`block_${runtime.index}_endindicator`);
+    indicator.SetEntityName?.("block_endindicator");
     runtime.endIndicator = indicator;
     setEndIndicatorState(runtime, runtime.endProvider === "button" ? "button" : "touch");
                                                                             
@@ -18731,7 +20146,7 @@ function startCampaignFinale() {
   try {
     const runtime = startFinaleEnding(stageSnapshot, source);
     runtime.campaignFinale = true;
-    announce("FINALE: the fourth stage is complete; the final approach is opening");
+    message("FINALE: the fourth stage is complete; the final approach is opening");
     return true;
   } catch (error) {
     failRuntime(`campaign Finale startup failed: ${error}`);
@@ -18748,16 +20163,38 @@ function findThemePreloadEntity(target) {
   }
 }
 
-function cleanupThemePreload(pending = state.themePreload) {
-  if (!pending) return;
+function* themePreloadCleanupSteps(pending) {
   const entities = new Set([...(pending.returnedEntities ?? []), ...(pending.found?.values?.() ?? [])]);
+  for (const entity of entities) yield entity;
   for (const target of pending.targets ?? []) {
+    if (pending.found?.has(target)) continue;
     const entity = findThemePreloadEntity(target);
-    if (entity) entities.add(entity);
+    yield entities.has(entity) ? undefined : entity;
   }
-  for (const entity of entities) {
-    if (validEntity(entity)) fireTarget(entity, "Kill");
-  }
+}
+
+function cleanupThemePreload(pending = state.themePreload) {
+  if (!pending || pending.cleanupQueued) return;
+  pending.cancelled = true;
+  pending.cleanupQueued = true;
+  pending.spawnJobs?.splice(0);
+  const steps = themePreloadCleanupSteps(pending);
+  if (!state.running) {
+    for (const entity of steps) if (validEntity(entity)) fireTarget(entity, "Kill");
+  } else state.themePreloadCleanup.push(steps);
+}
+
+function processThemePreloadCleanup() {
+  return withGenerationBudget(() => {
+    for (let n = 0; n < CONFIG.themePreloadCleanupPerThink
+      && state.themePreloadCleanup.length && generationWorkAvailable(); n++) {
+      runGenerationWork(() => {
+        const next = state.themePreloadCleanup[0].next();
+        if (next.done) state.themePreloadCleanup.shift();
+        else if (validEntity(next.value)) fireTarget(next.value, "Kill");
+      });
+    }
+  });
 }
 
 function scheduleInitialTerrainGeneration(reason) {
@@ -18798,7 +20235,7 @@ function fallbackThemePreload(theme, reason, pending = state.themePreload) {
   const completion = pending?.onComplete;
   cleanupThemePreload(pending);
   detachThemePreload(pending);
-  if (!completion) announce(`theme '${theme}' resources unavailable (${reason}); continuing with authored theme models`);
+  if (!completion) consoleNotice(`theme '${theme}' resources unavailable (${reason}); continuing with authored theme models`);
   finishThemeTerrainPreload(completion ? reason : "theme_unpreloaded", completion, false);
 }
 
@@ -18816,27 +20253,29 @@ function themePreloadPlan(themeName) {
   const lightRootsReady = rootModels.length > 0
     && rootModels.every((model) => findThemePreloadEntity(themeRootPreloadTarget(model)));
   if (theme !== "silenthill" && lightRootsReady) return { theme, ready: "theme_root_preloaded", rootPreloaded: true };
-  const template = state.themePreloadTemplates.get(theme);
-  const darkTemplate = theme === "silenthill"
-    ? Instance.FindEntityByName?.("template_theme_preload_silenthill_dark")
-    : undefined;
-  if ((!lightRootsReady && (!validEntity(template) || typeof template.ForceSpawn !== "function"))
-    || (theme === "silenthill" && (!validEntity(darkTemplate) || typeof darkTemplate.ForceSpawn !== "function"))) {
-    const missing = theme === "silenthill"
-      ? [!lightRootsReady && !validEntity(template) && `template_theme_preload_${theme}`,
-        !validEntity(darkTemplate) && "template_theme_preload_silenthill_dark"].filter(Boolean)
-      : [`template_theme_preload_${theme}`];
-    return { theme, error: `preload template missing: ${missing.join(", ") || "ForceSpawn unavailable"}` };
-  }
   const darkModels = theme === "silenthill"
     ? rootModels.map((model) => model.replace(/\.vmdl$/i, "dark.vmdl"))
     : [];
-  const targets = [
-    ...(!lightRootsReady ? rootModels.map((model) => themePreloadTarget(theme, model)) : []),
-    ...darkModels.map((model) => themePreloadTarget(theme, model)),
-  ];
+  const models = [...(!lightRootsReady ? rootModels : []), ...darkModels];
+  const targets = models.map(model => themePreloadTarget(theme, model));
   if (targets.length === 0) return { theme, error: "empty model set" };
-  return { theme, targets, spawners: [!lightRootsReady && template, darkTemplate].filter(Boolean) };
+  // Use existing single-model templates instead of the legacy 35-member
+  // dependency bundles. Old compiled maps can use the single template_model
+  // fallback; they must never fall back to a whole-theme ForceSpawn.
+  let fallback = state.featureTemplates.get("model");
+  if (!validEntity(fallback)) fallback = Instance.FindEntityByName?.(FEATURE_TEMPLATE_NAMES.model);
+  const hasFallback = validEntity(fallback) && typeof fallback.ForceSpawn === "function";
+  if (hasFallback) state.featureTemplates.set("model", fallback);
+  if (!hasFallback) {
+    const missing = models.find(model => {
+      const name = VISUAL_TEMPLATES[model];
+      let template = name && state.featureTemplates.get(name);
+      if (!validEntity(template) && name) template = Instance.FindEntityByName?.(name);
+      return !validEntity(template) || typeof template.ForceSpawn !== "function";
+    });
+    if (missing) return { theme, error: `single-model preload template missing: ${missing}` };
+  }
+  return { theme, targets, models };
 }
 
 function createThemePreloadPending(plans, onComplete) {
@@ -18844,21 +20283,54 @@ function createThemePreloadPending(plans, onComplete) {
   return {
     theme: plans.map((plan) => plan.theme).join("+"),
     themes: plans.map((plan) => ({ theme: plan.theme, targets: plan.targets, doneAt: undefined,
-      startedAt: now, deadline: now + themePreloadTimeout(plan.theme) })),
+      startedAt: undefined, deadline: Infinity, queued: plan.models.length })),
     targets: plans.flatMap((plan) => plan.targets),
     found: new Map(),
+    lastCheckedAt: new Map(),
     returnedEntities: [],
+    spawnJobs: [],
+    submittedTargets: [],
+    pollCursor: 0,
+    round: state.roundBootstrapSerial,
     startedAt: now,
     nextPollAt: now,
-    deadline: now + Math.max(...plans.map(plan => themePreloadTimeout(plan.theme))),
+    deadline: Infinity,
     onComplete,
   };
 }
 
 function spawnThemePreloadPlan(plan, pending) {
-  for (const spawner of plan.spawners) {
-    const spawned = spawnRoundEntities(spawner, clone(THEME_PRELOAD_ORIGIN), { pitch: 0, yaw: 0, roll: 0 });
-    if (Array.isArray(spawned)) pending.returnedEntities.push(...spawned.filter(validEntity));
+  for (let index = 0; index < plan.models.length; index++) pending.spawnJobs.push({
+    theme: plan.theme, model: plan.models[index], target: plan.targets[index] });
+}
+
+function processThemePreloadSpawns(pending) {
+  if (pending.cancelled || pending.round !== state.roundBootstrapSerial) return;
+  const workAvailable = pending === state.themePreload
+    ? generationWorkAvailable : backgroundGenerationWorkAvailable;
+  for (let n = 0; n < CONFIG.themePreloadPerThink && pending.spawnJobs.length
+    && workAvailable(); n++) {
+    runGenerationWork(() => {
+      const request = pending.spawnJobs.shift();
+      const entry = pending.themes.find(entry => entry.theme === request.theme);
+      entry.startedAt ??= Instance.GetGameTime();
+      const result = spawnAuthoredVisualEntities(request.model, clone(THEME_PRELOAD_ORIGIN),
+        { pitch: 0, yaw: 0, roll: 0 });
+      pending.returnedEntities.push(...result.spawned);
+      if (result.spawned.length !== 1 || !validEntity(result.spawned[0]))
+        throw new Error(`single-model preload failed: ${request.model}`);
+      const entity = result.spawned[0];
+      if (!result.authored) entity.SetModel(request.model);
+      entity.SetEntityName(request.target);
+      pending.submittedTargets.push(request.target);
+      fireTarget(entity, "DisableCollision");
+      fireTarget(entity, "TurnOff");
+      entry.queued--;
+      // The timeout measures model registration after its final request, not
+      // time spent waiting for another queue to release the shared budget.
+      if (entry.queued === 0) entry.deadline = Instance.GetGameTime() + themePreloadTimeout(entry.theme);
+      pending.deadline = Math.max(...pending.themes.map(entry => entry.deadline));
+    });
   }
 }
 
@@ -18887,7 +20359,12 @@ function adoptThemeTerrainWarmup(pending) {
   if (!entry) return undefined;
   Object.assign(entry, background.themes[0]);
   for (const [name, entity] of background.found) pending.found.set(name, entity);
+  for (const [name, checkedAt] of background.lastCheckedAt) pending.lastCheckedAt.set(name, checkedAt);
   pending.returnedEntities.push(...background.returnedEntities);
+  pending.spawnJobs.push(...background.spawnJobs);
+  pending.submittedTargets.push(...background.submittedTargets);
+  background.spawnJobs = [];
+  background.cancelled = true;
   pending.deadline = Math.max(...pending.themes.map(entry => entry.deadline));
   warmup.pending = undefined;
   message(`[THEME WARMUP] foreground adopted '${entry.theme}'`);
@@ -18895,11 +20372,22 @@ function adoptThemeTerrainWarmup(pending) {
 }
 
 function processThemeTerrainWarmup(foregroundUsed = false) {
+  return withGenerationBudget(() => processThemeTerrainWarmupBudgeted(foregroundUsed));
+}
+
+function processThemeTerrainWarmupBudgeted(foregroundUsed) {
   const warmup = state.themeTerrainWarmup;
   if (!warmup || !state.running || state.fatal) return false;
   if (warmup.round !== state.roundBootstrapSerial) { clearThemeTerrainWarmup(); return false; }
-  if (warmup.pending) processThemePreload(Instance.GetGameTime(), warmup.pending);
-  if (warmup.pending || foregroundUsed || state.themePreload || state.endingRuntime) return false;
+  if (!backgroundGenerationWorkAvailable()) return false;
+  if (warmup.pending) {
+    const before = generationBudget.units;
+    processThemePreload(Instance.GetGameTime(), warmup.pending,
+      !foregroundUsed && !state.themePreload && !state.endingRuntime);
+    if (generationBudget.units > before) return true;
+  }
+  if (warmup.pending || foregroundUsed || state.themePreload || state.endingRuntime
+    || !backgroundGenerationWorkAvailable()) return false;
   while (warmup.queue.length) {
     const plan = themePreloadPlan(warmup.queue.shift());
     if (plan.ready) { markThemePreloaded(plan.theme); continue; }
@@ -18914,7 +20402,7 @@ function processThemeTerrainWarmup(foregroundUsed = false) {
     warmup.pending = pending;
     try {
       spawnThemePreloadPlan(plan, pending);
-      message(`[THEME WARMUP] streaming ${pending.targets.length} '${plan.theme}' models`);
+      message(`[THEME WARMUP] queued ${pending.targets.length} '${plan.theme}' models`);
     } catch (error) {
       fallbackThemePreload(plan.theme, `ForceSpawn failed: ${String(error)}`, pending);
     }
@@ -18944,7 +20432,7 @@ function prepareThemeTerrainAssets(themeName = campaignStageSnapshot().theme, op
   state.themePreload = pending;
   try {
     if (adopted !== plan.theme) spawnThemePreloadPlan(plan, pending);
-    message(`streaming ${pending.targets.length} '${plan.theme}' terrain models`);
+    message(`queued ${pending.targets.length} '${plan.theme}' terrain models`);
     return true;
   } catch (error) {
     fallbackThemePreload(plan.theme, `ForceSpawn failed: ${String(error)}`);
@@ -18952,8 +20440,7 @@ function prepareThemeTerrainAssets(themeName = campaignStageSnapshot().theme, op
   }
 }
 
-// Finale: spawn every uncached theme's preload templates together so the engine
-// streams them concurrently instead of one theme after another.
+// Finale shares one incremental model queue for every uncached theme.
 // onComplete(success, reason, failedThemes).
 function prepareThemeTerrainBatch(themeNames, onComplete) {
   const plans = themeNames.map(themePreloadPlan);
@@ -18975,7 +20462,7 @@ function prepareThemeTerrainBatch(themeNames, onComplete) {
   state.themePreload = pending;
   try {
     for (const plan of loading) if (adopted !== plan.theme) spawnThemePreloadPlan(plan, pending);
-    message(`streaming ${pending.targets.length} terrain models for ${loading.length} themes in parallel (${pending.theme})`);
+    message(`queued ${pending.targets.length} terrain models for ${loading.length} themes (${pending.theme})`);
     return true;
   } catch (error) {
     fallbackThemePreload(pending.theme, `ForceSpawn failed: ${String(error)}`);
@@ -18988,23 +20475,39 @@ function markThemePreloaded(theme) {
   if (theme === "silenthill") state.silentHillDarkReady = true;
 }
 
-function processThemePreload(now = Instance.GetGameTime(), pending = state.themePreload) {
+function processThemePreload(now = Instance.GetGameTime(), pending = state.themePreload, allowSpawns = true) {
+  return withGenerationBudget(() => processThemePreloadBudgeted(now, pending, allowSpawns));
+}
+
+function processThemePreloadBudgeted(now, pending, allowSpawns) {
   if (!pending || !state.running || state.fatal
+    || pending.cancelled || pending.round !== state.roundBootstrapSerial
     || (pending !== state.themePreload && pending !== state.themeTerrainWarmup?.pending)) return;
+  try { if (allowSpawns) processThemePreloadSpawns(pending); }
+  catch (error) { fallbackThemePreload(pending.theme, `model preload failed: ${String(error)}`, pending); return; }
   if (now < (pending.nextPollAt ?? 0) && now < pending.deadline) return;
   pending.nextPollAt = now + 0.05;
-  for (const target of pending.targets) {
+  let polls = 0;
+  const submitted = pending.submittedTargets;
+  for (let visited = 0; visited < submitted.length && polls < CONFIG.themePreloadPollPerThink
+    && generationWorkAvailable(); visited++) {
+    pending.pollCursor %= submitted.length;
+    const target = submitted[pending.pollCursor++];
     if (pending.found.has(target)) continue;
-    const entity = findThemePreloadEntity(target);
-    if (entity) pending.found.set(target, entity);
+    polls++;
+    runGenerationWork(() => {
+      const entity = findThemePreloadEntity(target);
+      pending.lastCheckedAt.set(target, now);
+      if (entity) pending.found.set(target, entity);
+    }, false);
   }
   for (const entry of pending.themes ?? []) {
-    if (entry.doneAt !== undefined || !entry.targets.every((target) => pending.found.has(target))) continue;
+    if (entry.doneAt !== undefined || entry.queued > 0 || !entry.targets.every((target) => pending.found.has(target))) continue;
     entry.doneAt = now;
     markThemePreloaded(entry.theme);
     message(`theme '${entry.theme}' streamed ${entry.targets.length} models in ${(now - (entry.startedAt ?? pending.startedAt)).toFixed(2)}s`);
   }
-  if (pending.found.size === pending.targets.length) {
+  if (!pending.spawnJobs.length && pending.found.size === pending.targets.length) {
     cleanupThemePreload(pending);
     if (!pending.themes) markThemePreloaded(pending.theme);
     detachThemePreload(pending);
@@ -19014,7 +20517,12 @@ function processThemePreload(now = Instance.GetGameTime(), pending = state.theme
     finishThemeTerrainPreload("theme_streamed", pending.onComplete);
     return;
   }
-  if (now >= pending.deadline || pending.themes?.some(entry => entry.doneAt === undefined && now >= entry.deadline)) {
+  // A throttled poll must not time out an entity that has already registered
+  // but has not received a query slot yet. Confirm at least one missing
+  // dependency with a query made after that theme's deadline.
+  if (pending.themes.some(entry => entry.doneAt === undefined && now >= entry.deadline
+    && entry.targets.some(target => !pending.found.has(target)
+      && (pending.lastCheckedAt.get(target) ?? -Infinity) >= entry.deadline))) {
     const missing = pending.targets.filter((target) => !pending.found.has(target));
     const incomplete = (pending.themes ?? []).filter((entry) => entry.doneAt === undefined).map((entry) => entry.theme);
     fallbackThemePreload(pending.theme, `stream timeout ${pending.found.size}/${pending.targets.length}`
@@ -19027,6 +20535,19 @@ function processThemePreload(now = Instance.GetGameTime(), pending = state.theme
 
 function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   state.running = false;
+  state.levelFades.clear();
+  state.maintenanceKillsFirst = false;
+  state.stormBladeVisuals.clear();
+  state.terrainPreloadRestores.length = 0;
+  if (!entityReleaseByEngine) {
+    state.roundReportPrinted = false;
+    state.roundReportLevels.clear();
+    state.roundReportRecent.length = 0;
+    state.roundReportVictims = new WeakSet();
+  }
+  // All warmup props are also in roundEntities and are handled by the normal
+  // explicit reset/engine release. Drop iterators retaining the old pending.
+  state.themePreloadCleanup.length = 0;
   state.roundBootstrapSerial++;
   cancelScheduledTasks();
   if (!entityReleaseByEngine) roundCleanupStep("settleEngineRelease", () => settleEngineRelease());
@@ -19037,6 +20558,7 @@ function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   state.debugNextEnding = undefined;
   roundCleanupStep("clearThemeTerrainWarmup", () => clearThemeTerrainWarmup());
   roundCleanupStep("stopDebugThunder", () => stopDebugThunder());
+  roundCleanupStep("stopDebugKamikaze", () => stopDebugKamikaze());
   roundCleanupStep("flushDeferredEntityKills", () => flushDeferredEntityKills());
   roundCleanupStep("terrain preload", () => clearTerrainPreload(true));
   state.itemParticleFxWindows?.clear();
@@ -19051,7 +20573,9 @@ function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   roundCleanupStep("clearSpawnSafetyTriggers", () => clearSpawnSafetyTriggers());
   roundCleanupStep("clearInvincibilityHud", () => clearInvincibilityHud());
   roundCleanupStep("clearSquidBlindHud", () => clearSquidBlindHud());
+  roundCleanupStep("clearJumpscareHud", () => clearJumpscareHud());
   roundCleanupStep("clearItemTutorials", () => clearItemTutorials());
+  roundCleanupStep("clearTrollMessages", () => clearTrollMessages());
   roundCleanupStep("clearZombieItemLocks", () => clearZombieItemLocks());
   roundCleanupStep("preview HUD", () => hideTerrainPreviewHud("round-reset"));
   roundCleanupStep("stage label", () => hideSpawnStageLabel());
@@ -19109,6 +20633,7 @@ function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   state.nextLowgravFailsafeAt = Instance.GetGameTime() + 5;
   roundCleanupStep("clearPlayerStatuses", () => clearPlayerStatuses());
   state.playerItems.clear();
+  state.zombieInfectionReturns.clear();
   // Owned weapons survive the engine round restart, so always kill these.
   destroyEntities(state.releasedItemCarriers.keys(), true);
   state.releasedItemCarriers.clear();
@@ -19140,6 +20665,7 @@ function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   state.spawnPlatformFallScheduled = false;
   state.levelIndex = 0;
   state.lastLevelId = undefined;
+  state.levelGenerationRetries = 0;
   state.currentLevel = undefined;
   state.transitionLevel = undefined;
   state.pendingLevel = undefined;
@@ -19160,6 +20686,7 @@ function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   destroyEntities(deferredEntityKills);
   deferredEntityKills = [];
   deferredEntityKillCursor = 0;
+  deferredEntityKillSet.clear();
   destroyEntities(state.terrainPreloadRetiring);
   state.terrainPreloadRetiring.clear();
   destroyEntities(state.roundEntities);
@@ -19608,9 +21135,16 @@ function entryExitElevations(rows, markers) {
     surfaceHeight(rows[y + dy]?.[x + dx])
     ?? sourceNeighborElevationPass(rows, x, y, true)
     ?? sourceDirectionalSurface(rows, x, y, dx, dy)?.elevation
-    ?? sourceNeighborElevationPass(rows, x, y, false)
-    ?? CONFIG.defaultElevation;
-  const entrance = markers.entrance[0];
+    ?? sourceNeighborElevationPass(rows, x, y, false);
+  // Source keeps start/end_elevation null and retries on the next marker
+  // until one has a surface; only then fall back to the default.
+  const firstElevation = (points, dx, dy) => {
+    for (const point of points) {
+      const elevation = markerElevation(point, dx, dy);
+      if (elevation !== undefined) return elevation;
+    }
+    return CONFIG.defaultElevation;
+  };
   const exit = markers.exit[0];
   const exitInward = exit.x === CONFIG.mapSize - 1
     ? { dx: -1, dy: 0 }
@@ -19618,8 +21152,8 @@ function entryExitElevations(rows, markers) {
       ? { dx: 0, dy: 1 }
       : { dx: 0, dy: -1 };
   return {
-    entry: markerElevation(entrance, 1, 0),
-    exit: markerElevation(exit, exitInward.dx, exitInward.dy),
+    entry: firstElevation(markers.entrance, 1, 0),
+    exit: firstElevation(markers.exit, exitInward.dx, exitInward.dy),
   };
 }
 
@@ -20496,6 +22030,7 @@ function buildLevel(level, mirrored, index, entry, incoming, bridgeStart, buffer
     debugSpiders: level.debugSpiders === true,
     debugTeleport: level.debugTeleport === true,
     debugLiquidFall: level.debugLiquidFall === true,
+    debugEntwatch: level.debugEntwatch === true,
     debugKarts: level.debugKarts === true,
     debugLiquidFallSamples: level.debugLiquidFall ? new Map() : undefined,
     stageSnapshot: immutableStage,
@@ -20544,6 +22079,7 @@ function buildLevel(level, mirrored, index, entry, incoming, bridgeStart, buffer
     endIndicatorState: "pending",
                                                                           
                                                                           
+    previewTiles: level.tiles.slice(),
     previewRows: rows.map((row) => row.slice()),
     completed: false,
     remaining: 0,
@@ -20554,6 +22090,7 @@ function buildLevel(level, mirrored, index, entry, incoming, bridgeStart, buffer
 
   // A speculative level plans into its own queue until the handoff adopts it.
   const planningQueue = () => runtime.preloadRequests ?? state.spawnQueue;
+  const terrainPairCells = new Map();
   function* planPixels() {
   for (const pixel of sourcePixelProcessingOrder(CONFIG.mapSize, Math.random, rows)) {
     const { x, y } = pixel;
@@ -20830,6 +22367,11 @@ function buildLevel(level, mirrored, index, entry, incoming, bridgeStart, buffer
         themeShape,
         { sourceTile: supportTile ?? tile, themeName: debugThemeName },
       );
+      // Flat (no slope chosen) explicit-height floor-family tile: pairable.
+      if (shape === family && supportTile === undefined && !detailFloorData
+        && explicitElevation(tile) !== undefined && terrainPairTemplates.has(shape)) {
+        terrainPairCells.set(y * CONFIG.mapSize + x, { tile, request: planningQueue().at(-1) });
+      }
       if (detailFloorData) {
                                                                            
                                                                              
@@ -20862,6 +22404,7 @@ function buildLevel(level, mirrored, index, entry, incoming, bridgeStart, buffer
                                                                                
                                                                         
                                                                           
+  runtime.terrainPairs = pairFlatTerrainRequests(terrainPairCells);
   const step2QueueStart = planningQueue().length;
   if (!state.finaleEscapeActive) enqueueLevelWideMovers(runtime, rows, entry, incoming, markers.entryCenter, elevations.entry);
   enqueueBridge(runtime, bridgeStart, entry, incoming, bufferSize);
@@ -20876,11 +22419,12 @@ function buildLevel(level, mirrored, index, entry, incoming, bridgeStart, buffer
                                                                            
                                                                        
   const firstStep2Request = planningQueue()[pixelQueueStart];
+  if (level.debugEntwatch) startDebugEntwatchLab(runtime, markers, elevations);
   if (level.debugShowcase) DEBUG_HOOKS.enqueueShowcaseGalleries(runtime);
   if (level.debugAllModels) DEBUG_HOOKS.enqueueAllModelsGallery(runtime, markers, elevations);
   if (level.debugLiquidFall) DEBUG_HOOKS.enqueueLiquidFallGallery(runtime, markers, elevations);
   if (level.debugKarts) DEBUG_HOOKS.enqueueKarts(runtime, markers, elevations);
-  const debugOnlyLevel = level.debugShowcase || level.debugGravity || level.debugMovementThemes || level.debugAllModels || level.debugTraps || level.debugTeleport || level.debugLiquidFall || level.debugKarts;
+  const debugOnlyLevel = level.debugEntwatch || level.debugShowcase || level.debugGravity || level.debugMovementThemes || level.debugAllModels || level.debugTraps || level.debugTeleport || level.debugLiquidFall || level.debugKarts;
   runtime.genericEventEligible = !debugOnlyLevel && !state.finaleEscapeActive;
   if (runtime.genericEventEligible && firstStep2Request)
     firstStep2Request.genericEventStep2 = true;
@@ -20958,6 +22502,128 @@ function enqueueSpawn(runtime, shape, position, angles, themeShape = shape, opti
     bufferBridge: options.bufferBridge === true,
   });
   runtime.remaining++;
+}
+
+// Greedy row-major 2x1 pairing of flat cells with the same tile id (same
+// family and height). Both requests keep their own queue slot and accounting.
+function pairFlatTerrainRequests(cells, size = CONFIG.mapSize) {
+  let pairs = 0;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const cell = cells.get(y * size + x);
+    if (!cell || cell.request.terrainPair) continue;
+    const right = x + 1 < size ? cells.get(y * size + x + 1) : undefined;
+    const below = cells.get((y + 1) * size + x);
+    const partner = [right, below].find((other) => other && other.tile === cell.tile && !other.request.terrainPair);
+    if (!partner) continue;
+    cell.request.terrainPair = partner.request.terrainPair = { requests: [cell.request, partner.request] };
+    pairs++;
+  }
+  return pairs;
+}
+
+// The pair this request may still create with one ForceSpawn (cold or staged),
+// or undefined to use the single template (partner gone, placed or preloaded).
+function pendingTerrainPair(request) {
+  const pair = request.terrainPair;
+  if (!pair || pair.spawned || pair.failed) return undefined;
+  const partner = pair.requests.find((other) => other !== request);
+  const template = terrainPairTemplates.get(request.shape);
+  if (!partner || partner.terrainPairDone || partner.preloadedTerrain || partner.shape !== request.shape
+    || partner.levelIndex !== request.levelIndex || !validEntity(template)) {
+    pair.failed = true;
+    return undefined;
+  }
+  return { pair, partner, template };
+}
+
+// Both props of a pair template, or undefined after disabling pairs for the
+// family and destroying whatever a malformed template produced.
+function terrainPairProps(pending, spawned) {
+  const props = spawned.filter((entity) => validEntity(entity)
+    && ["prop_dynamic", "prop_dynamic_override"].includes(String(entity.GetClassName?.() ?? "").toLowerCase()));
+  if (spawned.length === 2 && props.length === 2) {
+    pending.pair.spawned = true;
+    return props;
+  }
+  const shape = pending.partner.shape;
+  destroyEntities(spawned, true);
+  pending.pair.failed = true;
+  terrainPairTemplates.delete(shape);
+  consoleNotice(`[TERRAIN PAIR] ${TERRAIN_PAIR_TEMPLATE_NAMES[shape]} must spawn two prop_dynamic`
+    + ` (got ${spawned.length}); ${shape} pairs disabled`);
+  return undefined;
+}
+
+// Spawn both props of a pair on its first cold request.
+function spawnTerrainPair(runtime, request) {
+  const pending = pendingTerrainPair(request);
+  if (!pending) return undefined;
+  const props = terrainPairProps(pending, spawnRoundEntities(pending.template, request.position, request.angles) ?? []);
+  if (!props) return undefined;
+  for (const entity of props) runtime.entities.add(entity);
+  return { own: props[0], partner: pending.partner, partnerEntity: props[1] };
+}
+
+function terrainPoolSize() {
+  let size = 0;
+  for (const bucket of state.terrainPool.values()) size += bucket.length;
+  return size;
+}
+
+// Entities a live generic event may still touch later (WALLBREAK's delayed
+// Kill, PHASING alpha, COLLAPSE pieces). Those are never pooled.
+function terrainReferencedByEvents() {
+  const referenced = new Set();
+  for (const event of state.genericEvents.active.values()) {
+    for (const list of [event.targets, event.collapsed, event.entities]) {
+      for (const item of list ?? []) referenced.add(item?.entity ?? item);
+    }
+  }
+  return referenced;
+}
+
+// Hide a retiring level's clean flat props in place instead of killing them.
+// Anything that may have been altered, or is still referenced, is killed as before.
+function releaseTerrainToPool(runtime) {
+  if (entityReleaseByEngine || !state.running || state.fatal
+    || runtime.kind || runtime.raceLevel || !runtime.terrainEntities?.size) return 0;
+  const referenced = terrainReferencedByEvents();
+  const readyAt = Instance.GetGameTime() + TERRAIN_POOL_COOLDOWN;
+  const pooled = new Set();
+  for (const entity of runtime.terrainEntities) {
+    const key = entity?.collectivePoolKey;
+    if (!key || !validEntity(entity) || referenced.has(entity) || runtime.terrainCompanions?.has(entity)
+      || runtime.phasingTerrainEntities?.has(entity) || entity.GetParent?.()) continue;
+    const bucket = state.terrainPool.get(key) ?? [];
+    if (bucket.length >= TERRAIN_POOL_MAX_PER_KEY) continue;
+    fireTarget(entity, "DisableCollision");
+    fireTarget(entity, "TurnOff");
+    state.terrainSpawnFades.delete(entity);
+    // Drop every per-placement script mark (fade alphas, base colour, placement).
+    for (const field of Object.keys(entity)) if (field.startsWith("collective")) delete entity[field];
+    bucket.push({ entity, readyAt });
+    state.terrainPool.set(key, bucket);
+    runtime.entities.delete(entity);
+    pooled.add(entity);
+  }
+  if (pooled.size) {
+    for (const [pawn, checkpoint] of state.falldownCheckpoints) {
+      if (pooled.has(checkpoint)) state.falldownCheckpoints.delete(pawn);
+    }
+  }
+  runtime.terrainPoolReleased = pooled.size;
+  return pooled.size;
+}
+
+// Oldest cooled-down pooled prop for this template, if any.
+function takePooledTerrain(key) {
+  const bucket = state.terrainPool.get(key);
+  const now = Instance.GetGameTime();
+  while (bucket?.length && bucket[0].readyAt <= now) {
+    const { entity } = bucket.shift();
+    if (validEntity(entity)) return entity;
+  }
+  return undefined;
 }
 
 function projectedWithinLimits(runtime) {
@@ -21046,17 +22712,25 @@ function releaseLevelPostSpawn(runtime, planningComplete = false) {
     const side = team === 3 ? 1 : -1;
     const position = add(runtime.entry, add(mul(runtime.incoming, CONFIG.gridSize / 2),
       mul(leftOf(runtime.incoming), side * CONFIG.gridSize / 2)));
-    spawnItemFeature(runtime, { position, angles: { pitch: 0, yaw: 0, roll: 0 },
+    state.itemSpawnQueue.push({ levelIndex: runtime.index, feature: "item",
+      position, angles: { pitch: 0, yaw: 0, roll: 0 },
       tile: team === 3 ? 93 : 94, team, itemGroundAnchored: true,
       forcedByDesire: true, desireSpent: true });
   }
 }
 
 function processPostSpawnQueues(rounds = CONFIG.postSpawnPerThink, budget = Infinity) {
+  return withGenerationBudget(() => processPostSpawnQueuesBudgeted(rounds, budget));
+}
+
+function processPostSpawnQueuesBudgeted(rounds, budget) {
   let spent = 0;
   const spawnNext = queue => {
-    if (!queue.length || spent >= budget) return;
-    const requestIndex = Math.floor(Math.random() * queue.length);
+    if (!queue.length || spent >= budget || !generationWorkAvailable()) return;
+    // Entrance guarantees used to run immediately at release. Keep their
+    // randomly chosen team order and priority while deferring native creation.
+    const forcedIndex = queue.findIndex(request => request.forcedByDesire === true);
+    const requestIndex = forcedIndex >= 0 ? forcedIndex : Math.floor(Math.random() * queue.length);
     const request = queue[requestIndex];
     const runtime = state.levels.get(request.levelIndex);
     // Step3 may release while physical terrain makers still have work queued.
@@ -21066,13 +22740,17 @@ function processPostSpawnQueues(rounds = CONFIG.postSpawnPerThink, budget = Infi
         entries.some(entry => entry.levelIndex === runtime.index && entry.kind === "terrain")))) return;
     queue.splice(requestIndex, 1);
     if (!runtime || runtime.lifecycle === "destroyed") return;
+    if (request.stageEvent && !hardCodedStageEventLive(runtime)) return;
     spent++;
     try {
-      if (request.generationCounted) spawnOne(request);
-      else if (request.feature === "item") spawnItemFeature(runtime, request);
-      else spawnTrapFeature(runtime, request);
+      runGenerationWork(() => {
+        if (request.generationCounted) spawnOne(request);
+        else if (request.feature === "item") spawnItemFeature(runtime, request);
+        else spawnTrapFeature(runtime, request);
+      });
     } catch (error) {
-      failRuntime(`postspawn failed for level ${runtime.index}/${request.feature}: ${error}`);
+      if (request.generationCounted) skipFailedSpawn(runtime, `postspawn ${request.feature}`, error);
+      else reportGuardedError(`postspawn ${request.feature}`, error);
     }
   };
   for (let index = 0; index < rounds && !state.fatal; index++) {
@@ -21116,9 +22794,23 @@ function clearGenerationWork(owner) {
 }
 
 function processGenerationQueues() {
+  return withGenerationBudget(processGenerationQueuesBudgeted);
+}
+
+function processGenerationQueuesBudgeted() {
+  if (!generationWorkAvailable()) return;
   const foregroundAtStart = !!state.pendingLevel || state.spawnQueue.length > 0
     || state.itemSpawnQueue.length > 0 || state.trapSpawnQueue.length > 0
     || [...state.generationQueues.values()].some(queue => queue.length);
+  // Template transforms can settle after their spawning Think. Correct staged
+  // props on the next generation pass, within its budget and before deployment.
+  // Never put this native work in the unbudgeted QueueAfterThinks batch.
+  for (let n = 0; n < CONFIG.terrainPreloadPerThink
+    && state.terrainPreloadRestores.length && generationWorkAvailable()
+    && (foregroundAtStart || backgroundGenerationWorkAvailable()); n++) {
+    runGenerationWork(state.terrainPreloadRestores.shift());
+  }
+  if (state.terrainPreloadRestores.length || !generationWorkAvailable()) return;
                                                                                      
                                                                            
                                                                           
@@ -21129,9 +22821,11 @@ function processGenerationQueues() {
   if (planning?.planningIterator) {
     planning.sourceGenerationScheduled = true;
     try {
-      while (logicalLimit > 0 && planning.planningIterator) {
+      while (logicalLimit > 0 && planning.planningIterator && generationWorkAvailable()) {
         logicalLimit--;
-        if (planning.planningIterator.next().done) planning.planningIterator = undefined;
+        runGenerationWork(() => {
+          if (planning.planningIterator.next().done) planning.planningIterator = undefined;
+        }, false);
       }
     } catch (error) {
       failRuntime(`pixel planning failed for level ${planning.index}: ${error}`);
@@ -21142,7 +22836,8 @@ function processGenerationQueues() {
                                                                           
   if (planning?.planningIterator) logicalLimit = 0;
   const touched = new Set();
-  for (let task = 0; task < logicalLimit && state.spawnQueue.length && !state.fatal; task++) {
+  for (let task = 0; task < logicalLimit && state.spawnQueue.length
+    && generationWorkAvailable() && !state.fatal; task++) {
     const first = state.spawnQueue[0];
     do {
       const request = state.spawnQueue.shift();
@@ -21181,23 +22876,24 @@ function processGenerationQueues() {
   const rounds = state.debugAllModelsMode ? 2 : fast ? 5 : CONFIG.spawnQueuePerThink;
   // Ordinary generation shares one physical budget across every maker so a
   // stage with many feature kinds cannot multiply the per-Think spawn spike.
-  let budget = fast || state.debugAllModelsMode ? Infinity : CONFIG.spawnBudgetPerThink;
-  for (let round = 0; round < rounds && budget > 0 && !state.fatal; round++) {
+  for (let round = 0; round < rounds && generationWorkAvailable() && !state.fatal; round++) {
     for (const [kind, queue] of state.generationQueues) {
-      if (budget <= 0) break;
+      if (!generationWorkAvailable()) break;
       if (kind === "terrain" && !fast && !state.debugAllModelsMode
         && round >= CONFIG.terrainDeployPerThink) continue;
       if (queue.length) {
-        spawnOne(queue.shift());
-        budget--;
+        const request = queue.shift();
+        runGenerationWork(() => spawnOne(request));
       }
       if (state.fatal) return;
     }
-    budget -= processPostSpawnQueues(1, budget);
+    if (generationWorkAvailable()) processPostSpawnQueues(1);
   }
   // Foreground creation and deployment have priority. Background work uses
   // idle generation passes only, so their terrain budgets never add up.
-  if (!state.fatal && !processThemeTerrainWarmup(foregroundAtStart)) processTerrainPreload(foregroundAtStart);
+  if (!generationWorkAvailable()) return;
+  if (!state.fatal && !processThemeTerrainWarmup(foregroundAtStart))
+    processTerrainPreload(foregroundAtStart);
 }
 
 function chooseLevel(index, trackItemDesire = true) {
@@ -21212,13 +22908,13 @@ function chooseLevel(index, trackItemDesire = true) {
       state.currentDirection,
       state.nextBridgeStart,
       state.nextBufferSize,
-      level.debugSpiders || level.debugTeleport || level.debugLiquidFall || level.debugKarts ? createStageSnapshot(0, "generic") : campaignStageSnapshot(),
+      level.debugEntwatch || level.debugSpiders || level.debugTeleport || level.debugLiquidFall || level.debugKarts ? createStageSnapshot(0, "generic") : campaignStageSnapshot(),
     );
     if (!projectedWithinLimits(runtime)) {
       state.spawnQueue.splice(state.spawnQueue.length - runtime.remaining, runtime.remaining);
       throw new Error(`debug stage '${level.id}' would exceed world limits`);
     }
-    if (trackItemDesire && !level.debugSpiders && !level.debugTeleport && !level.debugLiquidFall && !level.debugKarts) finalizeLevelItemDesire(runtime);
+    if (trackItemDesire && !level.debugEntwatch && !level.debugSpiders && !level.debugTeleport && !level.debugLiquidFall && !level.debugKarts) finalizeLevelItemDesire(runtime);
     return runtime;
   }
   if (state.debugMovementThemesMode) {
@@ -21306,35 +23002,150 @@ function chooseLevel(index, trackItemDesire = true) {
     }
     return runtime;
   }
-  const candidates = LEVELS.filter((level) => level.id !== state.lastLevelId);
-  for (let attempt = 0; attempt < 80; attempt++) {
-    const level = candidates[Math.floor(Math.random() * candidates.length)];
-    const mirrored = Math.random() >= 0.5;
+  // Source parity (evitcelloc spawnMapInner): filter the pool by the exit
+  // directions the *current* position allows before picking, so a corridor
+  // heading outward near the edge turns back instead of exhausting every
+  // candidate. Selection never throws for a world-limit miss: it degrades to
+  // any non-reversing exit, then to the candidate that ends nearest the centre.
+  const entry = state.nextEntry, incoming = state.currentDirection;
+  const allowed = campaignAllowedDirections(entry, incoming);
+  const options = [];
+  for (const level of LEVELS) {
+    if (level.id === state.lastLevelId) continue;
+    for (const mirrored of [false, true]) options.push({ level, mirrored });
+  }
+  // Filtering a uniformly shuffled pool gives the same random order among
+  // eligible variants as shuffling the filtered pool. Resolve shapes only as
+  // candidates are visited, instead of transforming all 2618 layouts in the
+  // first gameplay Think. Cached shapes remain usable across later rounds.
+  const eligible = (option, directionAllowed) => {
+    const shape = campaignLevelExitShape(option.level, option.mirrored);
+    if (!shape || Math.abs(entry.z + shape.rise * CONFIG.elevationStep) > CONFIG.heightLimit) return false;
+    const outgoing = shape.turn === "left" ? leftOf(incoming)
+      : shape.turn === "right" ? rightOf(incoming) : incoming;
+    return directionAllowed(outgoing);
+  };
+  const preferred = shuffledCopy(options);
+  const tryBuild = option => {
     const queueStart = state.spawnQueue.length;
-    let runtime;
     try {
-      runtime = buildLevel(
-        level,
-        mirrored,
-        index,
-        state.nextEntry,
-        state.currentDirection,
-        state.nextBridgeStart,
-        state.nextBufferSize,
-        campaignStageSnapshot(),
-      );
+      return buildLevel(option.level, option.mirrored, index, entry, incoming,
+        state.nextBridgeStart, state.nextBufferSize, campaignStageSnapshot());
     } catch (error) {
       state.spawnQueue.splice(queueStart);
-      message(`rejected level '${level.name}': ${error}`);
-      continue;
+      message(`rejected level '${option.level.name}': ${error}`);
+      return undefined;
     }
-    if (projectedWithinLimits(runtime)) {
-      if (trackItemDesire) finalizeLevelItemDesire(runtime);
-      return runtime;
+  };
+  const accept = runtime => {
+    if (trackItemDesire) finalizeLevelItemDesire(runtime);
+    return runtime;
+  };
+  const pickWithinLimits = (pool, limit, directionAllowed) => {
+    let tried = 0;
+    for (const option of pool) {
+      if (tried >= limit) break;
+      if (!eligible(option, directionAllowed)) continue;
+      tried++;
+      const queueStart = state.spawnQueue.length;
+      const runtime = tryBuild(option);
+      if (!runtime) continue;
+      // Source rule: hard limits, and past the warning band never move further
+      // out on that axis. A sideways turn may briefly add radius (the old
+      // radius-must-shrink check rejected every exit there).
+      if (finaleEscapeWithinLimits(runtime)) return runtime;
+      state.spawnQueue.splice(queueStart);
     }
-    state.spawnQueue.splice(state.spawnQueue.length - runtime.remaining, runtime.remaining);
+    return undefined;
+  };
+  let runtime = pickWithinLimits(preferred, 80,
+    outgoing => allowed.some(direction => sameVector2(direction, outgoing)));
+  if (runtime) return accept(runtime);
+  const opposite = mul(incoming, -1);
+  const nonReversing = outgoing => !sameVector2(outgoing, opposite);
+  const fallback = shuffledCopy(options);
+  message(`[LEVEL SELECT] no allowed-direction level fits at (${Math.round(entry.x)}, ${Math.round(entry.y)}, ${Math.round(entry.z)}); `
+    + `widening to any non-reversing exit`);
+  runtime = pickWithinLimits(fallback, 80, nonReversing);
+  if (runtime) return accept(runtime);
+  // Last resort: keep the round alive with whichever sampled level ends
+  // nearest the centre, even if it sits outside the warning band.
+  let best, bestDistance = Infinity;
+  let sampled = 0;
+  for (const option of fallback) {
+    if (sampled >= 40) break;
+    if (!eligible(option, nonReversing)) continue;
+    sampled++;
+    const queueStart = state.spawnQueue.length;
+    const candidate = tryBuild(option);
+    if (!candidate) continue;
+    state.spawnQueue.splice(queueStart);
+    const distance = Math.hypot(candidate.end.x, candidate.end.y);
+    if (distance < bestDistance) { best = option; bestDistance = distance; }
   }
-  throw new Error("could not select a level within world limits");
+  runtime = best && tryBuild(best);
+  if (!runtime) throw new Error("could not build any level from the current position");
+  message(`[LEVEL SELECT] WARN using '${runtime.name}' outside world limits (end ${Math.round(runtime.end.x)}, ${Math.round(runtime.end.y)}, ${Math.round(runtime.end.z)})`);
+  return accept(runtime);
+}
+
+// Mirrors raceAllowedDirections with the campaign limits: past edgeLimit only
+// the way back is allowed; past edgeWarning the way back joins the free axis;
+// a reversal is never allowed and a lone reversal turns toward the centre.
+function campaignAllowedDirections(origin, incoming) {
+  const east = vec(1, 0, 0), west = vec(-1, 0, 0);
+  const north = vec(0, 1, 0), south = vec(0, -1, 0);
+  let allowed = [];
+  if (origin.x > CONFIG.edgeLimit) allowed.push(west);
+  else if (origin.x < -CONFIG.edgeLimit) allowed.push(east);
+  if (origin.y > CONFIG.edgeLimit) allowed.push(south);
+  else if (origin.y < -CONFIG.edgeLimit) allowed.push(north);
+  const opposite = direction => direction.x === -incoming.x && direction.y === -incoming.y;
+  if (!allowed.length) {
+    allowed.push(...(origin.x > CONFIG.edgeWarning ? [west]
+      : origin.x < -CONFIG.edgeWarning ? [east] : [west, east]));
+    allowed.push(...(origin.y > CONFIG.edgeWarning ? [south]
+      : origin.y < -CONFIG.edgeWarning ? [north] : [south, north]));
+  } else if (allowed.length === 1 && opposite(allowed[0])) {
+    allowed = incoming.x !== 0 ? [origin.y > 0 ? south : north] : [origin.x > 0 ? west : east];
+  }
+  return allowed.filter(direction => !opposite(direction));
+}
+
+// Exit turn and entry->exit elevation change depend only on the level layout
+// and mirroring, so they are computed once per variant. null = unusable layout.
+const campaignLevelExitShapes = new Map();
+
+function campaignLevelExitShape(level, mirrored) {
+  const key = `${level.id}:${mirrored ? 1 : 0}`;
+  if (campaignLevelExitShapes.has(key)) return campaignLevelExitShapes.get(key);
+  let shape = null;
+  try {
+    const rows = tileRows(level, mirrored);
+    const markers = markerData(rows);
+    const elevations = entryExitElevations(rows, markers);
+    const probe = vec(1, 0, 0);
+    const out = exitDirection(markers, probe);
+    const turn = out.x === 1 ? "forward" : sameVector2(out, leftOf(probe)) ? "left" : "right";
+    shape = { turn, rise: elevations.exit - elevations.entry };
+  } catch (error) {
+    message(`level '${level.name}' (${mirrored ? "mirrored" : "normal"}) excluded from selection: ${error}`);
+  }
+  campaignLevelExitShapes.set(key, shape);
+  return shape;
+}
+
+function sameVector2(a, b) {
+  return a.x === b.x && a.y === b.y;
+}
+
+function shuffledCopy(items) {
+  const result = items.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 function terrainPreloadEntityCount() {
@@ -21486,10 +23297,31 @@ function prepareTerrainRequest(preload, request, slot) {
   // Parking staging stays inside engine coordinates, outside the playable limits.
   // No triggers/physics are staged either way.
   const inPlace = CONFIG.terrainPreloadInPlace === true;
-  const position = inPlace ? clone(request.position)
-    : vec(11000 + (slot % 32) * 128, 11000 + Math.floor(slot / 32) * 128, -8000);
-  const spawned = (bakedSlope ? spawnRoundEntities(template, position)
+  const parking = (index) => vec(11000 + (index % 32) * 128, 11000 + Math.floor(index / 32) * 128, -8000);
+  const position = inPlace ? clone(request.position) : parking(slot);
+  // A pooled prop from a retired level needs no ForceSpawn at all. It is
+  // hidden and non-solid; parking staging keeps staged props drawn and solid.
+  const pooled = bakedSlope || preload.kind === "finale_escape" ? undefined : takePooledTerrain(request.shape);
+  if (pooled) {
+    if (!inPlace) { fireTarget(pooled, "TurnOn"); fireTarget(pooled, "EnableCollision"); }
+    stagePreloadedTerrain(preload, request, pooled, position, false, inPlace);
+    return true;
+  }
+  // A flat pair stages both of its props with one ForceSpawn; deployment then
+  // reuses each like any staged block.
+  const pending = bakedSlope ? undefined : pendingTerrainPair(request);
+  const spawned = (pending ? spawnRoundEntities(pending.template, position, request.angles)
+    : bakedSlope ? spawnRoundEntities(template, position)
     : spawnRoundEntities(template, position, request.angles)) ?? [];
+  if (pending) {
+    const props = terrainPairProps(pending, spawned);
+    // A malformed pair template disabled its family; stage this one alone.
+    if (!props) return prepareTerrainRequest(preload, request, slot);
+    stagePreloadedTerrain(preload, request, props[0], position, false, inPlace);
+    stagePreloadedTerrain(preload, pending.partner, props[1],
+      inPlace ? clone(pending.partner.position) : parking(slot + 1), false, inPlace);
+    return 2;
+  }
   // The engine may report prop_dynamic_override as prop_dynamic; both are
   // the same static dynamic prop. Physics props and multi-entity templates stay out.
   const classNames = spawned.map(entity => String(entity?.GetClassName?.() ?? "invalid").toLowerCase());
@@ -21512,15 +23344,22 @@ function prepareTerrainRequest(preload, request, slot) {
     // null: the request stays cold, but this spawn still spent preload budget.
     return null;
   }
+  stagePreloadedTerrain(preload, request, entity, position, bakedSlope, inPlace);
+  return true;
+}
+
+// Hide one staged prop at its staging transform and hand it to its request.
+function stagePreloadedTerrain(preload, request, entity, position, bakedSlope, inPlace) {
   if (inPlace) {
     fireTarget(entity, "DisableCollision");
-    if (CONFIG.terrainPreloadDebugVisible !== true) fireTarget(entity, "TurnOff");
+    fireTarget(entity, "TurnOff");
   }
   preload.runtime.terrainPreloadedEntities.add(entity);
   const prepared = { entity, inPlace, model: request.themeName === "silenthill"
     ? silentHillDesiredModel(request.terrainModel) : request.terrainModel };
   request.preloadedTerrain = prepared;
-  entity.SetEntityName(`collective_terrain_preload_${preload.runtime.index}_${slot}`);
+  // No staging name: deployment renames the prop block_<shape>, and a
+  // per-level/slot name here only added a new engine name string per block.
   // Do not register with live terrain, Silent Hill, fades, or event ownership.
   entity.collectiveSpawnFadeAlpha = 0;
   if (prepared.model) entity.SetModel(prepared.model);
@@ -21533,12 +23372,11 @@ function prepareTerrainRequest(preload, request, slot) {
     const color = colorToEntityColor(request.renderColor) ?? { r: 255, g: 255, b: 255, a: 255 };
     entity.collectiveBaseColor = color;
     entity.collectiveBodyGroup = 0;
-    entity.SetColor({ ...color, a: inPlace && CONFIG.terrainPreloadDebugVisible === true ? 128 : 0 });
+    entity.SetColor({ ...color, a: 0 });
     fireTarget(entity, "SetBodyGroup", "Main,0");
   };
   restore();
-  afterThink(restore);
-  return true;
+  state.terrainPreloadRestores.push(restore);
 }
 
 function bakedSlopeOrientationMatches(entity, yaw) {
@@ -21549,7 +23387,12 @@ function bakedSlopeOrientationMatches(entity, yaw) {
 }
 
 function processTerrainPreload(foregroundUsed = false) {
+  return withGenerationBudget(() => processTerrainPreloadBudgeted(foregroundUsed));
+}
+
+function processTerrainPreloadBudgeted(foregroundUsed) {
   if (!state.running || state.fatal) return;
+  if (!backgroundGenerationWorkAvailable()) return;
   if (state.terrainPreload && !terrainPreloadMatches(state.terrainPreload)) clearTerrainPreload();
   const foregroundBusy = state.pendingLevel || state.spawnQueue.length || state.itemSpawnQueue.length
     || state.trapSpawnQueue.length || [...state.generationQueues.values()].some(queue => queue.length);
@@ -21559,9 +23402,11 @@ function processTerrainPreload(foregroundUsed = false) {
   if (state.terrainPreloadRetiring.size) {
     let count = 0;
     for (const entity of state.terrainPreloadRetiring) {
-      if (count++ >= CONFIG.terrainPreloadPerThink) break;
-      if (validEntity(entity)) entity.Kill();
-      state.terrainPreloadRetiring.delete(entity);
+      if (count++ >= CONFIG.terrainPreloadPerThink || !backgroundGenerationWorkAvailable()) break;
+      runGenerationWork(() => {
+        if (validEntity(entity)) entity.Kill();
+        state.terrainPreloadRetiring.delete(entity);
+      });
     }
     return;
   }
@@ -21582,7 +23427,8 @@ function processTerrainPreload(foregroundUsed = false) {
     const priorDefer = state.deferTerrainPlanning;
     try {
       state.deferTerrainPlanning = true;
-      const runtime = chooseLevel(state.levelIndex + 1, false);
+      let runtime;
+      runGenerationWork(() => { runtime = chooseLevel(state.levelIndex + 1, false); }, false);
       runtime.preloadRequests = [];
       runtime.terrainPreloadedEntities = new Set();
       state.terrainPreload = { source, runtime, round: state.roundBootstrapSerial,
@@ -21598,8 +23444,10 @@ function processTerrainPreload(foregroundUsed = false) {
   const preload = state.terrainPreload, runtime = preload.runtime;
   try {
     if (runtime.planningIterator) {
-      for (let n = 0; n < CONFIG.spawnPerThink && runtime.planningIterator; n++) {
-        if (runtime.planningIterator.next().done) runtime.planningIterator = undefined;
+      for (let n = 0; n < CONFIG.spawnPerThink && runtime.planningIterator && backgroundGenerationWorkAvailable(); n++) {
+        runGenerationWork(() => {
+          if (runtime.planningIterator.next().done) runtime.planningIterator = undefined;
+        }, false);
       }
       // Escape segments draw a Finale theme per request, as the cold path
       // does; staging needs the final models, so theme before any block.
@@ -21612,16 +23460,20 @@ function processTerrainPreload(foregroundUsed = false) {
     let live = activeRuntimes().reduce((count, owner) => count + (owner.entities?.size ?? 0), 0);
     for (const event of state.genericEvents.active.values()) live += event.entityRuntime.entities.size + event.cost;
     let budget = CONFIG.terrainPreloadPerThink;
-    while (budget > 0 && preload.cursor < runtime.preloadRequests.length) {
+    while (budget > 0 && preload.cursor < runtime.preloadRequests.length && backgroundGenerationWorkAvailable()) {
       if (terrainPreloadEntityCount() >= CONFIG.terrainPreloadMaxEntities
-        || live + terrainPreloadEntityCount() >= 10000) break;
+        || live + terrainPreloadEntityCount() + terrainPoolSize() >= 10000) break;
       const request = runtime.preloadRequests[preload.cursor++];
-      if (request.kind !== "terrain") continue;
-      const prepared = prepareTerrainRequest(preload, request, preload.prepared);
-      if (prepared) preload.prepared++;
+      // A pair partner was already staged together with its first request.
+      if (request.kind !== "terrain" || request.preloadedTerrain) continue;
+      let prepared;
+      runGenerationWork(() => { prepared = prepareTerrainRequest(preload, request, preload.prepared); });
+      // true: one staged block; 2: a pair (two parking slots).
+      if (prepared) preload.prepared += prepared === 2 ? 2 : 1;
       if (prepared || prepared === null) budget--;
     }
-    if (!preload.ready && (preload.cursor === runtime.preloadRequests.length
+    if (!preload.ready && state.terrainPreloadRestores.length === 0
+      && (preload.cursor === runtime.preloadRequests.length
       || preload.prepared >= CONFIG.terrainPreloadMaxEntities)) {
       preload.ready = true;
       message(`[TERRAIN PRELOAD] level ${runtime.index}: ${preload.prepared} static blocks prepared`);
@@ -21640,6 +23492,7 @@ function generateNextLevel() {
     schedule(0.1, generateNextLevel);
     return;
   }
+  let committed = false;
   try {
     const index = state.levelIndex + 1;
     let runtime;
@@ -21658,14 +23511,27 @@ function generateNextLevel() {
       try { runtime = chooseLevel(index); }
       finally { state.deferTerrainPlanning = priorDefer; }
     }
+    committed = true;
     state.levelIndex = index;
     state.pendingLevel = runtime;
     state.levels.set(index, runtime);
+    trackRoundReportLevel(runtime);
     state.lastLevelId = runtime.id;
     message(`${runtime.planningIterator ? "planning" : "queued"} level ${index}: '${runtime.name}' by ${runtime.author}`
       + (runtime.planningIterator ? " (20x20 pixels)" : ` (${runtime.remaining} requests)`));
     if (runtime.remaining === 0 && !runtime.planningIterator) finishPendingLevel();
+    state.levelGenerationRetries = 0;
   } catch (error) {
+    // Selection itself no longer throws for world limits; anything else that
+    // fails before the level is committed gets a few retries before halting.
+    const retries = state.levelGenerationRetries = (state.levelGenerationRetries ?? 0) + 1;
+    if (!committed && retries <= 3) {
+      reportGuardedError("level generation", error);
+      message(`level generation failed (retry ${retries}/3 in 1s): ${error}`);
+      schedule(1, generateNextLevel);
+      return;
+    }
+    state.levelGenerationRetries = 0;
     failRuntime(`level generation failed: ${error}`);
   }
 }
@@ -22198,7 +24064,7 @@ function spawnNativeHold(runtime, request, child) {
     throw new Error("hold: template_movelinear must spawn exactly one func_movelinear");
   }
   runtime.entities.add(driver);
-  driver.SetEntityName?.(`hold_driver_${runtime.index}_${runtime.entities.size}`);
+  assignRecycledEntityName(driver, "hold_driver");
   const anchor = spawnVisual(runtime, { ...request, feature: "holdFrame",
     angles: { pitch: 0, yaw: 0, roll: 0 } }, request.themeModel ?? "models/luffaren/collective_hold.vmdl");
   if (!validEntity(anchor) || !validEntity(child)) throw new Error("hold: native child/frame did not spawn");
@@ -22330,11 +24196,11 @@ function startGenericHoldGroup(runtime, record, announceCountdown = true) {
   const openTime = stageSnapshotForRuntime(runtime).genericHoldTime;
                                                                          
                                                                   
-  if (announceCountdown) announce(`Level ${runtime.index}: defend for ${openTime} seconds`);
+  if (announceCountdown && openTime > 0) announce(`***HOLD OPENS IN ${sqNumber(openTime)} SECONDS***`);
   schedule(openTime, () => {
+    if (announceCountdown) announce("***OPENING HOLD***");
     if (runtime.lifecycle === "destroyed" || runtime.interactionsRetired) return;
     for (const member of connected) openGenericHold(runtime, member);
-    if (announceCountdown) announce(`Level ${runtime.index}: generic hold opened`);
   }, runtime.index);
 }
 
@@ -22430,24 +24296,38 @@ function finalizeSpawned(runtime, request, spawned, preserveTemplateTransforms =
     if (!preserveTemplateTransforms) {
       entity.Teleport({ position: request.position, angles: request.angles, velocity: vec() });
     }
-    entity.SetEntityName(`block_${runtime.index}_${request.feature}`);
+    // Level-independent: readers only need the block_ prefix and feature, and
+    // a per-level index made a fresh engine name string for every level.
+    entity.SetEntityName(`block_${request.feature}`);
     runtime.entities.add(entity);
+    if (request.phasingTerrain) registerPhasingTerrain(runtime, entity);
   }
 }
 
 function terrainRenderAlpha(entity, baseAlpha = 255) {
-  return Math.round(baseAlpha * Math.min(entity.collectiveSpawnFadeAlpha ?? 255,
+  return Math.round(genericEventVisibleAlpha(entity, baseAlpha) * Math.min(entity.collectiveSpawnFadeAlpha ?? 255,
     entity.collectiveRetireAlpha ?? 255) / 255);
 }
 
-function applyTerrainAppearance(entity, bodyGroup, renderColor) {
+function applyTerrainColor(entity, color) {
+  if (!validEntity(entity)) return;
+  entity.collectiveBaseColor = color;
+  entity.SetColor?.({ ...color, a: terrainRenderAlpha(entity, color.a ?? 255) });
+}
+
+function applyTerrainAppearance(entity, bodyGroup, renderColor, settled = false) {
   if (!validEntity(entity)) return;
   const color = colorToEntityColor(renderColor) ?? { r: 255, g: 255, b: 255, a: 255 };
+  // Staged props have already completed their template corrections. Reuse
+  // their appearance without resending bodygroup I/O or post-Think work.
+  const current = entity.collectiveBaseColor;
+  if (settled && entity.collectiveBodyGroup === bodyGroup && current
+    && current.r === color.r && current.g === color.g && current.b === color.b
+    && current.a === color.a) return;
   const apply = () => {
     if (!validEntity(entity)) return;
-    entity.collectiveBaseColor = color;
     entity.collectiveBodyGroup = bodyGroup;
-    entity.SetColor?.({ ...color, a: terrainRenderAlpha(entity, color.a) });
+    applyTerrainColor(entity, color);
                                                                            
                                                                      
     fireTarget(entity, "SetBodyGroup", `Main,${bodyGroup}`);
@@ -22455,7 +24335,7 @@ function applyTerrainAppearance(entity, bodyGroup, renderColor) {
                                                                              
                                                                    
   apply();
-  afterThink(apply);
+  if (!settled) afterThink(apply);
 }
 
 function beginTerrainSpawnFade(entity, runtime) {
@@ -22489,7 +24369,7 @@ function processTerrainSpawnFades(now) {
     entity.collectiveSpawnFadeAlpha = alpha === 255 ? undefined : alpha;
                                                                           
     if (state.levels.get(fade.owner)?.lifecycle !== "fading")
-      entity.SetColor({ ...fade.color, a: Math.round(fade.color.a * alpha / 255) });
+      entity.SetColor({ ...fade.color, a: terrainRenderAlpha(entity, fade.color.a) });
     if (alpha === 255) state.terrainSpawnFades.delete(entity);
   }
 }
@@ -22511,8 +24391,7 @@ function applyBoostPadAppearance(entity, request) {
     // Source template_boostpad PreSpawnInstance sets only model/spawnflags/rendermode: the pad
     // stays white in every theme. The GENERIC tint belongs to the separate base floor block.
     const color = { r: 255, g: 255, b: 255, a: 255 };
-    entity.collectiveBaseColor = color;
-    entity.SetColor?.(color);
+    applyTerrainColor(entity, color);
     fireTarget(entity, "SetBodyGroup", `TYPES,${bodyGroup}`);
                                                                                
                                                                                
@@ -22594,6 +24473,7 @@ function spawnBreakableGibs(runtime, position) {
   finalizeSpawned(runtime, request, spawned);
   for (const visual of spawned) {
     if (!validEntity(visual)) continue;
+    if (runtime.raceLevel) visual.SetModelScale?.(RACE_CONFIG.gridSize / CONFIG.gridSize);
     fireTarget(visual, "SetAnimation", "break");
     fireTarget(visual, "SetPlaybackRate", String(0.7 + Math.random() * 0.2), 0.02);
     fireTarget(visual, "FadeAndKill", "1", 1);
@@ -22618,6 +24498,7 @@ function spawnBreakableBlock(runtime, request, model) {
     throw new Error(`breakable damageable prototype did not spawn: template_breakable returned ${spawned.length} entities [${classes.join(", ")}]; expected prop_dynamic/prop_dynamic_override`);
   }
   block.SetModel(rememberSilentHillVisual(runtime, block, model, request));
+  if (request.race) block.SetModelScale?.(RACE_CONFIG.gridSize / CONFIG.gridSize);
   const baseColor = request.renderColor ?? (request.themeName === "generic"
     ? { r: 136, g: 84, b: 55, a: 255 } : { r: 255, g: 255, b: 255, a: 255 });
   applyTerrainAppearance(block, 1, baseColor);
@@ -22660,9 +24541,9 @@ function spawnBreakableBlock(runtime, request, model) {
     const now = Instance.GetGameTime();
     if (now < flashUntil) return;
     flashUntil = now + 0.15;
-    block.SetColor?.({ r: 255, g: 100, b: 100, a: 255 });
+    block.SetColor?.({ r: 255, g: 100, b: 100, a: terrainRenderAlpha(block) });
     schedule(0.05, () => {
-      if (active()) block.SetColor?.(block.collectiveBaseColor ?? baseColor);
+      if (active()) applyTerrainColor(block, block.collectiveBaseColor ?? baseColor);
     }, runtime.index);
     playBreakableAudio(runtime, block, false);
   });
@@ -22697,8 +24578,9 @@ function spawnBakedClimb(runtime, request) {
       const record = state.silentHillWorld.visuals.get(entity);
       if (record) record.restore = () => applyTerrainAppearance(entity, 0, request.renderColor);
     }
-    entity.SetEntityName(`block_${runtime.index}_${request.feature}`);
+    entity.SetEntityName(`block_${request.feature}`);
     runtime.entities.add(entity);
+    if (request.phasingTerrain) registerPhasingTerrain(runtime, entity);
     visual ??= entity;
   }
   if (!visual) throw new Error(`${request.feature}: baked ${prefix} prototype did not spawn`);
@@ -22746,7 +24628,8 @@ function spawnTriggerFeature(runtime, request) {
       entry.mode = DEBUG_DATA.teleportLanes.find((lane) => lane.group === request.group)?.mode;
       trigger.SetEntityName(`debug_teleport_${entry.mode}_trigger`);
     } else {
-      trigger.SetEntityName(`block_${runtime.index}_teleport_${request.group}_${runtime.teleportEntries?.size ?? 0}`);
+      // Only logs read this name; keep it level-independent (see finalizeSpawned).
+      trigger.SetEntityName(`block_teleport_${request.group}`);
     }
     runtime.teleportEntries ??= new Set();
     runtime.teleportEntries.add(entry);
@@ -22779,7 +24662,8 @@ function spawnTriggerFeature(runtime, request) {
       fireTarget(trigger, "Enable", undefined, 0.05);
       entry.ready = true;
     });
-    spawnVisual(runtime, { ...request, feature: "teleportVisual" }, request.themeModel ?? TELEPORT_MODEL);
+    trigger.__teleportEntry.visual = spawnVisual(runtime,
+      { ...request, feature: "teleportVisual" }, request.themeModel ?? TELEPORT_MODEL);
   }
   if (request.feature === "boost") {
     const pad = { trigger, request, cooldowns: new Map(), pendingLaunches: new Map() };
@@ -22802,6 +24686,13 @@ function spawnTriggerFeature(runtime, request) {
         entry.invalidActivators++;
         if (runtime.debugTeleport) message(`[TELEPORT DEBUG] ${entry.mode} activator is not a living player`);
         return;
+      }
+      // Zombies remove the entry crystal, while its teleport/bounce stays active.
+      if (pawn.GetTeamNumber?.() === 2 && entry.visual) {
+        if (validEntity(entry.visual)) entry.visual.Kill();
+        runtime.entities.delete(entry.visual);
+        state.silentHillWorld.visuals.delete(entry.visual);
+        entry.visual = undefined;
       }
                                                                          
                                                                           
@@ -22867,7 +24758,8 @@ function spawnTriggerFeature(runtime, request) {
     trigger.__lowgravVolume = volume;
     runtime.lowgravSpawnCounts ??= {};
     const count = runtime.lowgravSpawnCounts[request.tile] = (runtime.lowgravSpawnCounts[request.tile] ?? 0) + 1;
-    const entityName = `block_${runtime.index}_lowgrav_${request.tile}_${count}`;
+    // Only the logs below read this name; keep it level-independent.
+    const entityName = `block_lowgrav_${request.tile}`;
     trigger.SetEntityName(entityName);
     volume.outputConnections.add(connectOwnedOutput(runtime, trigger, "OnStartTouch", (data) => {
       if (!volume.active) return;
@@ -22916,8 +24808,8 @@ function spawnTriggerFeature(runtime, request) {
                                                                        
                                                               
       const floorTint = { r: 196, g: 188, b: 254, a: 255 };
-      visual?.SetColor?.(floorTint);
-      afterThink(() => { if (validEntity(visual)) visual.SetColor?.(floorTint); });
+      applyTerrainColor(visual, floorTint);
+      afterThink(() => applyTerrainColor(visual, floorTint));
     }
   }
   return trigger;
@@ -23012,9 +24904,13 @@ function spawnButtonFeature(runtime, request) {
       throw new Error(`${request.feature}: interaction prototype cannot display its themed model`);
     }
   }
+  if (request.feature === "genericHold" && request.renderColor) {
+    applyTerrainAppearance(button, 0, request.renderColor);
+  }
   runtime.buttons.add(button);
-  button.SetEntityName?.(`block_${runtime.index}_${request.feature}_${record.id}_use`);
-  record.visual?.SetEntityName?.(`block_${runtime.index}_${request.feature}_${record.id}_visual`);
+  // Unique among live buttons without a new name string per level/button.
+  assignRecycledEntityName(button, `block_${request.feature}_use`);
+  if (record.visual) assignRecycledEntityName(record.visual, `block_${request.feature}_visual`);
   record.button = button;
   record.output = output;
   if (request.feature === "genericHold") {
@@ -23039,12 +24935,14 @@ function spawnButtonFeature(runtime, request) {
       if (remaining > 0) return;
       const stage = stageSnapshotForRuntime(runtime);
       const open = () => {
+        announce("***OPENING HOLD***");
         if (runtime.lifecycle === "destroyed" || runtime.interactionsRetired) return;
         openHoldGroup(runtime, request.group);
-        announce(`Level ${runtime.index}: hold ${request.group} opened`);
       };
-      if (stage.holdOpenTime > 0) schedule(stage.holdOpenTime, open, runtime.index);
-      else open();
+      if (stage.holdOpenTime > 0) {
+        announce(`***HOLD OPENS IN ${sqNumber(stage.holdOpenTime)} SECONDS***`);
+        schedule(stage.holdOpenTime, open, runtime.index);
+      } else open();
     } else if (request.feature === "endButton") {
                                                                            
                                                                           
@@ -23095,7 +24993,7 @@ function applyLiquidAppearance(entity, request) {
     }
   }
   applyThemeSkin(entity, request.skin ?? (request.hazardous ? 3 : 1));
-  entity.SetColor?.({ r: 255, g: 255, b: 255, a: 255 });
+  applyTerrainColor(entity, { r: 255, g: 255, b: 255, a: 255 });
                                                                             
                                                                          
                                                     
@@ -23117,23 +25015,522 @@ function applyLiquidAppearance(entity, request) {
   });
 }
 
+// Authored model catalog; no runtime build/import.
+const VISUAL_TEMPLATES = Object.freeze({
+  "models/luffaren/collective_airslidesilenthilldark.vmdl": "template_vis_luffaren_collective_airslidesilenthilldark",
+  "models/luffaren/collective_blockwallsilenthilldark.vmdl": "template_vis_luffaren_collective_blockwallsilenthilldark",
+  "models/luffaren/collective_boostpadsilenthilldark.vmdl": "template_vis_luffaren_collective_boostpadsilenthilldark",
+  "models/luffaren/collective_buttonsilenthilldark.vmdl": "template_vis_luffaren_collective_buttonsilenthilldark",
+  "models/luffaren/collective_climbhardsilenthilldark.vmdl": "template_vis_luffaren_collective_climbhardsilenthilldark",
+  "models/luffaren/collective_climbsilenthilldark.vmdl": "template_vis_luffaren_collective_climbsilenthilldark",
+  "models/luffaren/collective_crouchsilenthilldark.vmdl": "template_vis_luffaren_collective_crouchsilenthilldark",
+  "models/luffaren/collective_crouchtallsilenthilldark.vmdl": "template_vis_luffaren_collective_crouchtallsilenthilldark",
+  "models/luffaren/collective_detailsilenthill2dark.vmdl": "template_vis_luffaren_collective_detailsilenthill2dark",
+  "models/luffaren/collective_detailsilenthill3dark.vmdl": "template_vis_luffaren_collective_detailsilenthill3dark",
+  "models/luffaren/collective_detailsilenthilldark.vmdl": "template_vis_luffaren_collective_detailsilenthilldark",
+  "models/luffaren/collective_elevatorbigsilenthilldark.vmdl": "template_vis_luffaren_collective_elevatorbigsilenthilldark",
+  "models/luffaren/collective_elevatorhugesilenthilldark.vmdl": "template_vis_luffaren_collective_elevatorhugesilenthilldark",
+  "models/luffaren/collective_elevatorsilenthilldark.vmdl": "template_vis_luffaren_collective_elevatorsilenthilldark",
+  "models/luffaren/collective_floor_slopehalfsilenthilldark.vmdl": "template_vis_luffaren_collective_floor_slopehalfsilenthilldark",
+  "models/luffaren/collective_floor_slopesilenthilldark.vmdl": "template_vis_luffaren_collective_floor_slopesilenthilldark",
+  "models/luffaren/collective_floorceiling_slopehalfsilenthilldark.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalfsilenthilldark",
+  "models/luffaren/collective_floorceiling_slopesilenthilldark.vmdl": "template_vis_luffaren_collective_floorceiling_slopesilenthilldark",
+  "models/luffaren/collective_floorceilingsilenthilldark.vmdl": "template_vis_luffaren_collective_floorceilingsilenthilldark",
+  "models/luffaren/collective_floorceilingtall_slopehalfsilenthilldark.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalfsilenthilldark",
+  "models/luffaren/collective_floorceilingtall_slopesilenthilldark.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopesilenthilldark",
+  "models/luffaren/collective_floorceilingtallsilenthilldark.vmdl": "template_vis_luffaren_collective_floorceilingtallsilenthilldark",
+  "models/luffaren/collective_floorsilenthilldark.vmdl": "template_vis_luffaren_collective_floorsilenthilldark",
+  "models/luffaren/collective_holdgenericsilenthilldark.vmdl": "template_vis_luffaren_collective_holdgenericsilenthilldark",
+  "models/luffaren/collective_holdsilenthilldark.vmdl": "template_vis_luffaren_collective_holdsilenthilldark",
+  "models/luffaren/collective_laddersilenthilldark.vmdl": "template_vis_luffaren_collective_laddersilenthilldark",
+  "models/luffaren/collective_liquid_fallsilenthilldark.vmdl": "template_vis_luffaren_collective_liquid_fallsilenthilldark",
+  "models/luffaren/collective_liquid_shallowsilenthilldark.vmdl": "template_vis_luffaren_collective_liquid_shallowsilenthilldark",
+  "models/luffaren/collective_liquid_streamsilenthilldark.vmdl": "template_vis_luffaren_collective_liquid_streamsilenthilldark",
+  "models/luffaren/collective_liquid_tunnelsilenthilldark.vmdl": "template_vis_luffaren_collective_liquid_tunnelsilenthilldark",
+  "models/luffaren/collective_liquidsilenthilldark.vmdl": "template_vis_luffaren_collective_liquidsilenthilldark",
+  "models/luffaren/collective_lowgravsilenthilldark.vmdl": "template_vis_luffaren_collective_lowgravsilenthilldark",
+  "models/luffaren/collective_platform_slopehalfsilenthilldark.vmdl": "template_vis_luffaren_collective_platform_slopehalfsilenthilldark",
+  "models/luffaren/collective_platform_slopesilenthilldark.vmdl": "template_vis_luffaren_collective_platform_slopesilenthilldark",
+  "models/luffaren/collective_platformsilenthilldark.vmdl": "template_vis_luffaren_collective_platformsilenthilldark",
+  "models/luffaren/collective_teleportsilenthilldark.vmdl": "template_vis_luffaren_collective_teleportsilenthilldark",
+  "models/luffaren/collective_wallsilenthill1dark.vmdl": "template_vis_luffaren_collective_wallsilenthill1dark",
+  "models/luffaren/collective_wallsilenthill2dark.vmdl": "template_vis_luffaren_collective_wallsilenthill2dark",
+  "models/luffaren/collective_wallsilenthilldark.vmdl": "template_vis_luffaren_collective_wallsilenthilldark",
+  "models/luffaren/baguette.vmdl": "template_vis_luffaren_baguette",
+  "models/luffaren/beamgrid.vmdl": "template_vis_luffaren_beamgrid",
+  "models/luffaren/beartrap.vmdl": "template_vis_luffaren_beartrap",
+  "models/luffaren/berserker_sword.vmdl": "template_vis_luffaren_berserker_sword",
+  "models/luffaren/bhop_steroids.vmdl": "template_vis_luffaren_bhop_steroids",
+  "models/luffaren/billnye.vmdl": "template_vis_luffaren_billnye",
+  "models/luffaren/billnye_vhs.vmdl": "template_vis_luffaren_billnye_vhs",
+  "models/luffaren/bomb_chuck.vmdl": "template_vis_luffaren_bomb_chuck",
+  "models/luffaren/captain_planet.vmdl": "template_vis_luffaren_captain_planet",
+  "models/luffaren/ck_banana.vmdl": "template_vis_luffaren_ck_banana",
+  "models/luffaren/claymore.vmdl": "template_vis_luffaren_claymore",
+  "models/luffaren/collective_airslide.vmdl": "template_vis_luffaren_collective_airslide",
+  "models/luffaren/collective_airslidecastle.vmdl": "template_vis_luffaren_collective_airslidecastle",
+  "models/luffaren/collective_airslidefrost.vmdl": "template_vis_luffaren_collective_airslidefrost",
+  "models/luffaren/collective_airslidehell.vmdl": "template_vis_luffaren_collective_airslidehell",
+  "models/luffaren/collective_airslidenature.vmdl": "template_vis_luffaren_collective_airslidenature",
+  "models/luffaren/collective_airslidesilenthill.vmdl": "template_vis_luffaren_collective_airslidesilenthill",
+  "models/luffaren/collective_airslidetemple.vmdl": "template_vis_luffaren_collective_airslidetemple",
+  "models/luffaren/collective_blockwall.vmdl": "template_vis_luffaren_collective_blockwall",
+  "models/luffaren/collective_blockwallcastle.vmdl": "template_vis_luffaren_collective_blockwallcastle",
+  "models/luffaren/collective_blockwallfactory.vmdl": "template_vis_luffaren_collective_blockwallfactory",
+  "models/luffaren/collective_blockwallfrost.vmdl": "template_vis_luffaren_collective_blockwallfrost",
+  "models/luffaren/collective_blockwallhell.vmdl": "template_vis_luffaren_collective_blockwallhell",
+  "models/luffaren/collective_blockwallnature.vmdl": "template_vis_luffaren_collective_blockwallnature",
+  "models/luffaren/collective_blockwallsilenthill.vmdl": "template_vis_luffaren_collective_blockwallsilenthill",
+  "models/luffaren/collective_blockwalltemple.vmdl": "template_vis_luffaren_collective_blockwalltemple",
+  "models/luffaren/collective_boostpad.vmdl": "template_vis_luffaren_collective_boostpad",
+  "models/luffaren/collective_boostpadcastle.vmdl": "template_vis_luffaren_collective_boostpadcastle",
+  "models/luffaren/collective_boostpadfactory.vmdl": "template_vis_luffaren_collective_boostpadfactory",
+  "models/luffaren/collective_boostpadfrost.vmdl": "template_vis_luffaren_collective_boostpadfrost",
+  "models/luffaren/collective_boostpadhell.vmdl": "template_vis_luffaren_collective_boostpadhell",
+  "models/luffaren/collective_boostpadnature.vmdl": "template_vis_luffaren_collective_boostpadnature",
+  "models/luffaren/collective_boostpadsilenthill.vmdl": "template_vis_luffaren_collective_boostpadsilenthill",
+  "models/luffaren/collective_boostpadtemple.vmdl": "template_vis_luffaren_collective_boostpadtemple",
+  "models/luffaren/collective_button.vmdl": "template_vis_luffaren_collective_button",
+  "models/luffaren/collective_buttoncastle.vmdl": "template_vis_luffaren_collective_buttoncastle",
+  "models/luffaren/collective_buttonfactory.vmdl": "template_vis_luffaren_collective_buttonfactory",
+  "models/luffaren/collective_buttonfrost.vmdl": "template_vis_luffaren_collective_buttonfrost",
+  "models/luffaren/collective_buttonhell.vmdl": "template_vis_luffaren_collective_buttonhell",
+  "models/luffaren/collective_buttonnature.vmdl": "template_vis_luffaren_collective_buttonnature",
+  "models/luffaren/collective_buttonsilenthill.vmdl": "template_vis_luffaren_collective_buttonsilenthill",
+  "models/luffaren/collective_buttontemple.vmdl": "template_vis_luffaren_collective_buttontemple",
+  "models/luffaren/collective_climb.vmdl": "template_vis_luffaren_collective_climb",
+  "models/luffaren/collective_climbcastle.vmdl": "template_vis_luffaren_collective_climbcastle",
+  "models/luffaren/collective_climbfactory.vmdl": "template_vis_luffaren_collective_climbfactory",
+  "models/luffaren/collective_climbfrost.vmdl": "template_vis_luffaren_collective_climbfrost",
+  "models/luffaren/collective_climbhard.vmdl": "template_vis_luffaren_collective_climbhard",
+  "models/luffaren/collective_climbhardcastle.vmdl": "template_vis_luffaren_collective_climbhardcastle",
+  "models/luffaren/collective_climbhardfactory.vmdl": "template_vis_luffaren_collective_climbhardfactory",
+  "models/luffaren/collective_climbhardfrost.vmdl": "template_vis_luffaren_collective_climbhardfrost",
+  "models/luffaren/collective_climbhardhell.vmdl": "template_vis_luffaren_collective_climbhardhell",
+  "models/luffaren/collective_climbhardnature.vmdl": "template_vis_luffaren_collective_climbhardnature",
+  "models/luffaren/collective_climbhardsilenthill.vmdl": "template_vis_luffaren_collective_climbhardsilenthill",
+  "models/luffaren/collective_climbhardtemple.vmdl": "template_vis_luffaren_collective_climbhardtemple",
+  "models/luffaren/collective_climbhell.vmdl": "template_vis_luffaren_collective_climbhell",
+  "models/luffaren/collective_climbnature.vmdl": "template_vis_luffaren_collective_climbnature",
+  "models/luffaren/collective_climbsilenthill.vmdl": "template_vis_luffaren_collective_climbsilenthill",
+  "models/luffaren/collective_climbtemple.vmdl": "template_vis_luffaren_collective_climbtemple",
+  "models/luffaren/collective_color.vmdl": "template_vis_luffaren_collective_color",
+  "models/luffaren/collective_crouch.vmdl": "template_vis_luffaren_collective_crouch",
+  "models/luffaren/collective_crouchcastle.vmdl": "template_vis_luffaren_collective_crouchcastle",
+  "models/luffaren/collective_crouchfactory.vmdl": "template_vis_luffaren_collective_crouchfactory",
+  "models/luffaren/collective_crouchfrost.vmdl": "template_vis_luffaren_collective_crouchfrost",
+  "models/luffaren/collective_crouchhell.vmdl": "template_vis_luffaren_collective_crouchhell",
+  "models/luffaren/collective_crouchnature.vmdl": "template_vis_luffaren_collective_crouchnature",
+  "models/luffaren/collective_crouchsilenthill.vmdl": "template_vis_luffaren_collective_crouchsilenthill",
+  "models/luffaren/collective_crouchtall.vmdl": "template_vis_luffaren_collective_crouchtall",
+  "models/luffaren/collective_crouchtallcastle.vmdl": "template_vis_luffaren_collective_crouchtallcastle",
+  "models/luffaren/collective_crouchtallfactory.vmdl": "template_vis_luffaren_collective_crouchtallfactory",
+  "models/luffaren/collective_crouchtallfrost.vmdl": "template_vis_luffaren_collective_crouchtallfrost",
+  "models/luffaren/collective_crouchtallhell.vmdl": "template_vis_luffaren_collective_crouchtallhell",
+  "models/luffaren/collective_crouchtallnature.vmdl": "template_vis_luffaren_collective_crouchtallnature",
+  "models/luffaren/collective_crouchtallsilenthill.vmdl": "template_vis_luffaren_collective_crouchtallsilenthill",
+  "models/luffaren/collective_crouchtalltemple.vmdl": "template_vis_luffaren_collective_crouchtalltemple",
+  "models/luffaren/collective_crouchtemple.vmdl": "template_vis_luffaren_collective_crouchtemple",
+  "models/luffaren/collective_detail.vmdl": "template_vis_luffaren_collective_detail",
+  "models/luffaren/collective_detail1hell.vmdl": "template_vis_luffaren_collective_detail1hell",
+  "models/luffaren/collective_detail1nature.vmdl": "template_vis_luffaren_collective_detail1nature",
+  "models/luffaren/collective_detail2nature.vmdl": "template_vis_luffaren_collective_detail2nature",
+  "models/luffaren/collective_detail3nature.vmdl": "template_vis_luffaren_collective_detail3nature",
+  "models/luffaren/collective_detail4nature.vmdl": "template_vis_luffaren_collective_detail4nature",
+  "models/luffaren/collective_detailcastle.vmdl": "template_vis_luffaren_collective_detailcastle",
+  "models/luffaren/collective_detailcastle1.vmdl": "template_vis_luffaren_collective_detailcastle1",
+  "models/luffaren/collective_detailcastle2.vmdl": "template_vis_luffaren_collective_detailcastle2",
+  "models/luffaren/collective_detailfactory.vmdl": "template_vis_luffaren_collective_detailfactory",
+  "models/luffaren/collective_detailfactory1.vmdl": "template_vis_luffaren_collective_detailfactory1",
+  "models/luffaren/collective_detailfrost.vmdl": "template_vis_luffaren_collective_detailfrost",
+  "models/luffaren/collective_detailfrost2.vmdl": "template_vis_luffaren_collective_detailfrost2",
+  "models/luffaren/collective_detailfrost3.vmdl": "template_vis_luffaren_collective_detailfrost3",
+  "models/luffaren/collective_detailfrost4.vmdl": "template_vis_luffaren_collective_detailfrost4",
+  "models/luffaren/collective_detailfrost5.vmdl": "template_vis_luffaren_collective_detailfrost5",
+  "models/luffaren/collective_detailhell.vmdl": "template_vis_luffaren_collective_detailhell",
+  "models/luffaren/collective_detailnature.vmdl": "template_vis_luffaren_collective_detailnature",
+  "models/luffaren/collective_detailsilenthill.vmdl": "template_vis_luffaren_collective_detailsilenthill",
+  "models/luffaren/collective_detailsilenthill2.vmdl": "template_vis_luffaren_collective_detailsilenthill2",
+  "models/luffaren/collective_detailsilenthill3.vmdl": "template_vis_luffaren_collective_detailsilenthill3",
+  "models/luffaren/collective_detailtemple.vmdl": "template_vis_luffaren_collective_detailtemple",
+  "models/luffaren/collective_detailtemple1.vmdl": "template_vis_luffaren_collective_detailtemple1",
+  "models/luffaren/collective_detailtemple2.vmdl": "template_vis_luffaren_collective_detailtemple2",
+  "models/luffaren/collective_detailtemple3.vmdl": "template_vis_luffaren_collective_detailtemple3",
+  "models/luffaren/collective_detailtemple4.vmdl": "template_vis_luffaren_collective_detailtemple4",
+  "models/luffaren/collective_elevator.vmdl": "template_vis_luffaren_collective_elevator",
+  "models/luffaren/collective_elevatorbig.vmdl": "template_vis_luffaren_collective_elevatorbig",
+  "models/luffaren/collective_elevatorbigcastle.vmdl": "template_vis_luffaren_collective_elevatorbigcastle",
+  "models/luffaren/collective_elevatorbigfactory.vmdl": "template_vis_luffaren_collective_elevatorbigfactory",
+  "models/luffaren/collective_elevatorbigfrost.vmdl": "template_vis_luffaren_collective_elevatorbigfrost",
+  "models/luffaren/collective_elevatorbighell.vmdl": "template_vis_luffaren_collective_elevatorbighell",
+  "models/luffaren/collective_elevatorbignature.vmdl": "template_vis_luffaren_collective_elevatorbignature",
+  "models/luffaren/collective_elevatorbigsilenthill.vmdl": "template_vis_luffaren_collective_elevatorbigsilenthill",
+  "models/luffaren/collective_elevatorbigtemple.vmdl": "template_vis_luffaren_collective_elevatorbigtemple",
+  "models/luffaren/collective_elevatorcastle.vmdl": "template_vis_luffaren_collective_elevatorcastle",
+  "models/luffaren/collective_elevatorfactory.vmdl": "template_vis_luffaren_collective_elevatorfactory",
+  "models/luffaren/collective_elevatorfrost.vmdl": "template_vis_luffaren_collective_elevatorfrost",
+  "models/luffaren/collective_elevatorhell.vmdl": "template_vis_luffaren_collective_elevatorhell",
+  "models/luffaren/collective_elevatorhuge.vmdl": "template_vis_luffaren_collective_elevatorhuge",
+  "models/luffaren/collective_elevatorhugecastle.vmdl": "template_vis_luffaren_collective_elevatorhugecastle",
+  "models/luffaren/collective_elevatorhugefactory.vmdl": "template_vis_luffaren_collective_elevatorhugefactory",
+  "models/luffaren/collective_elevatorhugefrost.vmdl": "template_vis_luffaren_collective_elevatorhugefrost",
+  "models/luffaren/collective_elevatorhugehell.vmdl": "template_vis_luffaren_collective_elevatorhugehell",
+  "models/luffaren/collective_elevatorhugenature.vmdl": "template_vis_luffaren_collective_elevatorhugenature",
+  "models/luffaren/collective_elevatorhugesilenthill.vmdl": "template_vis_luffaren_collective_elevatorhugesilenthill",
+  "models/luffaren/collective_elevatorhugetemple.vmdl": "template_vis_luffaren_collective_elevatorhugetemple",
+  "models/luffaren/collective_elevatornature.vmdl": "template_vis_luffaren_collective_elevatornature",
+  "models/luffaren/collective_elevatorsilenthill.vmdl": "template_vis_luffaren_collective_elevatorsilenthill",
+  "models/luffaren/collective_elevatortemple.vmdl": "template_vis_luffaren_collective_elevatortemple",
+  "models/luffaren/collective_floor.vmdl": "template_vis_luffaren_collective_floor",
+  "models/luffaren/collective_floor1nature.vmdl": "template_vis_luffaren_collective_floor1nature",
+  "models/luffaren/collective_floor2nature.vmdl": "template_vis_luffaren_collective_floor2nature",
+  "models/luffaren/collective_floor3nature.vmdl": "template_vis_luffaren_collective_floor3nature",
+  "models/luffaren/collective_floor_slope.vmdl": "template_vis_luffaren_collective_floor_slope",
+  "models/luffaren/collective_floor_slope1nature.vmdl": "template_vis_luffaren_collective_floor_slope1nature",
+  "models/luffaren/collective_floor_slopecastle.vmdl": "template_vis_luffaren_collective_floor_slopecastle",
+  "models/luffaren/collective_floor_slopefactory.vmdl": "template_vis_luffaren_collective_floor_slopefactory",
+  "models/luffaren/collective_floor_slopefrost.vmdl": "template_vis_luffaren_collective_floor_slopefrost",
+  "models/luffaren/collective_floor_slopehalf.vmdl": "template_vis_luffaren_collective_floor_slopehalf",
+  "models/luffaren/collective_floor_slopehalfcastle.vmdl": "template_vis_luffaren_collective_floor_slopehalfcastle",
+  "models/luffaren/collective_floor_slopehalffactory.vmdl": "template_vis_luffaren_collective_floor_slopehalffactory",
+  "models/luffaren/collective_floor_slopehalffrost.vmdl": "template_vis_luffaren_collective_floor_slopehalffrost",
+  "models/luffaren/collective_floor_slopehalfhell.vmdl": "template_vis_luffaren_collective_floor_slopehalfhell",
+  "models/luffaren/collective_floor_slopehalfnature.vmdl": "template_vis_luffaren_collective_floor_slopehalfnature",
+  "models/luffaren/collective_floor_slopehalfsilenthill.vmdl": "template_vis_luffaren_collective_floor_slopehalfsilenthill",
+  "models/luffaren/collective_floor_slopehalftemple.vmdl": "template_vis_luffaren_collective_floor_slopehalftemple",
+  "models/luffaren/collective_floor_slopehell.vmdl": "template_vis_luffaren_collective_floor_slopehell",
+  "models/luffaren/collective_floor_slopenature.vmdl": "template_vis_luffaren_collective_floor_slopenature",
+  "models/luffaren/collective_floor_slopesilenthill.vmdl": "template_vis_luffaren_collective_floor_slopesilenthill",
+  "models/luffaren/collective_floor_slopetemple.vmdl": "template_vis_luffaren_collective_floor_slopetemple",
+  "models/luffaren/collective_floorcastle.vmdl": "template_vis_luffaren_collective_floorcastle",
+  "models/luffaren/collective_floorcastle1.vmdl": "template_vis_luffaren_collective_floorcastle1",
+  "models/luffaren/collective_floorceiling.vmdl": "template_vis_luffaren_collective_floorceiling",
+  "models/luffaren/collective_floorceiling1nature.vmdl": "template_vis_luffaren_collective_floorceiling1nature",
+  "models/luffaren/collective_floorceiling2nature.vmdl": "template_vis_luffaren_collective_floorceiling2nature",
+  "models/luffaren/collective_floorceiling3nature.vmdl": "template_vis_luffaren_collective_floorceiling3nature",
+  "models/luffaren/collective_floorceiling_slope.vmdl": "template_vis_luffaren_collective_floorceiling_slope",
+  "models/luffaren/collective_floorceiling_slope1nature.vmdl": "template_vis_luffaren_collective_floorceiling_slope1nature",
+  "models/luffaren/collective_floorceiling_slopecastle.vmdl": "template_vis_luffaren_collective_floorceiling_slopecastle",
+  "models/luffaren/collective_floorceiling_slopefactory.vmdl": "template_vis_luffaren_collective_floorceiling_slopefactory",
+  "models/luffaren/collective_floorceiling_slopefrost.vmdl": "template_vis_luffaren_collective_floorceiling_slopefrost",
+  "models/luffaren/collective_floorceiling_slopefrost2.vmdl": "template_vis_luffaren_collective_floorceiling_slopefrost2",
+  "models/luffaren/collective_floorceiling_slopehalf.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalf",
+  "models/luffaren/collective_floorceiling_slopehalfcastle.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalfcastle",
+  "models/luffaren/collective_floorceiling_slopehalffactory.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalffactory",
+  "models/luffaren/collective_floorceiling_slopehalffrost.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalffrost",
+  "models/luffaren/collective_floorceiling_slopehalffrost2.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalffrost2",
+  "models/luffaren/collective_floorceiling_slopehalfhell.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalfhell",
+  "models/luffaren/collective_floorceiling_slopehalfnature.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalfnature",
+  "models/luffaren/collective_floorceiling_slopehalfsilenthill.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalfsilenthill",
+  "models/luffaren/collective_floorceiling_slopehalftemple.vmdl": "template_vis_luffaren_collective_floorceiling_slopehalftemple",
+  "models/luffaren/collective_floorceiling_slopehell.vmdl": "template_vis_luffaren_collective_floorceiling_slopehell",
+  "models/luffaren/collective_floorceiling_slopenature.vmdl": "template_vis_luffaren_collective_floorceiling_slopenature",
+  "models/luffaren/collective_floorceiling_slopesilenthill.vmdl": "template_vis_luffaren_collective_floorceiling_slopesilenthill",
+  "models/luffaren/collective_floorceiling_slopetemple.vmdl": "template_vis_luffaren_collective_floorceiling_slopetemple",
+  "models/luffaren/collective_floorceilingcastle.vmdl": "template_vis_luffaren_collective_floorceilingcastle",
+  "models/luffaren/collective_floorceilingcastle1.vmdl": "template_vis_luffaren_collective_floorceilingcastle1",
+  "models/luffaren/collective_floorceilingcastle2.vmdl": "template_vis_luffaren_collective_floorceilingcastle2",
+  "models/luffaren/collective_floorceilingcastle3.vmdl": "template_vis_luffaren_collective_floorceilingcastle3",
+  "models/luffaren/collective_floorceilingfactory.vmdl": "template_vis_luffaren_collective_floorceilingfactory",
+  "models/luffaren/collective_floorceilingfrost.vmdl": "template_vis_luffaren_collective_floorceilingfrost",
+  "models/luffaren/collective_floorceilingfrost2.vmdl": "template_vis_luffaren_collective_floorceilingfrost2",
+  "models/luffaren/collective_floorceilingfrost3.vmdl": "template_vis_luffaren_collective_floorceilingfrost3",
+  "models/luffaren/collective_floorceilinghell.vmdl": "template_vis_luffaren_collective_floorceilinghell",
+  "models/luffaren/collective_floorceilingnature.vmdl": "template_vis_luffaren_collective_floorceilingnature",
+  "models/luffaren/collective_floorceilingsilenthill.vmdl": "template_vis_luffaren_collective_floorceilingsilenthill",
+  "models/luffaren/collective_floorceilingtall.vmdl": "template_vis_luffaren_collective_floorceilingtall",
+  "models/luffaren/collective_floorceilingtall1nature.vmdl": "template_vis_luffaren_collective_floorceilingtall1nature",
+  "models/luffaren/collective_floorceilingtall2nature.vmdl": "template_vis_luffaren_collective_floorceilingtall2nature",
+  "models/luffaren/collective_floorceilingtall3nature.vmdl": "template_vis_luffaren_collective_floorceilingtall3nature",
+  "models/luffaren/collective_floorceilingtall_slope.vmdl": "template_vis_luffaren_collective_floorceilingtall_slope",
+  "models/luffaren/collective_floorceilingtall_slope1nature.vmdl": "template_vis_luffaren_collective_floorceilingtall_slope1nature",
+  "models/luffaren/collective_floorceilingtall_slopecastle.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopecastle",
+  "models/luffaren/collective_floorceilingtall_slopefactory.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopefactory",
+  "models/luffaren/collective_floorceilingtall_slopefrost.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopefrost",
+  "models/luffaren/collective_floorceilingtall_slopefrost2.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopefrost2",
+  "models/luffaren/collective_floorceilingtall_slopehalf.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalf",
+  "models/luffaren/collective_floorceilingtall_slopehalfcastle.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalfcastle",
+  "models/luffaren/collective_floorceilingtall_slopehalffactory.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalffactory",
+  "models/luffaren/collective_floorceilingtall_slopehalffrost.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalffrost",
+  "models/luffaren/collective_floorceilingtall_slopehalffrost2.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalffrost2",
+  "models/luffaren/collective_floorceilingtall_slopehalfhell.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalfhell",
+  "models/luffaren/collective_floorceilingtall_slopehalfnature.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalfnature",
+  "models/luffaren/collective_floorceilingtall_slopehalfsilenthill.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalfsilenthill",
+  "models/luffaren/collective_floorceilingtall_slopehalftemple.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehalftemple",
+  "models/luffaren/collective_floorceilingtall_slopehell.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopehell",
+  "models/luffaren/collective_floorceilingtall_slopenature.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopenature",
+  "models/luffaren/collective_floorceilingtall_slopesilenthill.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopesilenthill",
+  "models/luffaren/collective_floorceilingtall_slopetemple.vmdl": "template_vis_luffaren_collective_floorceilingtall_slopetemple",
+  "models/luffaren/collective_floorceilingtallcastle.vmdl": "template_vis_luffaren_collective_floorceilingtallcastle",
+  "models/luffaren/collective_floorceilingtallcastle1.vmdl": "template_vis_luffaren_collective_floorceilingtallcastle1",
+  "models/luffaren/collective_floorceilingtallcastle2.vmdl": "template_vis_luffaren_collective_floorceilingtallcastle2",
+  "models/luffaren/collective_floorceilingtallcastle3.vmdl": "template_vis_luffaren_collective_floorceilingtallcastle3",
+  "models/luffaren/collective_floorceilingtallfactory.vmdl": "template_vis_luffaren_collective_floorceilingtallfactory",
+  "models/luffaren/collective_floorceilingtallfrost.vmdl": "template_vis_luffaren_collective_floorceilingtallfrost",
+  "models/luffaren/collective_floorceilingtallfrost2.vmdl": "template_vis_luffaren_collective_floorceilingtallfrost2",
+  "models/luffaren/collective_floorceilingtallhell.vmdl": "template_vis_luffaren_collective_floorceilingtallhell",
+  "models/luffaren/collective_floorceilingtallnature.vmdl": "template_vis_luffaren_collective_floorceilingtallnature",
+  "models/luffaren/collective_floorceilingtallsilenthill.vmdl": "template_vis_luffaren_collective_floorceilingtallsilenthill",
+  "models/luffaren/collective_floorceilingtalltemple.vmdl": "template_vis_luffaren_collective_floorceilingtalltemple",
+  "models/luffaren/collective_floorceilingtalltemple1.vmdl": "template_vis_luffaren_collective_floorceilingtalltemple1",
+  "models/luffaren/collective_floorceilingtemple.vmdl": "template_vis_luffaren_collective_floorceilingtemple",
+  "models/luffaren/collective_floorceilingtemple1.vmdl": "template_vis_luffaren_collective_floorceilingtemple1",
+  "models/luffaren/collective_floorfactory.vmdl": "template_vis_luffaren_collective_floorfactory",
+  "models/luffaren/collective_floorfrost.vmdl": "template_vis_luffaren_collective_floorfrost",
+  "models/luffaren/collective_floorhell.vmdl": "template_vis_luffaren_collective_floorhell",
+  "models/luffaren/collective_floornature.vmdl": "template_vis_luffaren_collective_floornature",
+  "models/luffaren/collective_floorsilenthill.vmdl": "template_vis_luffaren_collective_floorsilenthill",
+  "models/luffaren/collective_floortemple.vmdl": "template_vis_luffaren_collective_floortemple",
+  "models/luffaren/collective_floortemple1.vmdl": "template_vis_luffaren_collective_floortemple1",
+  "models/luffaren/collective_hazfloor.vmdl": "template_vis_luffaren_collective_hazfloor",
+  "models/luffaren/collective_hidden.vmdl": "template_vis_luffaren_collective_hidden",
+  "models/luffaren/collective_hiddenwall.vmdl": "template_vis_luffaren_collective_hiddenwall",
+  "models/luffaren/collective_hold.vmdl": "template_vis_luffaren_collective_hold",
+  "models/luffaren/collective_holdcastle.vmdl": "template_vis_luffaren_collective_holdcastle",
+  "models/luffaren/collective_holdfactory.vmdl": "template_vis_luffaren_collective_holdfactory",
+  "models/luffaren/collective_holdfrost.vmdl": "template_vis_luffaren_collective_holdfrost",
+  "models/luffaren/collective_holdgeneric.vmdl": "template_vis_luffaren_collective_holdgeneric",
+  "models/luffaren/collective_holdgenericcastle.vmdl": "template_vis_luffaren_collective_holdgenericcastle",
+  "models/luffaren/collective_holdgenericfactory.vmdl": "template_vis_luffaren_collective_holdgenericfactory",
+  "models/luffaren/collective_holdgenericfrost.vmdl": "template_vis_luffaren_collective_holdgenericfrost",
+  "models/luffaren/collective_holdgenerichell.vmdl": "template_vis_luffaren_collective_holdgenerichell",
+  "models/luffaren/collective_holdgenericnature.vmdl": "template_vis_luffaren_collective_holdgenericnature",
+  "models/luffaren/collective_holdgenericsilenthill.vmdl": "template_vis_luffaren_collective_holdgenericsilenthill",
+  "models/luffaren/collective_holdgenerictemple.vmdl": "template_vis_luffaren_collective_holdgenerictemple",
+  "models/luffaren/collective_holdhell.vmdl": "template_vis_luffaren_collective_holdhell",
+  "models/luffaren/collective_holdnature.vmdl": "template_vis_luffaren_collective_holdnature",
+  "models/luffaren/collective_holdsilenthill.vmdl": "template_vis_luffaren_collective_holdsilenthill",
+  "models/luffaren/collective_holdtemple.vmdl": "template_vis_luffaren_collective_holdtemple",
+  "models/luffaren/collective_ladder.vmdl": "template_vis_luffaren_collective_ladder",
+  "models/luffaren/collective_laddercastle.vmdl": "template_vis_luffaren_collective_laddercastle",
+  "models/luffaren/collective_laddercastle1.vmdl": "template_vis_luffaren_collective_laddercastle1",
+  "models/luffaren/collective_ladderfactory.vmdl": "template_vis_luffaren_collective_ladderfactory",
+  "models/luffaren/collective_ladderfrost.vmdl": "template_vis_luffaren_collective_ladderfrost",
+  "models/luffaren/collective_ladderhell.vmdl": "template_vis_luffaren_collective_ladderhell",
+  "models/luffaren/collective_laddernature.vmdl": "template_vis_luffaren_collective_laddernature",
+  "models/luffaren/collective_laddersilenthill.vmdl": "template_vis_luffaren_collective_laddersilenthill",
+  "models/luffaren/collective_laddertemple.vmdl": "template_vis_luffaren_collective_laddertemple",
+  "models/luffaren/collective_liquid.vmdl": "template_vis_luffaren_collective_liquid",
+  "models/luffaren/collective_liquid_fall.vmdl": "template_vis_luffaren_collective_liquid_fall",
+  "models/luffaren/collective_liquid_fallcastle.vmdl": "template_vis_luffaren_collective_liquid_fallcastle",
+  "models/luffaren/collective_liquid_fallfactory.vmdl": "template_vis_luffaren_collective_liquid_fallfactory",
+  "models/luffaren/collective_liquid_fallfrost.vmdl": "template_vis_luffaren_collective_liquid_fallfrost",
+  "models/luffaren/collective_liquid_fallhell.vmdl": "template_vis_luffaren_collective_liquid_fallhell",
+  "models/luffaren/collective_liquid_fallnature.vmdl": "template_vis_luffaren_collective_liquid_fallnature",
+  "models/luffaren/collective_liquid_fallsilenthill.vmdl": "template_vis_luffaren_collective_liquid_fallsilenthill",
+  "models/luffaren/collective_liquid_falltemple.vmdl": "template_vis_luffaren_collective_liquid_falltemple",
+  "models/luffaren/collective_liquid_shallow.vmdl": "template_vis_luffaren_collective_liquid_shallow",
+  "models/luffaren/collective_liquid_shallowcastle.vmdl": "template_vis_luffaren_collective_liquid_shallowcastle",
+  "models/luffaren/collective_liquid_shallowfactory.vmdl": "template_vis_luffaren_collective_liquid_shallowfactory",
+  "models/luffaren/collective_liquid_shallowfrost.vmdl": "template_vis_luffaren_collective_liquid_shallowfrost",
+  "models/luffaren/collective_liquid_shallowhell.vmdl": "template_vis_luffaren_collective_liquid_shallowhell",
+  "models/luffaren/collective_liquid_shallownature.vmdl": "template_vis_luffaren_collective_liquid_shallownature",
+  "models/luffaren/collective_liquid_shallowsilenthill.vmdl": "template_vis_luffaren_collective_liquid_shallowsilenthill",
+  "models/luffaren/collective_liquid_shallowtemple.vmdl": "template_vis_luffaren_collective_liquid_shallowtemple",
+  "models/luffaren/collective_liquid_stream.vmdl": "template_vis_luffaren_collective_liquid_stream",
+  "models/luffaren/collective_liquid_streamcastle.vmdl": "template_vis_luffaren_collective_liquid_streamcastle",
+  "models/luffaren/collective_liquid_streamfactory.vmdl": "template_vis_luffaren_collective_liquid_streamfactory",
+  "models/luffaren/collective_liquid_streamfrost.vmdl": "template_vis_luffaren_collective_liquid_streamfrost",
+  "models/luffaren/collective_liquid_streamhell.vmdl": "template_vis_luffaren_collective_liquid_streamhell",
+  "models/luffaren/collective_liquid_streamnature.vmdl": "template_vis_luffaren_collective_liquid_streamnature",
+  "models/luffaren/collective_liquid_streamsilenthill.vmdl": "template_vis_luffaren_collective_liquid_streamsilenthill",
+  "models/luffaren/collective_liquid_streamtemple.vmdl": "template_vis_luffaren_collective_liquid_streamtemple",
+  "models/luffaren/collective_liquid_tunnel.vmdl": "template_vis_luffaren_collective_liquid_tunnel",
+  "models/luffaren/collective_liquid_tunnelcastle.vmdl": "template_vis_luffaren_collective_liquid_tunnelcastle",
+  "models/luffaren/collective_liquid_tunnelfactory.vmdl": "template_vis_luffaren_collective_liquid_tunnelfactory",
+  "models/luffaren/collective_liquid_tunnelfrost.vmdl": "template_vis_luffaren_collective_liquid_tunnelfrost",
+  "models/luffaren/collective_liquid_tunnelhell.vmdl": "template_vis_luffaren_collective_liquid_tunnelhell",
+  "models/luffaren/collective_liquid_tunnelnature.vmdl": "template_vis_luffaren_collective_liquid_tunnelnature",
+  "models/luffaren/collective_liquid_tunnelsilenthill.vmdl": "template_vis_luffaren_collective_liquid_tunnelsilenthill",
+  "models/luffaren/collective_liquid_tunneltemple.vmdl": "template_vis_luffaren_collective_liquid_tunneltemple",
+  "models/luffaren/collective_liquidcastle.vmdl": "template_vis_luffaren_collective_liquidcastle",
+  "models/luffaren/collective_liquidfactory.vmdl": "template_vis_luffaren_collective_liquidfactory",
+  "models/luffaren/collective_liquidfrost.vmdl": "template_vis_luffaren_collective_liquidfrost",
+  "models/luffaren/collective_liquidhell.vmdl": "template_vis_luffaren_collective_liquidhell",
+  "models/luffaren/collective_liquidnature.vmdl": "template_vis_luffaren_collective_liquidnature",
+  "models/luffaren/collective_liquidsilenthill.vmdl": "template_vis_luffaren_collective_liquidsilenthill",
+  "models/luffaren/collective_liquidtemple.vmdl": "template_vis_luffaren_collective_liquidtemple",
+  "models/luffaren/collective_lowgrav.vmdl": "template_vis_luffaren_collective_lowgrav",
+  "models/luffaren/collective_lowgravcastle.vmdl": "template_vis_luffaren_collective_lowgravcastle",
+  "models/luffaren/collective_lowgravfactory.vmdl": "template_vis_luffaren_collective_lowgravfactory",
+  "models/luffaren/collective_lowgravfrost.vmdl": "template_vis_luffaren_collective_lowgravfrost",
+  "models/luffaren/collective_lowgravhell.vmdl": "template_vis_luffaren_collective_lowgravhell",
+  "models/luffaren/collective_lowgravnature.vmdl": "template_vis_luffaren_collective_lowgravnature",
+  "models/luffaren/collective_lowgravsilenthill.vmdl": "template_vis_luffaren_collective_lowgravsilenthill",
+  "models/luffaren/collective_lowgravtemple.vmdl": "template_vis_luffaren_collective_lowgravtemple",
+  "models/luffaren/collective_platform.vmdl": "template_vis_luffaren_collective_platform",
+  "models/luffaren/collective_platform1nature.vmdl": "template_vis_luffaren_collective_platform1nature",
+  "models/luffaren/collective_platform2nature.vmdl": "template_vis_luffaren_collective_platform2nature",
+  "models/luffaren/collective_platform3nature.vmdl": "template_vis_luffaren_collective_platform3nature",
+  "models/luffaren/collective_platform_slope.vmdl": "template_vis_luffaren_collective_platform_slope",
+  "models/luffaren/collective_platform_slope1nature.vmdl": "template_vis_luffaren_collective_platform_slope1nature",
+  "models/luffaren/collective_platform_slopecastle.vmdl": "template_vis_luffaren_collective_platform_slopecastle",
+  "models/luffaren/collective_platform_slopefactory.vmdl": "template_vis_luffaren_collective_platform_slopefactory",
+  "models/luffaren/collective_platform_slopefrost.vmdl": "template_vis_luffaren_collective_platform_slopefrost",
+  "models/luffaren/collective_platform_slopefrost2.vmdl": "template_vis_luffaren_collective_platform_slopefrost2",
+  "models/luffaren/collective_platform_slopehalf.vmdl": "template_vis_luffaren_collective_platform_slopehalf",
+  "models/luffaren/collective_platform_slopehalfcastle.vmdl": "template_vis_luffaren_collective_platform_slopehalfcastle",
+  "models/luffaren/collective_platform_slopehalffactory.vmdl": "template_vis_luffaren_collective_platform_slopehalffactory",
+  "models/luffaren/collective_platform_slopehalffrost.vmdl": "template_vis_luffaren_collective_platform_slopehalffrost",
+  "models/luffaren/collective_platform_slopehalffrost2.vmdl": "template_vis_luffaren_collective_platform_slopehalffrost2",
+  "models/luffaren/collective_platform_slopehalfhell.vmdl": "template_vis_luffaren_collective_platform_slopehalfhell",
+  "models/luffaren/collective_platform_slopehalfnature.vmdl": "template_vis_luffaren_collective_platform_slopehalfnature",
+  "models/luffaren/collective_platform_slopehalfsilenthill.vmdl": "template_vis_luffaren_collective_platform_slopehalfsilenthill",
+  "models/luffaren/collective_platform_slopehalftemple.vmdl": "template_vis_luffaren_collective_platform_slopehalftemple",
+  "models/luffaren/collective_platform_slopehell.vmdl": "template_vis_luffaren_collective_platform_slopehell",
+  "models/luffaren/collective_platform_slopenature.vmdl": "template_vis_luffaren_collective_platform_slopenature",
+  "models/luffaren/collective_platform_slopesilenthill.vmdl": "template_vis_luffaren_collective_platform_slopesilenthill",
+  "models/luffaren/collective_platform_slopetemple.vmdl": "template_vis_luffaren_collective_platform_slopetemple",
+  "models/luffaren/collective_platformcastle.vmdl": "template_vis_luffaren_collective_platformcastle",
+  "models/luffaren/collective_platformcastle1.vmdl": "template_vis_luffaren_collective_platformcastle1",
+  "models/luffaren/collective_platformcastle2.vmdl": "template_vis_luffaren_collective_platformcastle2",
+  "models/luffaren/collective_platformcastle3.vmdl": "template_vis_luffaren_collective_platformcastle3",
+  "models/luffaren/collective_platformfactory.vmdl": "template_vis_luffaren_collective_platformfactory",
+  "models/luffaren/collective_platformfrost.vmdl": "template_vis_luffaren_collective_platformfrost",
+  "models/luffaren/collective_platformfrost2.vmdl": "template_vis_luffaren_collective_platformfrost2",
+  "models/luffaren/collective_platformfrost3.vmdl": "template_vis_luffaren_collective_platformfrost3",
+  "models/luffaren/collective_platformhell.vmdl": "template_vis_luffaren_collective_platformhell",
+  "models/luffaren/collective_platformnature.vmdl": "template_vis_luffaren_collective_platformnature",
+  "models/luffaren/collective_platformsilenthill.vmdl": "template_vis_luffaren_collective_platformsilenthill",
+  "models/luffaren/collective_platformtemple.vmdl": "template_vis_luffaren_collective_platformtemple",
+  "models/luffaren/collective_platformtemple1.vmdl": "template_vis_luffaren_collective_platformtemple1",
+  "models/luffaren/collective_skybox_clouds.vmdl": "template_vis_luffaren_collective_skybox_clouds",
+  "models/luffaren/collective_teleport.vmdl": "template_vis_luffaren_collective_teleport",
+  "models/luffaren/collective_teleportcastle.vmdl": "template_vis_luffaren_collective_teleportcastle",
+  "models/luffaren/collective_teleportfactory.vmdl": "template_vis_luffaren_collective_teleportfactory",
+  "models/luffaren/collective_teleportfrost.vmdl": "template_vis_luffaren_collective_teleportfrost",
+  "models/luffaren/collective_teleporthell.vmdl": "template_vis_luffaren_collective_teleporthell",
+  "models/luffaren/collective_teleportnature.vmdl": "template_vis_luffaren_collective_teleportnature",
+  "models/luffaren/collective_teleportsilenthill.vmdl": "template_vis_luffaren_collective_teleportsilenthill",
+  "models/luffaren/collective_teleporttemple.vmdl": "template_vis_luffaren_collective_teleporttemple",
+  "models/luffaren/collective_wall.vmdl": "template_vis_luffaren_collective_wall",
+  "models/luffaren/collective_wall1hell.vmdl": "template_vis_luffaren_collective_wall1hell",
+  "models/luffaren/collective_wall1nature.vmdl": "template_vis_luffaren_collective_wall1nature",
+  "models/luffaren/collective_wall2hell.vmdl": "template_vis_luffaren_collective_wall2hell",
+  "models/luffaren/collective_wallcastle.vmdl": "template_vis_luffaren_collective_wallcastle",
+  "models/luffaren/collective_wallcastle1.vmdl": "template_vis_luffaren_collective_wallcastle1",
+  "models/luffaren/collective_wallcastle2.vmdl": "template_vis_luffaren_collective_wallcastle2",
+  "models/luffaren/collective_wallcastle3.vmdl": "template_vis_luffaren_collective_wallcastle3",
+  "models/luffaren/collective_wallcastle4.vmdl": "template_vis_luffaren_collective_wallcastle4",
+  "models/luffaren/collective_wallcastle5.vmdl": "template_vis_luffaren_collective_wallcastle5",
+  "models/luffaren/collective_wallfactory.vmdl": "template_vis_luffaren_collective_wallfactory",
+  "models/luffaren/collective_wallfactory1.vmdl": "template_vis_luffaren_collective_wallfactory1",
+  "models/luffaren/collective_wallfrost.vmdl": "template_vis_luffaren_collective_wallfrost",
+  "models/luffaren/collective_wallhell.vmdl": "template_vis_luffaren_collective_wallhell",
+  "models/luffaren/collective_wallnature.vmdl": "template_vis_luffaren_collective_wallnature",
+  "models/luffaren/collective_wallsilenthill.vmdl": "template_vis_luffaren_collective_wallsilenthill",
+  "models/luffaren/collective_wallsilenthill1.vmdl": "template_vis_luffaren_collective_wallsilenthill1",
+  "models/luffaren/collective_wallsilenthill2.vmdl": "template_vis_luffaren_collective_wallsilenthill2",
+  "models/luffaren/collective_walltemple.vmdl": "template_vis_luffaren_collective_walltemple",
+  "models/luffaren/collective_walltemple1.vmdl": "template_vis_luffaren_collective_walltemple1",
+  "models/luffaren/collective_walltemple2.vmdl": "template_vis_luffaren_collective_walltemple2",
+  "models/luffaren/destructo_hammer.vmdl": "template_vis_luffaren_destructo_hammer",
+  "models/luffaren/event_pizzadoom_hitbox.vmdl": "template_vis_luffaren_event_pizzadoom_hitbox",
+  "models/luffaren/explosive_barrel.vmdl": "template_vis_luffaren_explosive_barrel",
+  "models/luffaren/finale_boss_checkout_hitbox.vmdl": "template_vis_luffaren_finale_boss_checkout_hitbox",
+  "models/luffaren/finale_boss_eye_hitbox.vmdl": "template_vis_luffaren_finale_boss_eye_hitbox",
+  "models/luffaren/finale_boss_grenade_hitbox.vmdl": "template_vis_luffaren_finale_boss_grenade_hitbox",
+  "models/luffaren/flight.vmdl": "template_vis_luffaren_flight",
+  "models/luffaren/floor_indicator.vmdl": "template_vis_luffaren_floor_indicator",
+  "models/luffaren/gust.vmdl": "template_vis_luffaren_gust",
+  "models/luffaren/heal_orb.vmdl": "template_vis_luffaren_heal_orb",
+  "models/luffaren/kamikaze_plane.vmdl": "template_vis_luffaren_kamikaze_plane",
+  "models/luffaren/landmine.vmdl": "template_vis_luffaren_landmine",
+  "models/luffaren/luffaren_kart.vmdl": "template_vis_luffaren_luffaren_kart",
+  "models/luffaren/luffaren_kartphys.vmdl": "template_vis_luffaren_luffaren_kartphys",
+  "models/luffaren/peanut_butter.vmdl": "template_vis_luffaren_peanut_butter",
+  "models/luffaren/peanut_butter_can.vmdl": "template_vis_luffaren_peanut_butter_can",
+  "models/luffaren/piggyback.vmdl": "template_vis_luffaren_piggyback",
+  "models/luffaren/pizza.vmdl": "template_vis_luffaren_pizza",
+  "models/luffaren/planetcrystal.vmdl": "template_vis_luffaren_planetcrystal",
+  "models/luffaren/planetcrystal_fx.vmdl": "template_vis_luffaren_planetcrystal_fx",
+  "models/luffaren/poise.vmdl": "template_vis_luffaren_poise",
+  "models/luffaren/puller.vmdl": "template_vis_luffaren_puller",
+  "models/luffaren/rift.vmdl": "template_vis_luffaren_rift",
+  "models/luffaren/rise_ending_hazliquid.vmdl": "template_vis_luffaren_rise_ending_hazliquid",
+  "models/luffaren/roar.vmdl": "template_vis_luffaren_roar",
+  "models/luffaren/skybox_castle.vmdl": "template_vis_luffaren_skybox_castle",
+  "models/luffaren/skybox_factory.vmdl": "template_vis_luffaren_skybox_factory",
+  "models/luffaren/skybox_frost.vmdl": "template_vis_luffaren_skybox_frost",
+  "models/luffaren/skybox_hell.vmdl": "template_vis_luffaren_skybox_hell",
+  "models/luffaren/skybox_nature.vmdl": "template_vis_luffaren_skybox_nature",
+  "models/luffaren/skybox_temple.vmdl": "template_vis_luffaren_skybox_temple",
+  "models/luffaren/slotmachine.vmdl": "template_vis_luffaren_slotmachine",
+  "models/luffaren/slotmachine_mini.vmdl": "template_vis_luffaren_slotmachine_mini",
+  "models/luffaren/spikes.vmdl": "template_vis_luffaren_spikes",
+  "models/luffaren/squid.vmdl": "template_vis_luffaren_squid",
+  "models/luffaren/stone.vmdl": "template_vis_luffaren_stone",
+  "models/luffaren/storm_blade_sword.vmdl": "template_vis_luffaren_storm_blade_sword",
+  "models/luffaren/the_collective.vmdl": "template_vis_luffaren_the_collective",
+  "models/luffaren/thigh_spider.vmdl": "template_vis_luffaren_thigh_spider",
+  "models/luffaren/trap_spider_hitbox.vmdl": "template_vis_luffaren_trap_spider_hitbox",
+  "models/luffaren/vauff_world_eater.vmdl": "template_vis_luffaren_vauff_world_eater",
+  "models/props/cs_office/computer_keyboard.vmdl": "template_vis_props_cs_office_computer_keyboard",
+  "models/props/de_cbble/cobble_flagpole.vmdl": "template_vis_props_de_cbble_cobble_flagpole",
+  "models/weapons/w_eq_bumpmine.vmdl": "template_vis_weapons_w_eq_bumpmine",
+});
+
+// Cross-round warning keys intentionally do not retain entity/runtime objects.
+const visualTemplateWarnings = new Set();
+function spawnAuthoredVisualEntities(model, position, angles, fallbackTemplate) {
+  const path = String(model).replace(/\\/g, "/").replace(/_c$/i, "");
+  const name = VISUAL_TEMPLATES[path];
+  let template = name && state.featureTemplates.get(name);
+  if (!validEntity(template) && name) template = Instance.FindEntityByName(name);
+  if (!validEntity(template) || typeof template.ForceSpawn !== "function") {
+    if (!visualTemplateWarnings.has(path)) {
+      visualTemplateWarnings.add(path);
+      message(`WARNING: dedicated visual template missing for '${path}'; using template_model + SetModel`);
+    }
+    return { spawned: spawnRoundEntities(fallbackTemplate ?? featureTemplate("model"), position, angles) ?? [], authored: false };
+  }
+  state.featureTemplates.set(name, template);
+  const spawned = spawnRoundEntities(template, position, angles) ?? [];
+  if (spawned.length !== 1 || !validEntity(spawned[0]) || spawned[0].GetClassName?.() !== "prop_dynamic") {
+    destroyEntities(spawned);
+    throw new Error(`dedicated visual template '${name}' must spawn one prop_dynamic`);
+  }
+  if (typeof spawned[0].GetModelName === "function" && !sameModelPath(spawned[0].GetModelName(), path)) {
+    destroyEntities(spawned);
+    throw new Error(`dedicated visual template '${name}' has a stale model; recompile the map`);
+  }
+  return { spawned, authored: true };
+}
+
 function spawnVisual(runtime, request, model, solid = false) {
   if (solid) return spawnModelBlock(runtime, request, model);
-  const spawned = spawnRoundEntities(featureTemplate("model"), request.position, request.angles) ?? [];
-  finalizeSpawned(runtime, request, spawned);
-  let visual;
-  for (const entity of spawned) {
-    if (!entity?.IsValid()) continue;
-    if (entity.GetClassName?.().startsWith("trigger_")) {
-      entity.Kill();
-      runtime.entities.delete(entity);
-      continue;
+  const desiredModel = request.themeName === "silenthill" ? silentHillDesiredModel(model) : model;
+  const { spawned, authored } = spawnAuthoredVisualEntities(desiredModel, request.position, request.angles);
+  try {
+    finalizeSpawned(runtime, request, spawned);
+    let visual;
+    for (const entity of spawned) {
+      if (!entity?.IsValid()) continue;
+      if (entity.GetClassName?.().startsWith("trigger_")) {
+        entity.Kill();
+        runtime.entities.delete(entity);
+        continue;
+      }
+      visual ??= entity;
+      const registeredModel = rememberSilentHillVisual(runtime, entity, model, request);
+      if (!authored) entity.SetModel?.(registeredModel);
+      const bodyGroup = request.bodyGroup ?? 0;
+      if (request.renderColor || bodyGroup) {
+        applyTerrainAppearance(entity, bodyGroup, request.renderColor);
+        const record = state.silentHillWorld.visuals.get(entity);
+        if (record && bodyGroup) record.restore = () => applyTerrainAppearance(entity, bodyGroup, request.renderColor);
+      }
     }
-    visual ??= entity;
-    entity.SetModel?.(rememberSilentHillVisual(runtime, entity, model, request));
-    if (request.renderColor) applyTerrainAppearance(entity, 0, request.renderColor);
+    return visual;
+  } catch (error) {
+    // ForceSpawn already created these props; the caller has no handles yet.
+    destroyEntities(spawned);
+    for (const entity of spawned) {
+      runtime.entities.delete(entity);
+      state.silentHillWorld.visuals.delete(entity);
+    }
+    throw error;
   }
-  return visual;
 }
 
 function spawnTriggerVolume(runtime, request, mins, maxs) {
@@ -23343,6 +25740,16 @@ function applyLiquidHazardTouch(runtime, liquid, pawn, now) {
   if (pawn.IsAlive?.()) applyLiquidHazardEffect(runtime, liquid, pawn);
 }
 
+// A single block or feature that fails is skipped and logged; the level still
+// completes. Only systemic failures (required entities/templates, level data,
+// planning or release of a whole level) stay fatal.
+function skipFailedSpawn(runtime, what, error) {
+  runtime.skippedSpawns = (runtime.skippedSpawns ?? 0) + 1;
+  reportGuardedError(`spawn ${what}`, error);
+  message(`[SPAWN SKIP] level ${runtime.index}: ${what} skipped (${runtime.skippedSpawns} on this level): ${error}`);
+  finishRuntimeSpawn(runtime);
+}
+
 function finishRuntimeSpawn(runtime) {
   if (!state.levels.has(runtime.index)) return;
   runtime.remaining--;
@@ -23378,7 +25785,9 @@ function spawnLiquidPushTrigger(runtime, request) {
   }
   const trigger = spawned[0];
   runtime.entities.add(trigger);
-  trigger.SetEntityName?.(`liquid_push_${runtime.index}_${runtime.entities.size}`);
+  // Nothing looks push triggers up by name; one shared string for all.
+  trigger.SetEntityName?.("liquid_push");
+  if (request.race) trigger.SetModelScale?.(RACE_CONFIG.gridSize / CONFIG.gridSize);
   fireTarget(trigger, "Disable");
   fireTarget(trigger, "SetPushDirection", `${plan.angles.pitch} ${plan.angles.yaw} ${plan.angles.roll}`);
   fireTarget(trigger, "SetPushSpeed", String(plan.speed));
@@ -23387,6 +25796,9 @@ function spawnLiquidPushTrigger(runtime, request) {
 }
 
 function spawnLiquidFeature(runtime, request) {
+  const scale = request.race ? RACE_CONFIG.gridSize / CONFIG.gridSize : 1;
+  const halfWidth = request.race ? RACE_CONFIG.gridSize / 2 : 47;
+  const streamHalfWidth = 32.5 * scale;
                                                                              
                                                                             
                                                                               
@@ -23399,6 +25811,7 @@ function spawnLiquidFeature(runtime, request) {
       && ["func_water", "func_water_analog"].includes(entity.GetClassName?.()))
       ?? spawned.find((entity) => entity?.IsValid?.());
     if (!analog) throw new Error("liquid: native water prototype did not spawn");
+    if (request.race) analog.SetModelScale?.(scale);
                                                                       
                                                                  
     fireTarget(analog, "DisableDraw");
@@ -23410,6 +25823,8 @@ function spawnLiquidFeature(runtime, request) {
                                                                            
   const visual = spawnVisual(runtime, request, request.model, !request.fall);
   if (!validEntity(visual)) throw new Error("liquid: surface model prototype did not spawn");
+  // RACE places liquid cells on the wider road grid, including waterfall bottoms.
+  if (request.race) visual.SetModelScale?.(scale);
   if (runtime.debugLiquidFall && request.debugLiquidFallMode) {
     const mode = request.debugLiquidFallMode;
     const target = `debug_liquid_fall_${request.themeName}_${mode}`;
@@ -23449,7 +25864,7 @@ function spawnLiquidFeature(runtime, request) {
                                                                         
                                                                           
       ? spawnTriggerVolume(runtime, { ...request, position: add(request.position, vec(0, 0, -14)) },
-        vec(-47, -47, -triggerDepth), vec(47, 47, 0))
+        vec(-halfWidth, -halfWidth, -triggerDepth), vec(halfWidth, halfWidth, 0))
       : undefined;
   registerLiquidContact(runtime, trigger, {
     analog,
@@ -23467,8 +25882,8 @@ function spawnLiquidFeature(runtime, request) {
     drown: request.drown ?? false,
     shallowJump: request.shallowJump ?? false,
     shallowStream: request.stream && request.shallow,
-    mins: request.stream ? vec(-32.5, -32.5, -240) : vec(-47, -47, -triggerDepth),
-    maxs: request.stream ? vec(32.5, 32.5, 0) : vec(47, 47, 0),
+    mins: request.stream ? vec(-streamHalfWidth, -streamHalfWidth, -240 * scale) : vec(-halfWidth, -halfWidth, -triggerDepth),
+    maxs: request.stream ? vec(streamHalfWidth, streamHalfWidth, 0) : vec(halfWidth, halfWidth, 0),
   });
   return true;
 }
@@ -23502,7 +25917,7 @@ function spawnElevatorFeature(runtime, request) {
     destroyEntities(spawned);
     throw new Error("elevator: template_movelinear must spawn exactly one func_movelinear");
   }
-  driver.SetEntityName(`elevator_driver_${runtime.index}_${runtime.entities.size}`);
+  assignRecycledEntityName(driver, "elevator_driver");
   runtime.entities.add(driver);
   const model = request.themeModel ?? request.model;
   const anchor = spawnVisual(runtime, { ...request, feature: "elevatorFrame",
@@ -23538,7 +25953,7 @@ function spawnElevatorFeature(runtime, request) {
   collider.Teleport({ position: clone(request.position), angles: request.angles, velocity: vec() });
                                                                        
                                                              
-  visual.SetColor?.(colorToEntityColor(genericRenderColor(92, request.themeName))
+  applyTerrainColor(visual, colorToEntityColor(genericRenderColor(92, request.themeName))
     ?? { r: 255, g: 255, b: 255, a: 255 });
   const speed = CONFIG.elevatorSpeedMin + Math.random() * (CONFIG.elevatorSpeedMax - CONFIG.elevatorSpeedMin);
   const mover = { kind: "nativeElevator", driver, anchor, collider, visual,
@@ -23636,8 +26051,8 @@ function spawnNativeMoverLeg(runtime, request, model, position, destination, spe
     destroyEntities(spawned);
     throw new Error(`${request.feature}: ${FEATURE_TEMPLATE_NAMES[templateKey]} must spawn exactly one func_movelinear`);
   }
-  runtime.nativeMoverSerial = (runtime.nativeMoverSerial ?? 0) + 1;
-  driver.SetEntityName(`block_${runtime.index}_${request.feature}_driver_${runtime.nativeMoverSerial}`);
+  // Unique among live drivers (boss tail sounds bind to it by name).
+  assignRecycledEntityName(driver, `block_${request.feature}_driver`);
   runtime.entities.add(driver);
   let anchor;
   try {
@@ -23708,7 +26123,7 @@ function spawnNativeHazardPlaneTrigger(runtime, request, driver) {
   }
   const trigger = spawned[0];
   runtime.entities.add(trigger);
-  trigger.SetEntityName?.(`block_${runtime.index}_hazardPlane_trigger_${runtime.nativeMoverSerial}`);
+  trigger.SetEntityName?.("block_hazardPlane_trigger");
   fireTarget(trigger, "Disable");
   trigger.SetParent(driver);
   trigger.Teleport({ position: clone(request.position), angles, velocity: vec() });
@@ -23775,7 +26190,7 @@ function spawnHazardPlaneFeature(runtime, request) {
   leg.connections.push(connectOwnedOutput(runtime, leg.driver, "OnFullyClosed", () => reverse("Open")));
                                                                           
   if (leg.distance > 15) fireTarget(leg.driver, "Open", undefined, 0.1);
-  if (request.harsh) announce(`Level ${runtime.index}: WARNING - harsh hazard plane`);
+  if (request.harsh) announceRepeated("WARNING: HARSH INSTAKILLING HAZPLANE");
 }
 
 function retireNativeLevelMover(runtime, mover) {
@@ -23913,6 +26328,9 @@ function modifyPlayerDamage(event) {
                                                                          
                                                                           
   if (state.adminSlayActive) return;
+  if ((event.damageTypes & (CSDamageTypes.CRUSH | CSDamageTypes.VEHICLE))
+    && ((event.inflictor && state.kartImpactEntities.has(event.inflictor))
+      || (event.attacker && state.kartImpactEntities.has(event.attacker)))) return { abort: true };
   if ((event.damageTypes & CSDamageTypes.FALL) && Instance.GetGameTime() < state.genericEvents.fallDamageDisabledUntil)
     return { abort: true };
   if (event.damageTypes & CSDamageTypes.FALL) {
@@ -23943,15 +26361,16 @@ function modifyPlayerDamage(event) {
   ) return { abort: true };
   if (attacker?.GetTeamNumber?.() === 3 && zombieStartAreaProtected(event.player)) return { abort: true };
   const statuses = state.playerStatuses.get(event.player);
-  if (!statuses || !Number.isFinite(event.damage)) return;
+  if (!Number.isFinite(event.damage)) return;
   let scale = 1;
-  for (const status of statuses.values()) {
+  for (const status of statuses?.values() ?? []) {
     if (
       status.blockedAttackerTeam !== undefined
       && attacker?.GetTeamNumber?.() === status.blockedAttackerTeam
     ) return { abort: true };
     if (status.damageScale !== undefined) scale = Math.min(scale, status.damageScale);
   }
+  if (event.damage * scale > 0) rememberZombieInfectionHit(event, attacker);
   if (scale < 1) return { damage: event.damage * scale };
 }
 
@@ -24138,7 +26557,7 @@ function trapSpawnTransform(name, request) {
   let position = clone(request.position);
   let angles = { pitch: 0, yaw: Math.random() * 360, roll: 0 };
                                                                    
-  if (name === "thigh_spider") position = add(position, randomTrapOffset(30, 1));
+  if (name === "thigh_spider" && !request.stageEvent) position = add(position, randomTrapOffset(30, 1));
   else if (name === "landmine") position = add(position, randomTrapOffset(32));
   else if (name === "beartrap" || name === "bomb" || name === "flinger") {
     position = add(position, randomTrapOffset(20));
@@ -24160,7 +26579,7 @@ function trapSpawnTransform(name, request) {
 
 function configureTrapController(runtime, controller, request) {
   const { name, definition, visual } = controller;
-  visual.SetEntityName?.(`trap_${name}_${runtime.index}`);
+  visual.SetEntityName?.(`trap_${name}`);
   if (name === "buttonmimic") {
     const themeName = themeProfile(request.themeName ?? runtime.themeSnapshot).name;
     const renderColor = { r: 255, g: 150, b: 150, a: 255 };
@@ -24172,9 +26591,7 @@ function configureTrapController(runtime, controller, request) {
   } else if (name === "mimic") {
     const itemName = HUMAN_ITEM_SELECTION_POOL[Math.floor(Math.random() * HUMAN_ITEM_SELECTION_POOL.length)];
     controller.fakeItemName = itemName;
-    visual.SetModel?.(ITEM_DEFINITIONS[itemName]?.model ?? ITEM_DEFINITIONS.heal_orb.model);
-    visual.SetModelScale?.(1.5);
-    visual.SetColor?.({ r: 255, g: 0, b: 0, a: 255 });
+    configureMimicItemVisual(runtime, controller, itemName);
   } else if (name === "banana") visual.SetModelScale?.(0.8);
   else if (name === "flinger") {
     visual.SetModelScale?.(0.8);
@@ -24235,6 +26652,117 @@ function configureTrapController(runtime, controller, request) {
   }
 }
 
+// Carrier-local anchor pose per authored item carrier template, read once.
+const itemCarrierPoseCache = new Map();
+
+function itemCarrierTemplateKind(definition, variant) {
+  const kind = itemCarrierClass(definition) === "weapon_knife" ? "knife" : "p250";
+  let templateKind = definition.carrierTemplate ?? kind;
+  if (templateKind === "planetcrystal") templateKind += `_${variant}`;
+  if (templateKind === "moonboost" && kind === "knife") templateKind = "moonboost_knife";
+  return templateKind;
+}
+
+function readItemCarrierPose(definition, variant) {
+  const templateKind = itemCarrierTemplateKind(definition, variant);
+  if (itemCarrierPoseCache.has(templateKind)) return itemCarrierPoseCache.get(templateKind);
+  let pose;
+  const spawned = spawnRoundEntities(featureTemplate(`item_carrier_${templateKind}`),
+    clone(THEME_PRELOAD_ORIGIN), { pitch: 0, yaw: 0, roll: 0 }) ?? [];
+  try {
+    const carrier = spawned.find((entity) => validEntity(entity)
+      && entity.GetClassName?.() === itemCarrierClass(definition));
+    const anchorName = `item_carrier_anchor_proto_${templateKind}`.toLowerCase();
+    const anchor = spawned.find((entity) => validEntity(entity) && entity.GetClassName?.() === "info_target"
+      && String(entity.GetEntityName?.() ?? entity.GetName?.() ?? "").toLowerCase().startsWith(anchorName));
+    if (carrier && anchor) pose = readItemMapPose(anchor, carrier);
+  } finally {
+    for (const entity of spawned) if (validEntity(entity)) entity.Kill();
+  }
+  itemCarrierPoseCache.set(templateKind, pose);
+  return pose;
+}
+
+// Source mimic spawned a real item and tinted it, so the fake copies a ground
+// item's world pose: carrier +40, authored anchor/attachment, then the lift.
+function configureMimicItemVisual(runtime, controller, itemName) {
+  const { visual } = controller;
+  const definition = ITEM_DEFINITIONS[itemName] ?? ITEM_DEFINITIONS.heal_orb;
+  const variant = itemName === "planetcrystal" ? nextPlanetCrystalVariant() : undefined;
+  controller.fakeItemVariant = variant;
+  const attachment = createItemVisualAttachment(definition);
+  if (definition.mapAuthoredAttachmentAngles) {
+    try {
+      Object.assign(attachment, readItemPrototypeAngles(itemName));
+    } catch (error) {
+      message(`WARNING: mimic '${itemName}' prototype angles unavailable: ${error.message}`);
+    }
+  }
+  let pose;
+  try {
+    pose = readItemCarrierPose(definition, variant);
+  } catch (error) {
+    message(`WARNING: mimic '${itemName}' carrier pose unavailable: ${error.message}`);
+  }
+  const origin = add(controller.position, vec(0, 0, 40));
+  const carrierAngles = { pitch: 0, yaw: 0, roll: 0 };
+  let transform;
+  if (definition.mapAuthoredVisualPose && pose) {
+    transform = applyItemMapPose(pose, origin, carrierAngles);
+  } else {
+    const anchorUp = pose ? pose.position.z + (definition.mapVisualUpCorrection ?? 0) : SOURCE_ITEM_BUTTON_ANCHOR.up;
+    transform = {
+      position: add(origin, add(
+        mul(forwardFromAngles(carrierAngles), SOURCE_ITEM_BUTTON_ANCHOR.forward + (attachment.forward ?? 0)),
+        add(mul(leftFromAngles(carrierAngles), attachment.left ?? 0),
+          mul(upFromAngles(carrierAngles), anchorUp + (attachment.up ?? 0))),
+      )),
+      angles: {
+        pitch: attachment.pitch ?? 0,
+        yaw: normalizeYaw(attachment.yaw ?? 0),
+        roll: attachment.roll ?? 0,
+      },
+    };
+  }
+  visual.SetModel?.(definition.model);
+  visual.SetModelScale?.(attachment.scale ?? definition.worldScale ?? 1);
+  visual.Teleport?.({
+    position: add(transform.position, vec(0, 0, Math.max(0, CONFIG.itemWorldVisualLift ?? 0))),
+    angles: transform.angles,
+    velocity: vec(),
+  });
+  if (variant) {
+    const colors = {
+      earth: { r: 200, g: 150, b: 0, a: 80 },
+      fire: { r: 255, g: 0, b: 0, a: 80 },
+      wind: { r: 255, g: 255, b: 255, a: 80 },
+      water: { r: 0, g: 255, b: 255, a: 80 },
+    };
+    visual.SetColor?.(colors[variant] ?? colors.wind);
+  } else {
+    visual.SetColor?.({ r: 255, g: 0, b: 0, a: 255 });
+  }
+  if (definition.idleAnimation) {
+    fireTarget(visual, "SetAnimation", definition.idleAnimation);
+    fireTarget(visual, "SetDefaultAnimation", definition.idleAnimation, 0.02);
+  }
+  // Real ground items sit on a weapon carrier; Source tinted that holder red.
+  // Display-only prop, so nobody can pick it up and EntWatch never sees it.
+  try {
+    controller.fakeCarrierVisual = spawnVisual(runtime, {
+      position: origin, angles: carrierAngles, feature: "mimic_carrier",
+      renderColor: { r: 255, g: 0, b: 0, a: 255 },
+    }, MIMIC_CARRIER_MODELS[itemCarrierClass(definition)]);
+  } catch (error) {
+    message(`WARNING: mimic '${itemName}' carrier prop unavailable: ${error.message}`);
+  }
+}
+
+const MIMIC_CARRIER_MODELS = Object.freeze({
+  weapon_p250: "weapons/models/p250/weapon_pist_p250.vmdl",
+  weapon_knife: "weapons/models/knife/knife_default_ct/weapon_knife_default_ct.vmdl",
+});
+
 function spawnThighSpiderDamageHitbox(runtime, controller) {
   const spawned = spawnRoundEntities(featureTemplate("trapSpiderDamage"), controller.position, controller.angles) ?? [];
   finalizeSpawned(runtime, { position: controller.position, angles: controller.angles,
@@ -24248,7 +26776,7 @@ function spawnThighSpiderDamageHitbox(runtime, controller) {
   }
   controller.damageHitbox = hitbox;
   controller.damageHitboxHealth = controller.definition.healthSentinel + controller.health;
-  hitbox.SetEntityName?.(`trap_spider_damage_${runtime.index}_${runtime.traps.size + 1}`);
+  hitbox.SetEntityName?.("trap_spider_damage");
   hitbox.SetMaxHealth?.(controller.damageHitboxHealth);
   hitbox.SetHealth(controller.damageHitboxHealth);
   hitbox.SetColor?.({ r: 255, g: 255, b: 255, a: 0 });
@@ -24401,6 +26929,7 @@ function sourceDirectionDifference(from, to, direction) {
 function spendTrap(controller, keepVisual = false) {
   controller.spent = true;
   if (validEntity(controller.damageHitbox)) controller.damageHitbox.Kill?.();
+  if (validEntity(controller.fakeCarrierVisual)) controller.fakeCarrierVisual.Kill?.();
   if (!keepVisual && controller.visual?.IsValid()) controller.visual.Kill();
 }
 
@@ -24457,12 +26986,14 @@ function activateStepTrap(runtime, controller, pawn, now) {
   const { name, definition } = controller;
   if (name === "landmine") {
     if (!trapCanAffect(controller, pawn, now, 9999)) return;
+    if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " stepped on a landmine");
     playSourceAudioCue(6032, controller.position);
     explodeTrap(controller, trapExplosionTargets(), definition.explosionRadius, definition.explosionDamage, 1100);
   } else if (name === "banana") {
     if (!trapCanAffect(controller, pawn, now, 9999)) return;
     const velocity = pawn.GetAbsVelocity?.() ?? vec();
     const position = pawn.GetAbsOrigin?.() ?? controller.position;
+    if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " slipped on a banana peel");
     controller.spinVictim = pawn;
     controller.spinStartedAt = now;
     controller.spinUntil = now + definition.spinTime;
@@ -24478,18 +27009,27 @@ function activateStepTrap(runtime, controller, pawn, now) {
     if (Math.hypot(velocity.x, velocity.y, velocity.z) <= definition.runSpeed) return;
     if (!trapCanAffect(controller, pawn, now, 0.25)) return;
     const falling = velocity.z < -definition.fallSpeed;
+    if (falling && definition.printChat !== false) playerNameMessage(pawn, "", " got impaled by spikes");
     damagePawn(pawn, falling ? definition.fallDamage : definition.runDamage);
     if (!falling) pawn.Teleport?.({ velocity: vec(0, 0, velocity.z) });
     playSourceAudioStack(falling ? [5356, 5357] : [5363], pawn.GetAbsOrigin?.() ?? controller.position);
   } else if (name === "pizza") {
     if (!trapCanAffect(controller, pawn, now, 0.20)) return;
-    damagePawn(pawn, 999999);
+    if (definition.printChat !== false) playerNameMessage(pawn, "***THE PIZZA IS AGGRESSIVE*** (towards ", ")", 1.55);
+    const victimPosition = clone(pawn.GetAbsOrigin?.() ?? controller.position);
+    pawn.TakeDamage?.({ damage: 999999, inflictor: controller.visual,
+      damageFlags: (CSDamageFlags.FORCE_DEATH ?? 0) | (CSDamageFlags.IGNORE_ARMOR ?? 0) });
+    const soundPosition = add(controller.position, vec(0, 0, 8));
+    const pitch = 95 + Math.floor(Math.random() * 11);
     for (let i = 0; i < 3; i++) {
-      playSourceAudioCue(6086, controller.position);
-      playSourceAudioCue(6087, controller.position);
+      playSourceAudioCue(6086, soundPosition, { pitch });
+      playSourceAudioCue(6087, soundPosition, { pitch });
     }
+    spawnItemParticle(runtime, undefined, "blood_impact_headshot", victimPosition, sourceItemImpactAngles(), 0.05);
+    spawnItemParticle(runtime, undefined, "pizza_tesla", add(victimPosition, vec(0, 0, 32)), undefined, 0.25);
   } else if (name === "beartrap") {
     if (!trapCanAffect(controller, pawn, now, 9999)) return;
+    if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " got caught in a beartrap");
     damagePawn(pawn, definition.damage);
     if (pawn.IsAlive?.()) addPlayerStatus(runtime, pawn, `${controller.source}:beartrap`, definition.freezeTime, {
       frozenPosition: pawn.GetAbsOrigin?.() ?? controller.position,
@@ -24513,6 +27053,7 @@ function activateStepTrap(runtime, controller, pawn, now) {
 function activateVicinityTrap(runtime, controller, pawn, now) {
   if (controller.name === "bomb") {
     if (controller.triggeredAt !== undefined) return;
+    if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " triggered a bomb");
     controller.triggeredAt = now + controller.definition.fuseTime;
     controller.nextBeepAt = now;
     controller.beepRate = 1;
@@ -24523,6 +27064,7 @@ function activateVicinityTrap(runtime, controller, pawn, now) {
   controller.triggeredAt = now;
   const pawnPosition = pawn.GetAbsOrigin?.() ?? controller.position;
   if (controller.name === "flinger") {
+    if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " triggered a flinger");
     for (const target of trapTargets()) {
       const targetPosition = target.GetAbsOrigin?.();
       if (!targetPosition || Math.hypot(
@@ -24540,6 +27082,7 @@ function activateVicinityTrap(runtime, controller, pawn, now) {
     playSourceAudioStack([5195, 5196], controller.position);
     spendTrap(controller);
   } else if (controller.name === "guster") {
+    if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " triggered a guster");
     const direction = directionBetween(controller.position, add(pawnPosition, vec(0, 0, 40)));
     controller.wave = {
       position: clone(controller.position), direction,
@@ -24586,6 +27129,7 @@ function useSlotMachine(runtime, controller, pawn, now) {
   if (controller.inUse || now < (controller.reuseAt ?? 0)) return false;
   controller.usesRemaining--;
   if (controller.usesRemaining < 0) {
+    if (controller.definition.printNames !== false) playerNameMessage(pawn, "", " gambled and exploded!");
     destroySlotMachine(runtime, controller);
     return true;
   }
@@ -24605,6 +27149,7 @@ function finishSlotOutcome(controller) {
   controller.inUse = false;
   controller.player = undefined;
   const won = Math.random() * 100 <= controller.definition.winChance;
+  if (controller.definition.printNames !== false) playerNameMessage(pawn, "", won ? " gambled and won!" : " gambled and lost...");
   fireTarget(controller.visual, "SetAnimation", won ? "win" : "lose");
   fireTarget(controller.visual, "SetDefaultAnimation", won ? "win" : "lose", 0.02);
   if (won) {
@@ -24622,6 +27167,7 @@ function finishSlotOutcome(controller) {
 
 function activateFatalMimic(controller, pawn, button = false) {
   if (controller.spent || pawn.GetTeamNumber?.() !== 3 || !pawn.IsAlive?.()) return false;
+  if (controller.definition.printChat !== false) playerNameMessage(pawn, button ? "Beware button-mimics! (" : "Beware item-mimics! (", " fell for it)");
   state.silentHillWorld.visuals.delete(controller.visual);
   controller.visual?.SetModel?.("models/luffaren/beartrap.vmdl");
   controller.visual?.SetModelScale?.(1.8);
@@ -24949,6 +27495,7 @@ function processBlackhole(controller, targets, now) {
     if (distance > controller.definition.radius) continue;
     pulling = true;
     if (distance <= controller.definition.killDistance) {
+      if (controller.definition.printChat !== false) playerNameMessage(pawn, "", " got sucked into a black hole");
       controller.battery -= controller.definition.killDrain;
       damagePawn(pawn, 999999);
       playSourceAudioCue(5265, controller.position);
@@ -25004,7 +27551,10 @@ function damageTrapController(controller, event) {
   if (controller.spent) return;
   if (controller.name === "explosive_barrel") {
     controller.hitsRemaining--;
-    if (controller.hitsRemaining <= 0) detonateBarrel(controller);
+    if (controller.hitsRemaining <= 0) {
+      playerNameMessage(event?.attacker ?? event?.activator, "", " blew up an explosive barrel");
+      detonateBarrel(controller);
+    }
     else {
       // OnTakeDamage can run before the engine commits health loss.
       afterThink(() => {
@@ -25083,7 +27633,28 @@ function processTrapInputs(usePressed, consumed = new Set()) {
   return consumed;
 }
 
+function processNormalKarts(now) {
+  for (const runtime of activeRuntimes()) {
+    const escape = state.endingRuntime?.kind === "FINALE" && state.endingRuntime.escape;
+    if (state.finaleEscapeActive && escape?.flags?.trapsDisabled !== false) continue;
+    for (const controller of runtime.traps ?? []) {
+      if (controller.name !== "kart" || controller.spent || !validEntity(controller.visual)) continue;
+      // Source kart Tick runs every .02s, independently of other traps.
+      // Use measured time: a .05s timer rounds up to .0625s at 64 ticks,
+      // and a fixed .05s acceleration step then loses 20% of acceleration.
+      const previous = controller.lastNormalKartTickAt ?? now - RACE_CONFIG.physicsTick;
+      if (now + 1e-6 < previous + RACE_CONFIG.physicsTick) continue;
+      controller.lastNormalKartTickAt = now;
+      if (now < (controller.disabledUntil ?? 0)) continue;
+      const elapsed = Math.max(0, Math.min(0.1, now - previous));
+      updateKartController(runtime, controller, elapsed, now);
+      processKartJihad(runtime, [controller], now);
+    }
+  }
+}
+
 function processTraps(now) {
+  processNormalKarts(now);
   if (now < state.nextTrapTickAt) return;
   state.nextTrapTickAt = now + CONFIG.trapTickInterval;
   const targets = trapTargets();
@@ -25112,18 +27683,17 @@ function processTraps(now) {
       if (controller.spent || !controller.visual?.IsValid()) continue;
       if (now < (controller.disabledUntil ?? 0)) continue;
       if (controller.name === "kart") {
-        updateKartController(runtime, controller, CONFIG.trapTickInterval, now);
-        processKartJihad(runtime, [controller], now);
+        continue;
       } else if (controller.kind === "trapfloor") {
-        if (now >= controller.armedAt && targets.some((pawn) => pawnInsideTrap(pawn, controller.position, 52, 120))) spendTrap(controller);
+        const { halfSize, minZ, maxZ } = TRAPFLOOR_TRIGGER;
+        if (now >= controller.armedAt && targets.some((pawn) => pawnInsideTrapBox(
+          pawn, controller.position, halfSize, minZ, maxZ,
+        ))) spendTrap(controller);
       } else if (controller.definition.pool === "step") {
         const { triggerHalfSize, triggerMinZ, triggerMaxZ } = controller.definition;
         for (const pawn of targets) {
-          if (triggerHalfSize !== undefined
-            ? pawnInsideTrapBox(pawn, controller.position, triggerHalfSize, triggerMinZ, triggerMaxZ)
-            : pawnInsideTrap(
-              pawn, controller.position, controller.definition.radius, controller.definition.zRange,
-            )) activateStepTrap(runtime, controller, pawn, now);
+          if (pawnInsideTrapBox(pawn, controller.position, triggerHalfSize, triggerMinZ, triggerMaxZ))
+            activateStepTrap(runtime, controller, pawn, now);
           if (controller.spent) break;
         }
       } else if (controller.definition.pool === "vicinity") {
@@ -25134,7 +27704,7 @@ function processTraps(now) {
         } else {
           for (const pawn of targets) {
             if (pawnInsideTrapBox(
-              pawn, controller.position, controller.definition.triggerRadius,
+              pawn, controller.position, controller.definition.triggerHalfSize,
               controller.definition.triggerMinZ, controller.definition.triggerMaxZ,
             )) {
               activateVicinityTrap(runtime, controller, pawn, now);
@@ -25159,8 +27729,9 @@ function processTraps(now) {
       } else if (controller.name === "explosive_barrel") {
                                                                              
       } else if (controller.name === "mimic") {
-        const victim = targets.find((pawn) => pawnInsideTrap(
-          pawn, controller.position, controller.definition.radius, controller.definition.zRange,
+        const { triggerHalfSize, triggerMinZ, triggerMaxZ } = controller.definition;
+        const victim = targets.find((pawn) => pawnInsideTrapBox(
+          pawn, controller.position, triggerHalfSize, triggerMinZ, triggerMaxZ,
         ));
         if (victim) activateFatalMimic(controller, victim, false);
       } else if (controller.name === "buttonmimic") {
@@ -25178,6 +27749,7 @@ function processTraps(now) {
 
 function spawnTrapFeature(runtime, request) {
   const stage = stageSnapshotForRuntime(runtime);
+  const forced = request.debugTrap === true || request.stageEvent === true;
   if (request.tile === 85) {
     const visual = spawnModelBlock(
       runtime,
@@ -25197,17 +27769,17 @@ function spawnTrapFeature(runtime, request) {
     }
     return;
   }
-  if (!request.debugTrap && (!FEATURE_FLAGS.traps || CONFIG.disableTraps)) return;
+  if (!forced && (!FEATURE_FLAGS.traps || CONFIG.disableTraps)) return;
   const tile = request.tile === 89 ? 86 + Math.floor(Math.random() * 3) : request.tile;
   const chanceKey = { 86: "trapstepChance", 87: "trapvicinityChance", 88: "trapspawnChance" }[tile];
-  if (!request.debugTrap && Math.random() * 100 > (stage[chanceKey] ?? stage.trapChance)) return;
+  if (!forced && Math.random() * 100 > (stage[chanceKey] ?? stage.trapChance)) return;
   const profile = themeProfile(request.themeName ?? runtime.themeSnapshot);
   const name = request.trapName
     ?? selectTrapForTile(tile, Infinity, profile);
   if (!name) return;
   const definition = TRAP_DEFINITIONS[name];
   if (!definition) throw new Error(`unknown debug trap '${name}'`);
-  if (!request.debugTrap && sourceFeatureEstimatedCost(definition.cost) > CONFIG.sourceTrapCostLimit) return;
+  if (!forced && sourceFeatureEstimatedCost(definition.cost) > CONFIG.sourceTrapCostLimit) return;
   const { position, angles } = trapSpawnTransform(name, request);
   if (name === "kart") {
     const controller = spawnKartController(runtime, position, angles, {
@@ -25283,23 +27855,29 @@ function readItemPrototypeAngles(name) {
 function spawnDedicatedItemVisual(runtime, request, name, feature = `item_${name}`) {
   const definition = ITEM_DEFINITIONS[name];
   const templateName = definition?.templateName ?? name;
-  let spawned = spawnRoundEntities(featureTemplate(`item_${templateName}`), request.position, request.angles) ?? [];
-  finalizeSpawned(runtime, { ...request, feature }, spawned);
-  let visual = spawned.find((entity) => entity?.IsValid() && !entity.GetClassName?.().startsWith("trigger_"));
-  if (!visual && definition?.model) {
-    message(`WARNING: item '${name}' dedicated prototype returned no entity; using template_model fallback`);
-    spawned = spawnRoundEntities(featureTemplate("model"), request.position, request.angles) ?? [];
-    finalizeSpawned(runtime, { ...request, feature: `${feature}_fallback` }, spawned);
+  const spawned = spawnRoundEntities(featureTemplate(`item_${templateName}`), request.position, request.angles) ?? [];
+  let visual;
+  try {
+    finalizeSpawned(runtime, { ...request, feature }, spawned);
     visual = spawned.find((entity) => entity?.IsValid() && !entity.GetClassName?.().startsWith("trigger_"));
-    visual?.SetModel?.(definition.model);
+    if (!visual && definition?.model) {
+      message(`WARNING: item '${name}' dedicated prototype returned no entity; using visual-model fallback`);
+      visual = spawnVisual(runtime, { ...request, feature: `${feature}_fallback` }, definition.model);
+    }
+    for (const entity of spawned) {
+      if (entity === visual || !entity?.IsValid()) continue;
+      entity.Kill();
+      runtime.entities.delete(entity);
+    }
+    if (!visual) throw new Error(`item '${name}' prototype did not spawn`);
+    return visual;
+  } catch (error) {
+    // Setup may fail before the caller receives a handle. Roll back that spawn.
+    const owned = new Set([...spawned, ...(visual ? [visual] : [])]);
+    destroyEntities(owned);
+    for (const entity of owned) if (!validEntity(entity)) runtime.entities.delete(entity);
+    throw error;
   }
-  for (const entity of spawned) {
-    if (entity === visual || !entity?.IsValid()) continue;
-    entity.Kill();
-    runtime.entities.delete(entity);
-  }
-  if (!visual) throw new Error(`item '${name}' prototype did not spawn`);
-  return visual;
 }
 
 function setRuntimeKeyValue(entity, key, value) {
@@ -25358,7 +27936,8 @@ function configureItemMeasureMovement(measureMovement, carrier, measureReference
 function spawnItemCarrier(runtime, request, definition, itemId) {
   const carrierClass = itemCarrierClass(definition);
   const kind = carrierClass === "weapon_knife" ? "knife" : "p250";
-  const spawned = spawnRoundEntities(featureTemplate(`item_carrier_${kind}`), request.position, request.angles) ?? [];
+  const templateKind = itemCarrierTemplateKind(definition, request.itemVariant);
+  const spawned = spawnRoundEntities(featureTemplate(`item_carrier_${templateKind}`), request.position, request.angles) ?? [];
   const templateEntityName = (entity) => String(
     entity?.GetEntityName?.() ?? entity?.GetName?.() ?? "",
   ).toLowerCase();
@@ -25368,21 +27947,24 @@ function spawnItemCarrier(runtime, request, definition, itemId) {
       && (!className || entity.GetClassName?.() === className));
     return candidates.find((entity) => {
       const actual = templateEntityName(entity);
-      return actual === expected || actual.startsWith(`${expected}&`);
+      return actual === expected || actual.startsWith(`${expected}&`) || actual.startsWith(`${expected}_`);
     }) ?? (candidates.length === 1 ? candidates[0] : undefined);
   };
                                                                         
                                    
                                                                              
                                                                   
-  const carrier = findTemplateEntity(`item_carrier_proto_${kind}`, carrierClass);
-  const visual = findTemplateEntity(`item_carrier_visual_proto_${kind}`, "prop_dynamic");
+  const carrier = findTemplateEntity(`item_carrier_proto_${templateKind}`, carrierClass);
+  const visual = findTemplateEntity(`item_carrier_visual_proto_${templateKind}`, "prop_dynamic");
   const measureMovement = findTemplateEntity(
-    `item_carrier_measure_movement_proto_${kind}`,
+    `item_carrier_measure_movement_proto_${templateKind}`,
     "logic_measure_movement",
   );
-  const measureReference = findTemplateEntity(`item_carrier_anchor_proto_${kind}`, "info_target");
-  if (!carrier || !visual || !measureMovement || !measureReference) {
+  const measureReference = findTemplateEntity(`item_carrier_anchor_proto_${templateKind}`, "info_target");
+  const entwatchUseRelay = definition.carrierTemplate
+    ? findTemplateEntity(`item_entwatch_${templateKind}_use`, "logic_relay") : undefined;
+  if (!carrier || !visual || !measureMovement || !measureReference
+    || (definition.carrierTemplate && !entwatchUseRelay)) {
     const inventory = spawned.map((entity) => entity?.IsValid?.()
       ? `${entity.GetClassName?.()}:${entity.GetEntityName?.() ?? entity.GetName?.() ?? "unnamed"}`
       : "invalid").join(", ");
@@ -25390,7 +27972,7 @@ function spawnItemCarrier(runtime, request, definition, itemId) {
       if (entity?.IsValid?.()) entity.Kill();
       runtime.entities.delete(entity);
     }
-    const error = new Error(`item carrier '${kind}' authored LMM incomplete; expected weapon, visual, logic_measure_movement and info_target anchor; rebuild the updated VMAP; spawned=[${inventory}]`);
+    const error = new Error(`item carrier '${templateKind}' incomplete; expected weapon, visual, logic_measure_movement, info_target anchor and optional EntWatch relay; rebuild the updated VMAP; spawned=[${inventory}]`);
     error.code = "ITEM_AUTHORED_LMM_INCOMPLETE";
     throw error;
   }
@@ -25400,6 +27982,7 @@ function spawnItemCarrier(runtime, request, definition, itemId) {
                                                                       
   const carrierMapPose = readItemMapPose(measureReference, carrier);
   const mapVisualPose = definition.mapAuthoredVisualPose ? carrierMapPose : undefined;
+  if (carrierMapPose) itemCarrierPoseCache.set(templateKind, carrierMapPose);
   if (!carrierMapPose) {
     for (const entity of spawned) if (entity?.IsValid?.()) {
       entity.Kill();
@@ -25427,7 +28010,7 @@ function spawnItemCarrier(runtime, request, definition, itemId) {
     message(`[ITEM SPAWN] ${kind} #${itemId} root offset=${JSON.stringify(spawnDelta)}; after placement=${JSON.stringify(spawnPlacement.alignedOrigin)}`);
   }
   return { carrier, visual, measureMovement, measureReference, mapVisualPose,
-    mapAnchorUp: carrierMapPose.position.z, authoredMeasure: true, spawnPlacement };
+    mapAnchorUp: carrierMapPose.position.z, authoredMeasure: true, spawnPlacement, entwatchUseRelay };
 }
 
 function nextPlanetCrystalVariant(requested) {
@@ -25450,6 +28033,10 @@ function knifeStripAllowed(item, pawn, now) {
   const protectionEndsAt = state.firstInfectionAt + CONFIG.zombieItemAntiInflateTime;
   if (now < protectionEndsAt) {
     showZombieItemLock(item, pawn, now, protectionEndsAt, "protection");
+    if (CONFIG.zombieItemAntiInflateCallout && !state.zombieItemInflateCalledOut.has(pawn)) {
+      state.zombieItemInflateCalledOut.add(pawn);
+      playerNameMessage(pawn, "[ITEM] ", ` was not allowed to pick up Z-item '${itemDisplayName(item)}' due to suspected inflating`);
+    }
     return false;
   }
   item.data ??= {};
@@ -25571,7 +28158,8 @@ function spawnItemFeature(runtime, request) {
   if (name === "flight" && state.flightSlayEnabled) return;
   const baseDefinition = ITEM_DEFINITIONS[name];
   const definition = request.endingItem === true && request.teamOverride === team && baseDefinition
-    ? Object.freeze({ ...baseDefinition, team })
+    // Source CreateItem(type=3) uses a knife, including ASCEND's zombie MoonBoost.
+    ? Object.freeze({ ...baseDefinition, team, carrierKind: team === 2 ? "knife" : baseDefinition.carrierKind })
     : baseDefinition;
   if (!definition || definition.team !== team) throw new Error(`invalid ${team === 3 ? "human" : "zombie"} item '${name}'`);
   const sourceCost = name === "moonboost" ? 2 : 3;
@@ -25584,6 +28172,7 @@ function spawnItemFeature(runtime, request) {
   if (definition.mapAuthoredAttachmentAngles) {
     Object.assign(visualAttachment, readItemPrototypeAngles(name));
   }
+  const variant = name === "planetcrystal" ? nextPlanetCrystalVariant(request.itemVariant) : undefined;
   const carrierRequest = request.itemGroundAnchored
     ? {
       ...request,
@@ -25595,10 +28184,10 @@ function spawnItemFeature(runtime, request) {
     : request;
   let carrierBundle;
   try {
-    carrierBundle = spawnItemCarrier(runtime, carrierRequest, definition, itemId);
+    carrierBundle = spawnItemCarrier(runtime, { ...carrierRequest, itemVariant: variant }, definition, itemId);
   } catch (error) {
     if (!request.debugShowcase || error?.code !== "ITEM_AUTHORED_LMM_INCOMPLETE") throw error;
-    announce(`DEBUG: skipped '${name}' gallery item: ${error.message}`);
+    consoleNotice(`DEBUG: skipped '${name}' gallery item: ${error.message}`);
     return;
   }
                                                                             
@@ -25616,12 +28205,13 @@ function spawnItemFeature(runtime, request) {
     definition,
     visual,
     carrier: carrierBundle.carrier,
+    entwatchUseRelay: carrierBundle.entwatchUseRelay,
     state: "spawning",
     position: clone(carrierRequest.position),
     holder: undefined,
     usesRemaining: definition.uses,
     fuel: definition.fuel,
-    variant: name === "planetcrystal" ? nextPlanetCrystalVariant(request.itemVariant) : undefined,
+    variant,
     endingItem: request.endingItem === true,
     debugShowcase: request.debugShowcase === true,
     nextUseAt: 0,
@@ -25649,6 +28239,7 @@ function spawnItemFeature(runtime, request) {
     stripUnlocked: itemCarrierClass(definition) !== "weapon_knife",
   };
   attachItemVisual(item, item.carrier);
+  liftItemWorldVisual(item);
   applyInitialItemVisualState(item);
   if (definition.idleAnimation) {
     fireTarget(visual, "SetAnimation", definition.idleAnimation);
@@ -25718,12 +28309,18 @@ function activePlayerItem(pawn) {
   return undefined;
 }
 
+function itemHeldByPlayer(item, pawn) {
+  return validEntity(pawn) && pawn.IsAlive?.() === true
+    && item?.state === "held" && item.holder === pawn
+    && pawn.GetTeamNumber?.() === item.definition.team
+    && validEntity(item.carrier) && item.carrier.GetOwner?.() === pawn;
+}
+
 function usableHeldPlayerItem(pawn) {
                                                                          
                                                                           
                                                                            
-  const owned = item => item?.state === "held" && item.holder === pawn
-    && validEntity(item.carrier) && item.carrier.GetOwner?.() === pawn;
+  const owned = item => itemHeldByPlayer(item, pawn);
   // Source items use a func_button parented to the weapon, so E works whichever
   // weapon is drawn. Prefer the drawn item, then any held item that can be used.
   const active = activePlayerItem(pawn);
@@ -25969,6 +28566,36 @@ function attachItemVisual(item, carrier) {
                                                                             
                                                                             
                                             
+// The authored logic_measure_movement copies the anchor (child of the carrier)
+// onto the visual, so moving the anchor moves the visual. Spawned carriers are
+// start-constrained and upright, so a world-space lift is a local +Z lift.
+function liftItemWorldVisual(item) {
+  const lift = CONFIG.itemWorldVisualLift;
+  const anchor = item?.measureReference;
+  if (!(lift > 0) || item.worldVisualLifted || item.state === "held" || !validEntity(anchor)) return;
+  const origin = anchor.GetAbsOrigin?.();
+  if (!origin) return;
+  anchor.Teleport({ position: add(origin, vec(0, 0, lift)), velocity: vec() });
+  item.worldVisualLifted = true;
+}
+
+// Put the anchor back on its authored carrier-local pose before the held
+// visual is used; dropped items keep the authored pose (they lie on physics).
+// claimItem runs after the carrier is already in the hand, so only the local
+// +Z lift is undone along the carrier's current up axis. Rebuilding the full
+// transform from in-hand angles rewrote the anchor's authored local rotation
+// (PlanetCrystal's side-by-side crystals ended up stacked).
+function restoreItemWorldVisual(item, carrier) {
+  if (!item?.worldVisualLifted) return;
+  item.worldVisualLifted = false;
+  const anchor = item.measureReference;
+  if (!validEntity(anchor)) return;
+  const origin = anchor.GetAbsOrigin?.();
+  if (!origin) return;
+  const up = upFromAngles(bodyAngles(carrier) ?? { pitch: 0, yaw: 0, roll: 0 });
+  anchor.Teleport({ position: add(origin, mul(up, -CONFIG.itemWorldVisualLift)), velocity: vec() });
+}
+
 function applyInitialItemVisualState(item) {
   if (!validEntity(item?.visual)) return;
   switch (item.name) {
@@ -25995,10 +28622,10 @@ function applyInitialItemVisualState(item) {
       break;
     case "planetcrystal": {
       const colors = {
-        earth: { r: 200, g: 150, b: 0, a: 100 },
-        fire: { r: 255, g: 0, b: 0, a: 100 },
-        wind: { r: 255, g: 255, b: 255, a: 100 },
-        water: { r: 0, g: 255, b: 255, a: 100 },
+        earth: { r: 200, g: 150, b: 0, a: 80 },
+        fire: { r: 255, g: 0, b: 0, a: 80 },
+        wind: { r: 255, g: 255, b: 255, a: 80 },
+        water: { r: 0, g: 255, b: 255, a: 80 },
       };
       const color = colors[item.variant] ?? colors.wind;
       item.visual.SetColor?.(color);
@@ -26023,7 +28650,31 @@ function itemRuntime(item) {
   return ending && ending.index === owner && ending.lifecycle !== "destroyed" ? ending : undefined;
 }
 
+function syncItemEntWatchFuel(item) {
+  if (item?.definition?.useMode !== "fuelToggle" || !validEntity(item.entwatchUseRelay)) return;
+  const capacity = item.definition.fuel;
+  const spent = Math.max(0, Math.min(capacity, Math.floor(capacity - item.fuel + 1e-6)));
+  // EntWatch mode 3 displays consumed units / capacity. Only send whole units
+  // crossed, including the two-unit activation cost; no per-frame I/O spam.
+  let sent = item.entwatchFuelUsed ?? 0;
+  while (sent < spent) {
+    fireTarget(item.entwatchUseRelay, "FireUser1", "", 0, item.holder);
+    sent++;
+  }
+  item.entwatchFuelUsed = sent;
+}
+
+function cleanupItemEntWatchRelay(item, delay = 0) {
+  const relay = item?.entwatchUseRelay;
+  if (item) item.entwatchUseRelay = undefined;
+  if (!validEntity(relay)) return;
+  // EntFire is queued: let the final successful Trigger fire before deletion.
+  if (delay > 0) fireTarget(relay, "Kill", "", delay);
+  else relay.Kill();
+}
+
 function destroyItemCarrier(item) {
+  cleanupItemEntWatchRelay(item);
   const carrier = item?.carrier;
   const measureReference = item?.measureReference;
   const measureMovement = item?.measureMovement;
@@ -26043,7 +28694,8 @@ function destroyItemCarrier(item) {
 }
 
 function claimItem(item, pawn, carrier) {
-  if (!["world", "dropped"].includes(item.state) || !validEntity(carrier)) return false;
+  if (!["world", "dropped"].includes(item.state) || !validEntity(carrier)
+    || carrier !== item.carrier || !validEntity(pawn) || carrier.GetOwner?.() !== pawn) return false;
   if (itemCarrierClass(item.definition) === "weapon_knife" && item.stripUnlocked !== true) return false;
   const behavior = ITEM_BEHAVIORS[item.definition.behavior];
   if (!behavior?.canPickup?.(item, pawn) || !rememberPlayerItem(pawn, item)) return false;
@@ -26062,6 +28714,7 @@ function claimItem(item, pawn, carrier) {
 
 
   cleanupItemStripTrigger(runtime, item);
+  restoreItemWorldVisual(item, carrier);
   attachItemVisual(item, carrier);
   if (firstPickup) {
     item.nextUseAt = Math.max(
@@ -26069,6 +28722,8 @@ function claimItem(item, pawn, carrier) {
       Instance.GetGameTime() + CONFIG.itemFirstPickupCooldown,
     );
     item.readyNotified = false;
+    // Source ::ITEM_PRINT_PICKUP (on by default), first pickup only.
+    announce(`[ITEM] ${item.definition.team === 3 ? "human" : "zombie"} picked up ${itemDisplayName(item)}`);
   }
   behavior.onPickup?.(runtime, item, pawn);
   showItemTutorial(item, pawn);
@@ -26186,6 +28841,8 @@ function processReleasedItemCarriers(now) {
 }
 
 function consumeItem(runtime, item, keepUnownedCarrier = false) {
+  syncItemEntWatchFuel(item);
+  cleanupItemEntWatchRelay(item, 0.1);
   if (item.holder) forgetPlayerItem(item.holder, item);
   item.holder = undefined;
   item.state = "consumed";
@@ -26240,7 +28897,7 @@ function dropActiveWeapon(pawn) {
 function useGreasyFingers(runtime, item, holder, now) {
   const origin = holder.GetAbsOrigin?.();
   if (!origin) return false;
-  playSourceAudioCue(8735, origin);
+  playSourceAudioCue(8735, origin, {parent:holder});
   const buttonPosition = sourceItemButtonPosition(item, holder);
   spawnItemParticle(runtime, item, "explosion_child_distort01b", buttonPosition, undefined, 0.10);
   for (let yaw = 0; yaw < 360; yaw += 50) {
@@ -26253,7 +28910,11 @@ function useGreasyFingers(runtime, item, holder, now) {
                                                                              
                                                                               
   const targets = nearbyPawns(origin, item.definition.range, 3);
-  for (const pawn of targets) dropActiveWeapon(pawn);
+  for (const pawn of targets) {
+    if (item.definition.printName !== false) playerNameMessage(pawn, "Golly, ", " got greased!");
+    else announce("Golly, someone got greased!");
+    dropActiveWeapon(pawn);
+  }
   runtime.itemDeployables.add({
     id: state.nextItemEffectId++,
     kind: "greasy_fingers",
@@ -26318,7 +28979,7 @@ function useFling(runtime, item, holder, now) {
 function useRoar(runtime, item, holder, now) {
   const origin = holder.GetAbsOrigin?.();
   if (!origin) return false;
-  playSourceAudioCue(8638, add(origin, vec(0, 0, 50)));
+  playSourceAudioCue(8638, add(origin, vec(0, 0, 50)), {parent:holder});
   spawnItemParticles(runtime, item, ["explosion_child_distort01b", "explosion_child_distort01d_1k"],
     sourceItemButtonPosition(item, holder), undefined, 0.10);
   const direction = horizontalViewDirection(holder);
@@ -26380,6 +29041,7 @@ function spawnLinearZombieProjectile(runtime, item, holder, now, kind) {
     angles: visualAngles,
     scale: item.definition.projectileScale,
     color: kind === "gust" ? { r: 255, g: 255, b: 255, a: 200 } : undefined,
+    lifetime: item.definition.lifetime,
   });
   const controller = {
     id: state.nextItemEffectId++,
@@ -26420,6 +29082,7 @@ function spawnLinearZombieProjectile(runtime, item, holder, now, kind) {
           scale: item.definition.glowScale,
           color: { r: 255, g: 255, b: 255, a: 0 },
           glow: { r: 255, g: 0, b: 0, a: 255 },
+          lifetime: Math.max(0, controller.expiresAt - Instance.GetGameTime()),
         });
         controller.visuals.add(glow);
         controller.visualAngles.set(glow, glowAngles);
@@ -26437,6 +29100,7 @@ function spawnLinearZombieProjectile(runtime, item, holder, now, kind) {
         ["song", "spork_high", "spork_low"],
       );
       controller.sounds = new Set(sounds.values());
+      scheduleDeployableKill(controller.sounds, controller.expiresAt - Instance.GetGameTime());
       parentProjectileSounds(controller, visual, origin);
       for (const sound of controller.sounds) playItemSound(sound);
     } else if (kind === "gust") {
@@ -26449,6 +29113,7 @@ function spawnLinearZombieProjectile(runtime, item, holder, now, kind) {
         ["gust_high", "gust_low", "spork"],
       );
       controller.sounds = new Set(sounds.values());
+      scheduleDeployableKill(controller.sounds, controller.expiresAt - Instance.GetGameTime());
       parentProjectileSounds(controller, visual, origin);
       for (const sound of controller.sounds) playItemSound(sound);
     }
@@ -26456,7 +29121,6 @@ function spawnLinearZombieProjectile(runtime, item, holder, now, kind) {
     cleanupDeployable(runtime, controller);
     throw error;
   }
-  scheduleDeployableKill([visual, ...controller.visuals, ...controller.sounds], item.definition.lifetime);
   return controller;
 }
 
@@ -26533,8 +29197,8 @@ function usePuller(runtime, item, holder, now) {
   const effectAngles = anglesFromDirection(direction);
                                                                         
                                                                               
-  playSourceAudioCue(9330, origin);
-  playSourceAudioCue(9331, origin);
+  playSourceAudioCue(9330, origin, {parent:holder});
+  playSourceAudioCue(9331, origin, {parent:holder});
                                                                           
                                                                          
   item.visual?.SetColor?.({ r: 50, g: 0, b: 80, a: 40 });
@@ -26547,12 +29211,12 @@ function usePuller(runtime, item, holder, now) {
     scale: 4,
     color: { r: 80, g: 20, b: 50, a: 100 },
     glow: { r: 80, g: 20, b: 50, a: 255 },
+    lifetime: item.definition.pullDelay + item.definition.activeTime,
   });
                                                                            
                                                                             
                                               
-  visual.Teleport?.({ position: origin, angles: effectAngles, velocity: vec() });
-  runtime.itemDeployables.add({
+  const controller = {
     id: state.nextItemEffectId++,
     kind: "puller",
     item,
@@ -26563,7 +29227,14 @@ function usePuller(runtime, item, holder, now) {
     touchers: new Set(),
     activeAt: now + item.definition.pullDelay,
     expiresAt: now + item.definition.pullDelay + item.definition.activeTime,
-  });
+  };
+  runtime.itemDeployables.add(controller);
+  try {
+    visual.Teleport?.({ position: origin, angles: effectAngles, velocity: vec() });
+  } catch (error) {
+    cleanupDeployable(runtime, controller);
+    throw error;
+  }
   return true;
 }
 
@@ -26673,8 +29344,9 @@ function spawnBallisticZombieProjectile(runtime, item, holder, now, kind) {
     detonateAt: kind === "bomb_chuck" ? now + item.definition.fuseTime : undefined,
     nextTrailAt: item.definition.trailInterval ? now + item.definition.trailInterval : undefined,
   };
-  if (kind === "bomb_chuck") playSourceAudioCue(8532, origin);
-  if (kind === "squid") playSourceAudioCue(6779, origin);
+  visual.SetEntityName?.(`item_projectile_${controller.id}_sound_source`);
+  if (kind === "bomb_chuck") playSourceAudioCue(8532, origin, {parent:visual});
+  if (kind === "squid") playSourceAudioCue(6779, origin, {parent:visual});
   visual.Teleport?.({
     position: controller.position,
     angles: controller.angles,
@@ -26686,7 +29358,7 @@ function spawnBallisticZombieProjectile(runtime, item, holder, now, kind) {
 
 function useStone(runtime, item, holder, now) {
   spawnBallisticZombieProjectile(runtime, item, holder, now, "stone");
-  playSourceAudioCue(9609, holder.GetAbsOrigin?.() ?? item.position);
+  playSourceAudioCue(9609, holder.GetAbsOrigin?.() ?? item.position, {parent:holder});
   item.visual?.SetColor?.({ r: 255, g: 0, b: 0, a: 150 });
   return true;
 }
@@ -26798,12 +29470,32 @@ function cancelItemTasks(runtime, item) {
 }
 
 const ITEM_NATIVE_PARTICLE_EFFECTS = new Set([
+  "weapon_taser_flash", "pizza_tesla",
+  "storm_end_core",
   "aztec_copter_takeoff_grass", "blood_impact_headshot", "chicken_gone", "copter_takeoff_1_dust_low",
-  "env_sparks_omni", "explosion_child_core04c_1k", "explosion_child_distort01b",
+  "env_sparks_omni", "explosion_child_distort01b",
   "explosion_child_distort01c", "explosion_child_distort01d_1k", "explosion_coop_mission_shrapnel02e_1k",
   "explosion_hegrenade_brief", "extinsguish_fire_blastout_01", "impact_dirt", "storm_lightning_01",
-  "storm_lightning_01_modglow", "water_impact_bubbles_1", "weapon_sensorgren_detonate", "weapon_sensorgren_spark_02", "weapon_taser_flash",
+  "storm_lightning_01_modglow", "water_impact_bubbles_1", "weapon_sensorgren_detonate", "weapon_sensorgren_spark_02",
 ]);
+
+// Source ::Particle Kill only ended emission; emitted particles lived out. Here the
+// source lifetime sends Stop and Kill waits for the longest particle lifetime in
+// the effect tree (read from the official vpcf_c / local vpcf, 2026-10-18).
+const ITEM_PARTICLE_TAIL_SECONDS = Object.freeze({
+  weapon_taser_flash: 0.15, pizza_tesla: 0.2, storm_end_core: 1.2,
+  aztec_copter_takeoff_grass: 4, blood_impact_headshot: 1.4, chicken_gone: 3,
+  copter_takeoff_1_dust_low: 3, env_sparks_omni: 3.5, explosion_child_distort01b: 0.5,
+  explosion_child_distort01c: 0.5, explosion_child_distort01d_1k: 0.75,
+  explosion_coop_mission_shrapnel02e_1k: 2.5, explosion_hegrenade_brief: 30,
+  extinsguish_fire_blastout_01: 0.7, impact_dirt: 2.5, storm_lightning_01: 1,
+  storm_lightning_01_modglow: 0.15, water_impact_bubbles_1: 4,
+  weapon_sensorgren_detonate: 2, weapon_sensorgren_spark_02: 0.4,
+});
+
+function itemParticleTail(effect) {
+  return ITEM_PARTICLE_TAIL_SECONDS[effect] ?? 0;
+}
 
 function reserveItemParticleBurst(name, maximum, duration, countRejected = false) {
   const now = Instance.GetGameTime();
@@ -26820,8 +29512,8 @@ function reserveItemParticleBurst(name, maximum, duration, countRejected = false
   return allowed;
 }
 
-function spawnItemParticle(runtime, item, effect, position, angles = { pitch: 0, yaw: 0, roll: 0 }, lifetime = 0.1) {
-  if (!ITEM_NATIVE_PARTICLE_EFFECTS.has(effect) || !Number.isFinite(lifetime) || lifetime <= 0)
+function createItemParticle(runtime, effect, position, angles) {
+  if (!ITEM_NATIVE_PARTICLE_EFFECTS.has(effect))
     throw new Error(`invalid item particle '${effect}'`);
   if (!runtime || ["outcome_pending", "resolved", "destroyed"].includes(runtime.lifecycle)) return;
   const key = `item_fx_${effect}`;
@@ -26844,13 +29536,23 @@ function spawnItemParticle(runtime, item, effect, position, angles = { pitch: 0,
   }
   const particle = spawned[0];
   runtime.entities.add(particle);
+  return particle;
+}
+
+function spawnItemParticle(runtime, item, effect, position, angles = { pitch: 0, yaw: 0, roll: 0 }, lifetime = 0.1) {
+  if (!Number.isFinite(lifetime) || lifetime <= 0)
+    throw new Error(`invalid item particle '${effect}'`);
+  const particle = createItemParticle(runtime, effect, position, angles);
+  if (!particle) return undefined;
+  const removeAfter = lifetime + itemParticleTail(effect);
   const record = { id: state.nextItemEffectId++, kind: "native_item_particle", item,
-    visual: particle, expiresAt: Instance.GetGameTime() + lifetime };
+    visual: particle, expiresAt: Instance.GetGameTime() + removeAfter };
   runtime.itemDeployables.add(record);
   try {
     particle.Teleport({ position: clone(position), angles, velocity: vec() });
     fireTarget(particle, "Start");
-    fireTarget(particle, "Kill", undefined, lifetime);
+    fireTarget(particle, "Stop", undefined, lifetime);
+    fireTarget(particle, "Kill", undefined, removeAfter);
     return record;
   } catch (error) {
     cleanupDeployable(runtime, record);
@@ -26896,24 +29598,58 @@ function spawnItemEffectVisual(runtime, item, {
   color,
   glow,
   terrainBodyGroup,
+  lifetime,
 } = {}) {
-  const visual = spawnDedicatedItemVisual(
-    runtime,
-    { position, angles, feature: `item_effect_${item.id}_${state.nextItemEffectId}` },
-    template,
-    `item_effect_${item.id}`,
-  );
-  visual.SetModel?.(model);
-  visual.SetModelScale?.(scale);
-  if (color) visual.SetColor?.(color);
-  if (glow) visual.Glow?.(glow);
-  if (terrainBodyGroup !== undefined) applyTerrainAppearance(visual, terrainBodyGroup);
-  item.effects.add(visual);
-  return visual;
+  // Effect-only visuals have no carrier/LMM members; use their actual model donor.
+  void template;
+  const visual = spawnVisual(runtime,
+    { position, angles, feature: `item_effect_${item.id}_${state.nextItemEffectId}` }, model);
+  try {
+    item.effects.add(visual);
+    // Arm expiry before appearance/parenting can throw. It survives stopped
+    // script updates and ownership transfers to another level.
+    if (lifetime !== undefined) scheduleDeployableKill([visual], lifetime);
+    visual.SetModelScale?.(scale);
+    if (color) visual.SetColor?.(color);
+    if (glow) visual.Glow?.(glow);
+    if (terrainBodyGroup !== undefined) applyTerrainAppearance(visual, terrainBodyGroup);
+    return visual;
+  } catch (error) {
+    destroyEntities([visual]);
+    runtime.entities.delete(visual);
+    item.effects.delete(visual);
+    throw error;
+  }
 }
 
 function entityName(entity) {
   return entity?.GetEntityName?.() ?? entity?.GetName?.() ?? "";
+}
+
+// Engine ForceSpawn cost grows with every spawn until a map change, and the
+// engine's entity-name strings are a suspect: per-level/per-instance serial
+// names created thousands of new strings per hour. Where a name must stay
+// unique among live entities, reuse a per-prefix slot whose holder is gone, so
+// the number of distinct names stays at peak concurrency, not total spawns.
+// Holders mostly die oldest-first, so the scan starts after the last slot
+// handed out; names that need no uniqueness use one shared string instead.
+const recycledEntityNames = new Map();
+function assignRecycledEntityName(entity, prefix) {
+  if (!validEntity(entity) || typeof entity.SetEntityName !== "function") return undefined;
+  let pool = recycledEntityNames.get(prefix);
+  if (!pool) recycledEntityNames.set(prefix, pool = { slots: [], cursor: 0 });
+  const { slots } = pool;
+  let index = -1;
+  for (let n = 0; n < slots.length && index < 0; n++) {
+    const candidate = (pool.cursor + n) % slots.length;
+    if (!validEntity(slots[candidate].entity)) index = candidate;
+  }
+  if (index < 0) index = slots.push({ name: `${prefix}_${slots.length}`, entity: undefined }) - 1;
+  pool.cursor = (index + 1) % slots.length;
+  const slot = slots[index];
+  slot.entity = entity;
+  entity.SetEntityName(slot.name);
+  return slot.name;
 }
 
 const ITEM_SOUND_EMITTER_CLASSES = new Set(["ambient_generic", "point_soundevent"]);
@@ -26923,7 +29659,7 @@ function spawnItemSoundTemplate(runtime, item, templateKey, position, roles) {
   if (!template || !template.IsValid()) {
     if (!state.missingOptionalTemplateWarnings.has(templateKey)) {
       state.missingOptionalTemplateWarnings.add(templateKey);
-      announce(`WARN: optional sound template '${FEATURE_TEMPLATE_NAMES[templateKey]}' is unavailable`);
+      consoleNotice(`WARN: optional sound template '${FEATURE_TEMPLATE_NAMES[templateKey]}' is unavailable`);
     }
     return new Map();
   }
@@ -26955,11 +29691,17 @@ function spawnItemSoundTemplate(runtime, item, templateKey, position, roles) {
   }
                                                                                
                           
-  finalizeSpawned(runtime, {
-    position,
-    angles: { pitch: 0, yaw: 0, roll: 0 },
-    feature: `item_effect_${item.id}_${templateKey}`,
-  }, spawned);
+  try {
+    finalizeSpawned(runtime, {
+      position,
+      angles: { pitch: 0, yaw: 0, roll: 0 },
+      feature: `item_effect_${item.id}_${templateKey}`,
+    }, spawned);
+  } catch (error) {
+    destroyEntities(spawned);
+    for (const entity of spawned) runtime.entities.delete(entity);
+    throw error;
+  }
   return sounds;
 }
 
@@ -27405,7 +30147,7 @@ const SOURCE_AUDIO_CUES = Object.freeze({
                     
                                                                                   
 const PRIVATE_QUIET_AUDIO = new Set(["tp_bounce", "tp_tpbounce", "tp_tp", "boostpad", "boostpad_wet"]);
-const sourceAudio = { live: new Set(), templates: new Map(), warnings: new Set(), serial: 0, nextFollowAt: 0 };
+const sourceAudio = { live: new Set(), templates: new Map(), warnings: new Set(), nextFollowAt: 0 };
 function sourceAudioWarn(key, text) {
   if (sourceAudio.warnings.has(key)) return;
   sourceAudio.warnings.add(key);
@@ -27417,7 +30159,12 @@ function sourceAudioSample(value) {
 function retireSourceAudio(record) {
   if (!record || !sourceAudio.live.delete(record)) return;
   if (validEntity(record.sound)) {
-    fireTarget(record.sound, "Volume", "0");
+    // Storm Blade's one-shot event can restart when sent sound-control inputs.
+    if (record.killOnly) {
+      record.sound.Kill();
+      return;
+    }
+    if (!record.soundEvent) fireTarget(record.sound, "Volume", "0");
     fireTarget(record.sound, "StopSound");
     fireTarget(record.sound, "Kill", "", 0.02);
   }
@@ -27448,6 +30195,10 @@ function spawnSourceAudio(token, position, options = {}) {
   }
   const radius = Number(options.radius ?? 10000);
   const key = `${token}_${radius === 0 ? "global" : `r${radius}`}`;
+  if (radius > 0 && validEntity(options.parent)) {
+    const followed = spawnFollowSourceAudio(token, asset, key, position, options);
+    if (followed) return followed;
+  }
   let template = sourceAudio.templates.get(key);
   if (!validEntity(template)) {
     template = Instance.FindEntityByName(`template_audio_${key}`);
@@ -27473,8 +30224,9 @@ function spawnSourceAudio(token, position, options = {}) {
   const clipTime = asset.seconds / Math.max(0.01, pitch / 100);
   const record = { token, sound, owner: options.owner, parent: options.parent,
     position: clone(position), followUntil: now + life,
-    expiresAt: now + Math.max(life, clipTime + 0.1), pitch, volume, radius };
-  sound.SetEntityName?.(`audio_live_${++sourceAudio.serial}_${token}`);
+    expiresAt: now + Math.max(life, clipTime + 0.1), pitch, volume, radius,
+    killOnly: options.killOnly === true };
+  // Inputs go to the handle, so the sound needs no name of its own.
   sound.Teleport?.({position:clone(position)});
   if (validEntity(record.parent)) {
     const origin = record.parent.GetAbsOrigin?.();
@@ -27489,6 +30241,62 @@ function spawnSourceAudio(token, position, options = {}) {
   fireTarget(sound, "Volume", String(volume));
   fireTarget(sound, "Pitch", String(pitch), 0.01);
   fireTarget(sound, "Volume", String(volume), 0.02);
+  return record;
+}
+// A started ambient_generic stays where PlaySound fired (teleporting it later
+// is inaudible), so sounds owned by a moving item/system play through a
+// point_soundevent bound with SetSourceEntity, like the pizza launch sounds.
+// It has no Pitch/Volume inputs: generate_follow_soundevents.mjs bakes each
+// cue's pitch/volume into ze_collective.audio.follow.l<line>.
+function soundSourceName(entity, renameShared = false) {
+  const name = entityName(entity);
+  if (name) {
+    const sharing = Instance.FindEntitiesByName?.(name);
+    if (sharing?.length === 1) return name;
+    if (!renameShared) return undefined;
+  }
+  // Unnamed entities (and our own sound entity) are not referenced by name
+  // anywhere, so naming one is safe.
+  const assigned = assignRecycledEntityName(entity, name ? "audio_live" : "audio_source");
+  return assigned && entityName(entity) === assigned ? assigned : undefined;
+}
+function spawnFollowSourceAudio(token, asset, key, position, options) {
+  let template = sourceAudio.templates.get("follow");
+  if (!validEntity(template)) {
+    template = Instance.FindEntityByName("template_audio_follow");
+    if (validEntity(template)) sourceAudio.templates.set("follow", template);
+  }
+  if (!validEntity(template) || typeof template.ForceSpawn !== "function") {
+    sourceAudioWarn("follow", "missing template_audio_follow; moving sounds stay where they started");
+    return undefined;
+  }
+  let spawned;
+  try { spawned = spawnRoundEntities(template, position, {pitch:0,yaw:0,roll:0}) ?? []; }
+  catch (error) { sourceAudioWarn("follow-spawn", `cannot spawn template_audio_follow: ${error}`); return undefined; }
+  const sound = spawned.find(e => validEntity(e) && e.GetClassName?.() === "point_soundevent");
+  for (const e of spawned) if (e !== sound && validEntity(e)) e.Kill();
+  if (!sound) { sourceAudioWarn("follow-class", "template_audio_follow has no point_soundevent"); return undefined; }
+  const parent = options.parent, now = Instance.GetGameTime();
+  sound.Teleport?.({position:clone(position)});
+  // A shared name would bind every same-named entity, so track a parented
+  // copy of the sound entity instead of renaming the owner. The sound entity
+  // is ours: keep its template-fixup name when unique, else give it a slot.
+  let sourceName = soundSourceName(parent);
+  if (!sourceName) {
+    try { sound.SetParent?.(parent); sourceName = soundSourceName(sound, true); } catch {}
+  }
+  if (!sourceName) { sound.Kill(); return undefined; }
+  const pitch = Number(options.pitch ?? 100);
+  const life = Math.max(0.02, Number(options.lifetime ?? 0.05));
+  const clipTime = asset.seconds / Math.max(0.01, pitch / 100);
+  const record = { token, sound, owner: options.owner, parent, soundEvent: true,
+    position: clone(position), followUntil: now + life,
+    expiresAt: now + Math.max(life, clipTime + 0.1), pitch, volume: Number(options.volume ?? 10), radius: Number(options.radius),
+    killOnly: options.killOnly === true };
+  sourceAudio.live.add(record);
+  fireTarget(sound, "SetSoundEventName", options.followEvent ?? `ze_collective.audio.follow.${key}`);
+  fireTarget(sound, "SetSourceEntity", sourceName);
+  fireTarget(sound, "StartSound");
   return record;
 }
 function processSourceAudio(now) {
@@ -27513,9 +30321,12 @@ function playSourceAudioCue(line, position, options = {}) {
                                                                              
   const radius = Array.isArray(authoredRadius)
     ? Math.round(sourceAudioSample(authoredRadius) / 500) * 500 : authoredRadius;
+  // An explicit parent from the call site means the sound belongs to that
+  // moving item/system, whatever the Source cue's own follow flag was.
   return playCatalogSound(token, position, { radius, lifetime:sourceAudioSample(lifetime),
     pitch:sourceAudioSample(pitch), volume:sourceAudioSample(volume), ...options,
-    parent: follow ? options.parent : undefined });
+    parent: options.parent,
+    followEvent: Array.isArray(authoredRadius) ? undefined : `ze_collective.audio.follow.l${line}` });
 }
 function playSourceAudioStack(lines, position, options = {}) {
   let played = false;
@@ -27773,8 +30584,9 @@ function restoreDestructoHammerReady(runtime, item) {
 }
 
 function useHealOrb(runtime, item, holder, now) {
-  if (!deployHealOrb(runtime, holder, item, now)) return false;
-  playSourceAudioStack([11554, 11555, 11556], add(holder.GetAbsOrigin?.() ?? item.position, vec(0, 0, 48)));
+  const orb = deployHealOrb(runtime, holder, item, now);
+  if (!orb) return false;
+  playSourceAudioStack([11554, 11555, 11556], orb.position, {parent:orb.visual});
   item.spent = true;
   return { success: true, deferConsume: true };
 }
@@ -27841,7 +30653,7 @@ function tickPiggyback(runtime, item, holder) {
 
 function useMoonBoost(runtime, item, holder) {
   const velocity = holder.GetAbsVelocity?.() ?? vec();
-  playSourceAudioCue(11617, holder.GetAbsOrigin?.() ?? item.position);
+  playSourceAudioCue(11617, holder.GetAbsOrigin?.() ?? item.position, {parent:holder});
   const moonPosition = clone(item.carrier?.GetAbsOrigin?.() ?? holder.GetAbsOrigin?.() ?? item.position);
   spawnItemParticles(runtime, item, ["explosion_child_distort01b", "chicken_gone"], moonPosition, undefined, 0.10);
   holder.Teleport({ velocity: add(velocity, vec(0, 0, 500)) });
@@ -27856,7 +30668,7 @@ function onMiniSlotsPickup(runtime, item) {
 }
 
 function useMiniSlots(runtime, item, holder) {
-  playSourceAudioCue(7535, add(holder.GetAbsOrigin?.() ?? item.position, vec(0, 0, 48)));
+  playSourceAudioCue(7535, add(holder.GetAbsOrigin?.() ?? item.position, vec(0, 0, 48)), {parent:holder});
   fireTarget(item.visual, "SetAnimation", "spin");
   fireTarget(item.visual, "SetDefaultAnimation", "spin", 0.02);
   fireTarget(item.visual, "SetPlaybackRate", "11", 0.03);
@@ -27873,6 +30685,7 @@ function useMiniSlots(runtime, item, holder) {
     playSourceAudioCue(
       won ? 5680 : 5689,
       add(item.visual?.GetAbsOrigin?.() ?? item.position, vec(0, 0, 48)),
+      {parent:user},
     );
   });
   return true;
@@ -27911,9 +30724,12 @@ function tickBhopSteroids(runtime, item, holder, now) {
     stopBhopSteroids(runtime, item);
     return;
   }
-  const elapsed = Math.max(0, Math.min(0.25, now - (item.data.bhopLastAt ?? now)));
+  // Charge real elapsed time. A per-tick cap let server hitches stretch the
+  // 30 fuel past its wall-clock duration (EntWatch/song ended, bhop kept going).
+  const elapsed = Math.max(0, now - (item.data.bhopLastAt ?? now));
   item.data.bhopLastAt = now;
   item.fuel = Math.max(0, item.fuel - elapsed);
+  syncItemEntWatchFuel(item);
   if (item.fuel <= 0) {
     stopBhopSteroids(runtime, item);
     item.spent = true;
@@ -28044,8 +30860,8 @@ function resolveBaguetteSwing(runtime, item, holder) {
 function useBaguette(runtime, item, holder) {
   if (!infectionHasStarted()) return false;
   const swingOrigin = holder.GetAbsOrigin?.() ?? item.position;
-  playSourceAudioCue(7479, swingOrigin);
-  playSourceAudioCue(7480, swingOrigin);
+  playSourceAudioCue(7479, swingOrigin, {parent:holder});
+  playSourceAudioCue(7480, swingOrigin, {parent:holder});
   fireTarget(item.visual, "SetAnimation", `swing_${((item.data.swing ?? 0) % 2) + 1}`);
   fireTarget(item.visual, "SetPlaybackRate", "0.1", 0.01);
   fireTarget(item.visual, "SetPlaybackRate", "0.1", 0.03);
@@ -28121,6 +30937,8 @@ function usePeanutButter(runtime, item, holder, now) {
     position,
     touched: new Set(),
     source: itemEffectSource(runtime, item, "peanut"),
+    lastAt: now,
+    fallVelocity: 0,
     expiresAt: now + 15,
   });
   item.visual?.SetColor?.({ r: 255, g: 0, b: 0, a: 150 });
@@ -28176,6 +30994,10 @@ function useBillNye(runtime, item, holder, now) {
                                                                           
                                                                        
   visual.Teleport?.({ position, angles: visualAngles, velocity: vec() });
+  // The imported TV's upright pose is baseidle; apply it on placement,
+  // before the one-second power-on delay. This model has no play sequence.
+  fireTarget(visual, "SetAnimation", "baseidle");
+  fireTarget(visual, "SetDefaultAnimation", "baseidle");
   const applyBillNyeBodyGroup = () => {
     if (validEntity(visual)) fireTarget(visual, "SetBodyGroup", "main,1");
   };
@@ -28421,51 +31243,80 @@ function useHackerman(runtime, item, holder, now) {
     item,
     user: holder,
     position: clone(holder.GetAbsOrigin?.() ?? item.position),
-    nextTickAt: now,
-    expiresAt: now + 10,
-    indicators: new Set(),
+    nextTickAt: now + item.definition.firstTickDelay,
+    expiresAt: now + item.definition.duration,
   };
-  hurtFinaleBossAt(controller.position, item.definition.bossRadius, item.definition.bossDamage, item.definition.bossStunChance, item.definition.bossStunTimeAdd, holder, "hackerman");
-  playSourceAudioCue(8330, add(controller.position, vec(0, 0, 50)));
+  hurtFinaleBossAt(sourceItemButtonPosition(item, holder), item.definition.bossRadius, item.definition.bossDamage, item.definition.bossStunChance, item.definition.bossStunTimeAdd, undefined, "hackerman");
+  playSourceAudioCue(8330, add(controller.position, vec(0, 0, 50)), {parent:holder});
   spawnItemParticle(runtime, item, "explosion_child_distort01b", sourceItemButtonPosition(item, holder), undefined, 0.05);
+  runtime.itemDeployables.add(controller);
+  spawnHackermanIndicators(runtime, item, controller.position, now);
+  return true;
+}
+
+function spawnHackermanIndicators(runtime, item, origin, now) {
+  // Source shares one wallhack set across simultaneous users. Its ten-second
+  // lifetime is independent of the aim controller and the user's life/team.
+  for (const active of activeRuntimes()) {
+    for (const effect of active.itemDeployables ?? []) {
+      if (effect.kind === "hackerman_indicators" && now < effect.expiresAt
+        && [...effect.indicators].some(validEntity)) return;
+    }
+  }
+  const markers = {
+    kind: "hackerman_indicators", item, expiresAt: now + item.definition.duration,
+    indicators: new Set(), indicatorPawns: new Map(),
+  };
+  runtime.itemDeployables.add(markers);
   for (const pawn of allLivingPawns()) {
-    if (!validZombieTarget(pawn)) continue;
+    // Invincibility excludes aim targets, but Source still gives them a marker.
+    if (pawn.GetTeamNumber?.() !== 2 || (pawn.GetHealth?.() ?? 0) <= 0) continue;
     const position = pawn.GetAbsOrigin?.();
     if (!position || Math.hypot(
-      position.x - controller.position.x,
-      position.y - controller.position.y,
-      position.z - controller.position.z,
-    ) > item.definition.targetRange) continue;
+      position.x - origin.x,
+      position.y - origin.y,
+      position.z - origin.z,
+    ) > item.definition.wallhackRange) continue;
     const indicator = spawnItemEffectVisual(runtime, item, {
       template: "heal_orb",
       model: "models/luffaren/heal_orb.vmdl",
-      position: add(position, vec(0, 0, 48)),
+      position: add(position, vec(0, 0, item.definition.wallhackZOffset)),
       scale: 0.45,
       color: { r: 200, g: 0, b: 0, a: 100 },
       glow: { r: 255, g: 0, b: 50, a: 255 },
     });
+    if (!validEntity(indicator)) continue;
     indicator.SetParent?.(pawn);
-    controller.indicators.add(indicator);
+    markers.indicators.add(indicator);
+    markers.indicatorPawns.set(indicator, pawn);
   }
-  runtime.itemDeployables.add(controller);
-  return true;
+  if (markers.indicators.size === 0) cleanupDeployable(runtime, markers);
 }
 
 function spawnRiftSecondVisual(runtime, item) {
   // Source spawns both rift models at button origin +/-4 along the button's
-  // left vector with the same angles; mirror the attached first model.
-  const carrierAngles = bodyAngles(item.carrier) ?? { pitch: 0, yaw: 0, roll: 0 };
+  // left vector, angled button + yaw 110; both share one parent. Here the
+  // parent is the first crystal itself, so the LMM pose (world lift, pickup,
+  // hand) carries the pair rigidly. Carrier/anchor parents broke the pair:
+  // the lift undo left a carrier child 50u off, and an info_target child
+  // did not render in hand.
+  // The first crystal's pose may still be pre-LMM here; the offset is built
+  // in its own frame, so any current pose gives the right local transform.
   const firstPosition = item.visual?.GetAbsOrigin?.();
-  const firstAngles = item.visual?.GetAbsAngles?.();
-  const left = leftFromAngles(carrierAngles);
+  const firstAngles = bodyAngles(item.visual) ?? { pitch: 0, yaw: 0, roll: 0 };
+  // Button left in the crystal's own frame is yaw 90 - 110 = -20 degrees, so
+  // the pair stays beside each other across the crystal's long (Z) axis.
+  const yaw = -20 * Math.PI / 180;
+  const left = add(mul(forwardFromAngles(firstAngles), Math.cos(yaw)),
+    mul(leftFromAngles(firstAngles), Math.sin(yaw)));
   const offset = 2 * (item.visualAttachment?.left ?? 4);
   const visual = spawnItemEffectVisual(runtime, item, {
     template: "rift",
     model: "models/luffaren/rift.vmdl",
     position: firstPosition ? add(firstPosition, mul(left, -offset)) : item.position,
-    angles: firstAngles ?? carrierAngles,
+    angles: firstAngles,
   });
-  visual.SetParent?.(item.carrier);
+  visual.SetParent?.(item.visual);
   item.auxiliaryVisuals.add(visual);
 }
 
@@ -28488,6 +31339,12 @@ function cleanupRiftItem(runtime, item) {
 }
 
 function useHumanRift(runtime, item, holder, now) {
+  const pending = item.data.riftPair;
+  if (pending && (now >= pending.expiresAt || now >= pending.removeAt
+    || !runtime.itemDeployables.has(pending) || !validEntity(pending.entryVisual))) {
+    retireItemRift(runtime, pending);
+    return false;
+  }
   if (holder.IsDucking?.() || holder.IsDucked?.()) return false;
   if (!item.data.riftPair) {
                                                                              
@@ -28513,10 +31370,12 @@ function useHumanRift(runtime, item, holder, now) {
       exitVisual: undefined,
       complete: false,
       touchCooldowns: new Map(),
+      lastPositions: new Map(),
       fallForgivenessTasks: new Set(),
       expiresAt: now + 100,
       removeAt: now + 200,
     };
+    playerNameMessage(holder, "", " used Rift (entry)");
     item.data.riftPair = pair;
     runtime.itemDeployables.add(pair);
     playSourceAudioCue(10805, add(entry, vec(0, 0, 61)));
@@ -28527,7 +31386,7 @@ function useHumanRift(runtime, item, holder, now) {
   }
   const pair = item.data.riftPair;
   if (pair.complete) return false;
-  const exit = placeOnGround(holder);
+  const exit = placeOnGround(holder, 0, 40);
   if (!exit || Math.hypot(exit.x - pair.entry.x, exit.y - pair.entry.y, exit.z - pair.entry.z) < 60) return false;
   pair.exit = add(exit, vec(0, 0, 3));
   pair.exitVisual = spawnItemEffectVisual(runtime, item, {
@@ -28538,6 +31397,7 @@ function useHumanRift(runtime, item, holder, now) {
     glow: { r: 255, g: 255, b: 255, a: 255 },
   });
   pair.complete = true;
+  playerNameMessage(holder, "", " used Rift (exit)");
   item.data.riftPair = undefined;
   playSourceAudioCue(10805, add(pair.exit, vec(0, 0, 61)));
   spawnItemParticle(runtime, item, "water_impact_bubbles_1", add(pair.exit, vec(0, 0, 61)), undefined, 0.05);
@@ -28545,6 +31405,12 @@ function useHumanRift(runtime, item, holder, now) {
 }
 
 function useZombieRift(runtime, item, holder, now) {
+  const pending = item.data.riftPair;
+  if (pending && (now >= pending.expiresAt || now >= pending.removeAt
+    || !runtime.itemDeployables.has(pending) || !validEntity(pending.exitVisual))) {
+    retireItemRift(runtime, pending);
+    return false;
+  }
   const holderOrigin = holder.GetAbsOrigin?.();
   const holderEye = holder.GetEyePosition?.();
   const eyeHeight = holderOrigin && holderEye
@@ -28649,6 +31515,16 @@ function useFlight(runtime, item, holder, now) {
   item.data.flightSound = flightSounds.get("wing");
   item.data.nextFlightSoundAt = now + item.definition.flapSoundFirstDelay;
   holder.Teleport?.({ velocity: clone(item.data.flightVelocity) });
+  // Source CLIMB FlightEnabled(): each new angel is counted once per round.
+  const climb = state.endingRuntime;
+  if (climb?.kind === "CLIMB" && climb.lifecycle === "active") {
+    climb.climbAngels ??= new Set();
+    if (!climb.climbAngels.has(holder)) {
+      climb.climbAngels.add(holder);
+      const count = climb.climbAngels.size;
+      announce(`[CLIMB ENDING] ${count}${count === 1 ? " angel is approaching" : " angels are approaching"}`);
+    }
+  }
   return { success: true, deferConsume: true };
 }
 
@@ -28809,7 +31685,7 @@ function useImpostor(runtime, item, holder, now) {
   const originalModel = holder.GetModelName?.();
   const humanModel = item.definition.forceModel ?? target.GetModelName?.();
   if (humanModel) holder.SetModel?.(humanModel);
-  playSourceAudioStack([9842, 9843], add(targetPosition, vec(0, 0, 48)));
+  playSourceAudioStack([9842, 9843], add(targetPosition, vec(0, 0, 48)), {parent:target});
   holder.Teleport?.({
     position: add(targetPosition, vec(0, 0, 1)),
     angles: {
@@ -28849,6 +31725,8 @@ function useImpostor(runtime, item, holder, now) {
     nextHealthCapAt: now + item.definition.healthCapInterval,
   });
   Instance.ServerCommand("sv_disable_radar 1");
+  announce("an impostor is among us...");
+  schedule(1.01, () => announce("find and kill him before it's too late!"));
   return true;
 }
 
@@ -28866,7 +31744,8 @@ function breakTerrainForHammer(itemRuntime, item, center, now) {
     for (const entity of runtime.entities ?? []) {
       if (!validEntity(entity) || runtime.brokenTerrain.has(entity)) continue;
       const name = entity.GetEntityName?.() ?? "";
-      if (!name.startsWith(`block_${runtime.index}_`)) continue;
+      // Names are level-independent; runtime.entities already scopes the level.
+      if (!name.startsWith("block_")) continue;
       const position = entity.GetAbsOrigin?.();
       if (!position || terrainNearEndpoint(runtime, position)) continue;
       if (Math.hypot(position.x - center.x, position.y - center.y) > item.definition.tileRadius) continue;
@@ -28899,6 +31778,8 @@ function breakTerrainForHammer(itemRuntime, item, center, now) {
 }
 
 function destroyHumanItemsForHammer(center, item) {
+  // Source tallies in this order: item, peanut, claymore, earth, billye, stormblade.
+  const hits = { item: 0, peanutbutter: 0, claymore: 0, planet_earth: 0, billnye: 0, storm_blade: 0 };
   for (const runtime of activeRuntimes()) {
     for (const humanItem of [...runtime.items ?? []]) {
       if (humanItem.definition.team !== 3 || humanItem.state === "consumed") continue;
@@ -28909,6 +31790,10 @@ function destroyHumanItemsForHammer(center, item) {
         ? item.definition.heldItemRadius
         : item.definition.placedItemRadius;
       if (position && Math.hypot(position.x - center.x, position.y - center.y, position.z - center.z) <= radius) {
+        if (humanItem.state === "held") {
+          playerNameMessage(humanItem.holder, `DestructoHammer destructed ${itemDisplayName(humanItem)} (held by `, ")");
+          hits.item++;
+        }
         consumeItem(runtime, humanItem);
       }
     }
@@ -28920,12 +31805,22 @@ function destroyHumanItemsForHammer(center, item) {
         deployable.released = true;
         playSourceAudioStack([11126,11127,11128], position);
         cleanupDeployable(runtime, deployable);
+        hits.storm_blade++;
       } else if (
         ["peanutbutter", "claymore", "planet_earth", "billnye"].includes(deployable.kind)
         && distance <= item.definition.placedItemRadius
-      ) cleanupDeployable(runtime, deployable);
+      ) {
+        cleanupDeployable(runtime, deployable);
+        hits[deployable.kind]++;
+      }
     }
   }
+  const labels = { item: "item", peanutbutter: "peanut", claymore: "claymore", planet_earth: "earth",
+    billnye: "billye", storm_blade: "stormblade" };
+  const parts = Object.entries(hits).filter(([, count]) => count > 0)
+    .map(([kind, count]) => `${count}x_${labels[kind]}`);
+  if (parts.length) announce(`DestructoHammer destructed ${parts.join(" + ")}`);
+  else message("DestructoHammer destructed no items");
 }
 
 function useDestructoHammer(runtime, item, holder, now) {
@@ -28973,68 +31868,123 @@ function useDestructoHammer(runtime, item, holder, now) {
   return true;
 }
 
+// Optional native effects must never prevent the gameplay controller from ticking.
+function stormBladeStep(step, callback) {
+  return guardStep(`storm_blade:${step}`, callback);
+}
+
+function retireStormBladePiece(runtime, deployable, piece) {
+  destroyEntities([piece]);
+  if (validEntity(piece)) return; // Keep ownership if both native cleanup paths failed.
+  runtime.entities.delete(piece);
+  deployable.item.effects.delete(piece);
+  deployable.pieces.delete(piece);
+  deployable.pieceStates.delete(piece);
+}
+
+function updateStormBladeShardTransform(pieceState, now) {
+  const burstProgress = Math.max(
+    0,
+    Math.min(1, (now - pieceState.burstStartAt) / (pieceState.burstEndAt - pieceState.burstStartAt)),
+  );
+  const easedProgress = 1 - ((1 - burstProgress) ** 3);
+  pieceState.position = add(
+    pieceState.burstStart,
+    mul(sub(pieceState.burstTarget, pieceState.burstStart), easedProgress),
+  );
+  pieceState.angles = {
+    pitch: pieceState.burstStartAngles.pitch
+      + (pieceState.burstTargetAngles.pitch - pieceState.burstStartAngles.pitch) * easedProgress,
+    yaw: pieceState.burstStartAngles.yaw
+      + (pieceState.burstTargetAngles.yaw - pieceState.burstStartAngles.yaw) * easedProgress,
+    roll: pieceState.burstStartAngles.roll
+      + (pieceState.burstTargetAngles.roll - pieceState.burstStartAngles.roll) * easedProgress,
+  };
+}
+
+function queueStormBladeVisual(runtime, deployable, job) {
+  if (!runtime.itemDeployables?.has(deployable)) return;
+  let pending = state.stormBladeVisuals.get(deployable);
+  if (!pending) state.stormBladeVisuals.set(deployable, pending = {
+    runtime, round: state.roundBootstrapSerial, jobs: [], cursor: 0 });
+  pending.jobs.push(job);
+}
+
+function queueStormBladeParticle(runtime, deployable, effect, position, lifetime = 0.05) {
+  queueStormBladeVisual(runtime, deployable, { kind: "particle", effect,
+    position: clone(position), expiresAt: Instance.GetGameTime() + lifetime });
+}
+
+function spawnStormBladeShard(runtime, deployable, job, now) {
+  if (deployable.shardSpawnsFailed || deployable.released || now >= deployable.endsAt
+    || now >= job.state.killAt) return;
+  const pieceState = job.state, item = deployable.item;
+  updateStormBladeShardTransform(pieceState, now);
+  const piece = stormBladeStep("spawn piece", () => spawnDedicatedItemVisual(runtime, {
+    position: pieceState.position, angles: pieceState.angles,
+    feature: `item_effect_${item.id}_storm_blade_refract`,
+  }, "storm_blade_refract", `item_effect_${item.id}`));
+  if (!piece) { deployable.shardSpawnsFailed = true; return; }
+  item.effects.add(piece);
+  deployable.pieces.add(piece);
+  deployable.pieceStates.set(piece, pieceState);
+  const configured = stormBladeStep("configure piece", () => {
+    // Absolute expiry remains valid even if gameplay ticks later stop entirely.
+    scheduleDeployableKill([piece], pieceState.killAt - now);
+    piece.SetModelScale?.(job.pieceScale);
+    if (now < pieceState.glowOffAt) piece.Glow?.({ r: 60, g: 190, b: 255, a: 255 });
+    else { piece.Unglow?.(); pieceState.glowDisabled = true; }
+    fireTarget(piece, "SetAnimation", `move_${1 + Math.floor(Math.random() * 5)}`);
+    fireTarget(piece, "SetPlaybackRate", String(job.playbackRate), 0.02);
+    return true;
+  });
+  if (!configured) {
+    deployable.shardSpawnsFailed = true;
+    retireStormBladePiece(runtime, deployable, piece);
+    return;
+  }
+  if (job.lightning) queueStormBladeParticle(runtime, deployable, "storm_lightning_01", deployable.position);
+}
+
+function processStormBladeVisuals(now = Instance.GetGameTime()) {
+  return withGenerationBudget(() => {
+    for (let checked = 0; state.stormBladeVisuals.size && checked < 64
+      && generationBudget.stormVisualJobs < CONFIG.stormVisualsPerThink
+      && generationWorkAvailable(); checked++) {
+      const [deployable, pending] = state.stormBladeVisuals.entries().next().value;
+      const runtime = pending.runtime;
+      state.stormBladeVisuals.delete(deployable);
+      if (pending.round !== state.roundBootstrapSerial
+        || ["outcome_pending", "resolved", "destroyed"].includes(runtime.lifecycle)
+        || !runtime.itemDeployables?.has(deployable) || deployable.item?.state === "cleaned"
+        || now >= deployable.removeAt) continue;
+      const job = pending.jobs[pending.cursor];
+      // Put unconsumed work at the back, giving other casts a turn as well.
+      state.stormBladeVisuals.set(deployable, pending);
+      try {
+        if (!runGenerationWork(() => {
+          pending.jobs[pending.cursor++] = undefined;
+          if (job.kind === "shard") spawnStormBladeShard(runtime, deployable, job, now);
+          else if (job.expiresAt > now) stormBladeStep("queued particles", () =>
+            spawnItemParticle(runtime, deployable.item, job.effect, job.position, undefined, job.expiresAt - now));
+        })) break;
+      } finally {
+        generationBudget.stormVisualJobs++;
+        if (pending.cursor >= pending.jobs.length) state.stormBladeVisuals.delete(deployable);
+      }
+    }
+  });
+}
+
 function useStormBlade(runtime, item, holder, now) {
   if (!infectionHasStarted()) return false;
-  const position = clone(item.carrier?.GetAbsOrigin?.() ?? holder.GetAbsOrigin?.());
-  hurtFinaleBossAt(add(position, vec(0, 0, 100)), item.definition.bossRadius, item.definition.bossDamage, item.definition.bossStunChance, item.definition.bossStunTimeAdd, holder, "storm_blade");
-                                                                             
+  const origin = stormBladeStep("origin", () =>
+    (validEntity(item.carrier) ? item.carrier.GetAbsOrigin?.() : undefined) ?? holder.GetAbsOrigin?.());
+  if (!origin || ![origin.x, origin.y, origin.z].every(Number.isFinite)) return false;
+  const position = clone(origin);
   const sounds = new Set(), borrowedSounds = new Set();
-  for (let i = 0; i < 3; i++) {
-    const record = spawnSourceAudio("i_am_the_storm_cut", position,
-      { radius:100000, lifetime:8, pitch:100, volume:10 });
-    if (record) { record.expiresAt = now + 8; sounds.add(record.sound); }
-  }
-  const frozen = new Set();
-  const pieces = new Set();
-  const pieceStates = new Map();
-  for (let index = 0; index < 25; index++) {
-    const pieceScale = 5 + Math.random() * 25;
-    const burstDirection = vec(
-      Math.random() * 2 - 1,
-      Math.random() * 2 - 1,
-      Math.random() * 2 - 1,
-    );
-    const directionLength = Math.hypot(burstDirection.x, burstDirection.y, burstDirection.z) || 1;
-    const burstDistance = 120 + Math.random() * 280;
-    const burstTarget = add(position, mul(burstDirection, burstDistance / directionLength));
-    const pieceAngles = {
-      pitch: Math.random() * 360,
-      yaw: Math.random() * 360,
-      roll: Math.random() * 360,
-    };
-    const piece = spawnDedicatedItemVisual(runtime, {
-      position,
-      angles: pieceAngles,
-      feature: `item_effect_${item.id}_storm_blade_refract`,
-    }, "storm_blade_refract", `item_effect_${item.id}`);
-    // Source ParticleRun(false) when each shard spawns.
-    if (Math.floor(Math.random() * 8) === 0)
-      spawnItemParticle(runtime, item, "storm_lightning_01", position, undefined, 0.05);
-    piece.SetModelScale?.(pieceScale);
-    piece.Glow?.({ r: 60, g: 190, b: 255, a: 255 });
-    item.effects.add(piece);
-    fireTarget(piece, "SetAnimation", `move_${1 + Math.floor(Math.random() * 5)}`);
-    fireTarget(piece, "SetPlaybackRate", String(1 + Math.random() * 9), 0.02);
-    pieces.add(piece);
-    pieceStates.set(piece, {
-      position: clone(position),
-      angles: pieceAngles,
-      burstStart: clone(position),
-      burstTarget,
-      burstStartAngles: { ...pieceAngles },
-      burstTargetAngles: {
-        pitch: pieceAngles.pitch + Math.random() * 360 - 180,
-        yaw: pieceAngles.yaw + Math.random() * 360 - 180,
-        roll: pieceAngles.roll + Math.random() * 360 - 180,
-      },
-      burstStartAt: now,
-      burstEndAt: now + 0.35 + Math.random() * 0.3,
-      glowOffAt: now + 0.1 + Math.random() * 0.7,
-      killAt: now + 7.1 + 0.1 + Math.random() * 4.9,
-      ending: false,
-    });
-  }
-  runtime.itemDeployables.add({
+  const frozen = new Set(), pieces = new Set(), pieceStates = new Map();
+  const deployable = {
     id: state.nextItemEffectId++,
     kind: "storm_blade",
     item,
@@ -29048,32 +31998,75 @@ function useStormBlade(runtime, item, holder, now) {
     freezeAt: now + 0.9,
     started: false,
     endsAt: now + 7.1,
-                                                                            
-                                                                             
-                                                                          
-                                                                       
-                                     
-    soundStopAt: now + 8.0,
+    soundStopAt: now,
     removeAt: now + 12.2,
-  });
-  const hiltPosition = sourceItemModelPosition(item, holder);
-  spawnItemParticle(runtime, item, "env_sparks_omni", hiltPosition, undefined, 0.05);
-  for (let index = 0; index < 3; index++) {
-    spawnItemParticle(runtime, item, "weapon_sensorgren_spark_02",
-      add(hiltPosition, vec(0, 0, Math.random() * 7 - 5)), undefined, 0.05);
+  };
+  runtime.itemDeployables.add(deployable);
+  stormBladeStep("boss", () => hurtFinaleBossAt(add(position, vec(0, 0, 100)),
+    item.definition.bossRadius, item.definition.bossDamage, item.definition.bossStunChance,
+    item.definition.bossStunTimeAdd, holder, "storm_blade"));
+  const soundRecord = stormBladeStep("audio", () => spawnSourceAudio("i_am_the_storm_cut", position,
+    { radius: 100000, pitch: 100, volume: 10, killOnly: true }));
+  if (soundRecord) {
+    sounds.add(soundRecord.sound);
+    deployable.soundStopAt = soundRecord.expiresAt;
+    deployable.removeAt = Math.max(deployable.removeAt, soundRecord.expiresAt);
   }
-  scheduleItemTask(runtime, item, 7, (activeRuntime) => {
-    if (!validEntity(item.visual)) return;
-    const closePosition = add(item.visual.GetAbsOrigin(), vec(0, 0, -2));
-    spawnItemParticles(activeRuntime, item, ["env_sparks_omni", "weapon_sensorgren_spark_02",
-      "weapon_sensorgren_spark_02", "weapon_sensorgren_spark_02", "weapon_sensorgren_spark_02"],
-    closePosition, undefined, 0.05);
+  // Pure descriptors only: native creation is admitted one visual at a time
+  // by processStormBladeVisuals, shared across every simultaneous cast.
+  const template = state.featureTemplates.get("item_storm_blade_refract");
+  if (validEntity(template) && typeof template.ForceSpawn === "function") {
+    for (let index = 0; index < 25; index++) {
+      const pieceScale = 5 + Math.random() * 25;
+      const direction = vec(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
+      const length = Math.hypot(direction.x, direction.y, direction.z) || 1;
+      const target = add(position, mul(direction, (120 + Math.random() * 280) / length));
+      const angles = { pitch: Math.random() * 360, yaw: Math.random() * 360, roll: Math.random() * 360 };
+      queueStormBladeVisual(runtime, deployable, {
+        kind: "shard", pieceScale, playbackRate: 1 + Math.random() * 9,
+        lightning: Math.floor(Math.random() * 8) === 0,
+        state: { position: clone(position), angles, burstStart: clone(position), burstTarget: target,
+          burstStartAngles: { ...angles }, burstTargetAngles: {
+            pitch: angles.pitch + Math.random() * 360 - 180,
+            yaw: angles.yaw + Math.random() * 360 - 180,
+            roll: angles.roll + Math.random() * 360 - 180 },
+          burstStartAt: now, burstEndAt: now + 0.35 + Math.random() * 0.3,
+          glowOffAt: now + 0.1 + Math.random() * 0.7,
+          killAt: now + 7.2 + Math.random() * 4.9, ending: false },
+      });
+    }
+  } else {
+    state.missingItemParticleTemplates ??= new Set();
+    if (!state.missingItemParticleTemplates.has("storm_blade_refract")) {
+      state.missingItemParticleTemplates.add("storm_blade_refract");
+      message("WARNING: Storm Blade refract template missing; gameplay remains active");
+    }
+  }
+  stormBladeStep("cast visuals", () => {
+    const hiltPosition = sourceItemModelPosition(item, holder);
+    const sparks = [{ kind: "particle", effect: "env_sparks_omni", position: hiltPosition,
+      expiresAt: now + 0.05 }];
+    for (let index = 0; index < 3; index++) sparks.push({ kind: "particle",
+      effect: "weapon_sensorgren_spark_02", position: add(hiltPosition, vec(0, 0, Math.random() * 7 - 5)),
+      expiresAt: now + 0.05 });
+    const pending = state.stormBladeVisuals.get(deployable);
+    if (pending) pending.jobs.unshift(...sparks);
+    else for (const spark of sparks) queueStormBladeVisual(runtime, deployable, spark);
+    scheduleItemTask(runtime, item, 7, (activeRuntime) => {
+      if (!validEntity(item.visual)) return;
+      stormBladeStep("close particles", () => {
+        const closePosition = add(item.visual.GetAbsOrigin(), vec(0, 0, -2));
+        for (const effect of ["env_sparks_omni", "weapon_sensorgren_spark_02",
+          "weapon_sensorgren_spark_02", "weapon_sensorgren_spark_02", "weapon_sensorgren_spark_02"])
+          queueStormBladeParticle(activeRuntime, deployable, effect, closePosition);
+      });
+    });
+    fireTarget(item.visual, "SetAnimation", "use");
+    fireTarget(item.visual, "SetDefaultAnimation", "idle", 0.02);
+    fireTarget(item.visual, "SetPlaybackRate", "0.20", 0.01);
+    item.visual?.SetColor?.({ r: 50, g: 50, b: 50, a: 255 });
+    item.visual?.Unglow?.();
   });
-  fireTarget(item.visual, "SetAnimation", "use");
-  fireTarget(item.visual, "SetDefaultAnimation", "idle", 0.02);
-  fireTarget(item.visual, "SetPlaybackRate", "0.20", 0.01);
-  item.visual?.SetColor?.({ r: 50, g: 50, b: 50, a: 255 });
-  item.visual?.Unglow?.();
   return true;
 }
 
@@ -29123,7 +32116,8 @@ function advancePlanetCombo(runtime, item, variant, position, now) {
     nextTickAt: now + 6,
     buffed: false,
   });
-  playSourceAudioStack([10475, 10477, 10477], combo.position);
+  visual.SetEntityName?.(`captain_planet_${state.nextItemEffectId}`);
+  playSourceAudioStack([10475, 10477, 10477], combo.position, {parent:visual});
   // Source ShowTheCaptain at +0.82 s, around the captain's spawn origin.
   const captainShowPosition = add(combo.position, vec(0, 0, 50));
   scheduleItemParticle(runtime, item, 0.82, (activeRuntime) => {
@@ -29132,7 +32126,7 @@ function advancePlanetCombo(runtime, item, variant, position, now) {
     captainShowPosition, undefined, 0.10);
   });
   state.planetCombo = undefined;
-  announce("Captain Planet combo completed");
+  message("Captain Planet combo completed");
 }
 
 function spawnPlanetCrystalEffect(runtime, item, controller, position, angles, type, now) {
@@ -29243,8 +32237,8 @@ function cleanupEarthCrystalPiece(runtime, controller, piece) {
   if (piece.cleaned) return;
   piece.cleaned = true;
   for (const entity of [piece.trigger, piece.wall]) {
-    if (!validEntity(entity)) continue;
-    entity.Kill(); runtime.entities.delete(entity); controller.nativeEntities.delete(entity);
+    if (validEntity(entity)) entity.Kill();
+    runtime.entities.delete(entity); controller.nativeEntities.delete(entity);
     state.silentHillWorld.visuals.delete(entity);
   }
 }
@@ -29273,7 +32267,9 @@ function spawnEarthCrystalPieces(runtime, controller, angles) {
       if (piece.cleaned || !validEntity(trigger) || !runtime.itemDeployables.has(controller)) return;
       piece.postchecked = true;
       if (piece.occupied) { cleanupEarthCrystalPiece(runtime, controller, piece); return; }
-      const wall = crystalNativeEntity(runtime, controller, "crystalEarthWall", position, pieceAngles);
+      // Use the damage-enabled terrain prototype; the old crystal prototype
+      // spawns with health=0 and never emits damage outputs.
+      const wall = crystalNativeEntity(runtime, controller, "breakable", position, pieceAngles);
       const model = chooseTerrainModel(theme, "breakable");
       wall.SetModel(rememberSilentHillVisual(runtime, wall, model, { themeName: theme }));
                                                                              
@@ -29281,6 +32277,10 @@ function spawnEarthCrystalPieces(runtime, controller, angles) {
       wall.Teleport?.({ position, angles: pieceAngles, velocity: vec() });
       applyTerrainAppearance(wall, 1);
       piece.wall = wall;
+      wall.SetMaxHealth?.(BREAKABLE_NATIVE_HEALTH);
+      wall.SetHealth(BREAKABLE_NATIVE_HEALTH);
+      crystalConnect(runtime, controller, wall, "OnTakeDamage", () => cleanupEarthCrystalPiece(runtime, controller, piece));
+      crystalConnect(runtime, controller, wall, "OnBreak", () => cleanupEarthCrystalPiece(runtime, controller, piece));
       fireTarget(trigger, "Enable", "", 0.1);
     }, runtime.index);
   }
@@ -29391,6 +32391,7 @@ function usePlanetCrystal(runtime, item, holder, now) {
   }
 
   if (variant === "earth") {
+    playerNameMessage(holder, "", " used EarthCrystal");
     spawnEarthCrystalPieces(runtime, controller, effectAngles);
   } else if (variant === "fire") {
     spawnElementCrystalTrigger(runtime, controller, holder, effectAngles);
@@ -29476,7 +32477,9 @@ function deployHealOrb(runtime, holder, item, now) {
   visual.SetColor?.({ r: 255, g: 255, b: 255, a: 100 });
   visual.Glow?.({ r: 100, g: 200, b: 255, a: 255 });
   const growDuration = (2.3 - 0.5) / 4;
-  runtime.itemDeployables.add({
+  // Engine-side backstop in case the item tick stops before removeAt.
+  scheduleDeployableKill([visual], growDuration + definition.healDuration + 1.3);
+  const orb = {
     id: state.nextItemEffectId++,
     kind: "heal_orb",
     item,
@@ -29494,27 +32497,60 @@ function deployHealOrb(runtime, holder, item, now) {
     removeAt: now + growDuration + definition.healDuration + 0.3,
     nextHealAt: now + growDuration,
     grenadeRecipients: new Set(),
-  });
-  message(`${holder.GetPlayerController?.()?.GetPlayerName?.() ?? "human"} used heal orb`);
-  return true;
+  };
+  runtime.itemDeployables.add(orb);
+  // Unique name so the orb's sound can follow it (SetSourceEntity).
+  visual.SetEntityName?.(`heal_orb_active_${orb.id}`);
+  playerNameMessage(holder, "", " used heal orb");
+  return orb;
+}
+
+function heldWeapons(pawn) {
+  // CS2 exposes inventory by slot/name instead of Source 1's move children.
+  const weapons = new Set();
+  for (const slot of Object.values(CSGearSlot)) {
+    if (!Number.isInteger(slot) || slot < 0) continue;
+    const weapon = pawn.FindWeaponBySlot?.(slot);
+    if (validEntity(weapon)) weapons.add(weapon);
+  }
+  for (const name of ITEM_WEAPON_CLASSES) {
+    const weapon = pawn.FindWeapon?.(name);
+    if (validEntity(weapon)) weapons.add(weapon);
+  }
+  return weapons;
 }
 
 function refillHealOrbAmmo(pawn, orb) {
-  for (const slot of [CSGearSlot.RIFLE, CSGearSlot.PISTOL]) {
-    const weapon = pawn.FindWeaponBySlot?.(slot);
-    if (!validEntity(weapon)) continue;
-    const data = weapon.GetData?.();
-    const name = String(data?.GetName?.() ?? weapon.GetClassName?.() ?? "");
+  let hasGrenade = validEntity(pawn.FindWeapon?.("weapon_hegrenade"));
+  for (const weapon of heldWeapons(pawn)) {
+    const name = String(weapon.GetClassName?.() ?? weapon.GetData?.()?.GetName?.() ?? "");
+    if (name === "weapon_hegrenade") {
+      hasGrenade = true;
+      continue;
+    }
+    if (!name.startsWith("weapon_") || [
+      "weapon_knife", "weapon_knife_t", "weapon_incgrenade", "weapon_molotov", "weapon_bumpmine",
+    ].includes(name)) continue;
     let amount = 20;
     if (name === "weapon_bizon") amount = 64;
     else if (name === "weapon_negev") amount = 150;
     else if (name === "weapon_m249") amount = 100;
-    weapon.SetReserveAmmo?.(amount);
+    // Source refills the clip, including utility weapons, without changing reserves.
+    fireTarget(weapon, "SetAmmoAmount", String(amount));
   }
 
-  if (validEntity(pawn.FindWeapon?.("weapon_hegrenade")) || orb.grenadeRecipients.has(pawn)) return;
+  if (hasGrenade || orb.grenadeRecipients.has(pawn)) return;
   pawn.GiveNamedItem?.("weapon_hegrenade", false);
   orb.grenadeRecipients.add(pawn);
+}
+
+function retireHealOrbs(runtime) {
+  for (const deployable of [...runtime?.itemDeployables ?? []]) {
+    if (deployable.kind !== "heal_orb") continue;
+    cleanupDeployable(runtime, deployable);
+    const item = deployable.item;
+    if (item && item.state !== "consumed" && item.state !== "cleaned") consumeItem(runtime, item);
+  }
 }
 
 function processHealOrb(runtime, orb, now, humans) {
@@ -29583,6 +32619,9 @@ function processHealOrb(runtime, orb, now, humans) {
 }
 
 function useItemBehavior(runtime, item, holder, now) {
+  // Validate again at the effect boundary, including native ownership changes
+  // that processItems has not reconciled yet.
+  if (!itemHeldByPlayer(item, holder)) return false;
   const behavior = ITEM_BEHAVIORS[item.definition.behavior];
   if (!behavior || !behavior.canUse?.(item, holder, now)) return false;
   const result = behavior.onUse?.(runtime, item, holder, now);
@@ -29591,42 +32630,29 @@ function useItemBehavior(runtime, item, holder, now) {
   return result;
 }
 
-// TEMP USE_DIAG: log why an E press on a held item failed; remove when done.
-function useDiag(pawn, item, reason) {
-  message(`USE_DIAG ${item?.name ?? "none"} fail=${reason} t=${Instance.GetGameTime().toFixed(2)} next=${item?.nextUseAt?.toFixed?.(2)} state=${item?.state} lc=${item ? itemRuntime(item)?.lifecycle : "-"} running=${state.running} infect=${infectionHasStarted()}`);
-}
-
 function useHeldItem(pawn) {
   const item = usableHeldPlayerItem(pawn);
-  if (!item || item.state !== "held" || item.holder !== pawn) { useDiag(pawn, item, "no_held_item"); return false; }
+  if (!item || item.state !== "held" || item.holder !== pawn) return false;
                                                                            
                                                                               
-  if (state.finaleEscapeActive && item.endingItem !== true) { useDiag(pawn, item, "finale_escape"); return false; }
+  if (state.finaleEscapeActive && item.endingItem !== true) return false;
   const runtime = itemRuntime(item);
   if (!runtime || pawn.GetTeamNumber?.() !== item.definition.team) {
-    useDiag(pawn, item, "no_runtime_or_team");
+   
     dropHeldItem(pawn);
     return false;
   }
   // processItems never ticks these runtimes, so anything spawned now would
   // freeze in place (chat/ping use bypasses the Think gate).
-  if (!state.running || state.fatal || ["outcome_pending", "resolved", "destroyed"].includes(runtime.lifecycle)) { useDiag(pawn, item, "runtime_gate"); return false; }
+  if (!state.running || state.fatal || ["outcome_pending", "resolved", "destroyed"].includes(runtime.lifecycle)) return false;
   const now = Instance.GetGameTime();
   const behavior = ITEM_BEHAVIORS[item.definition.behavior];
   if (now < item.nextUseAt) {
-    useDiag(pawn, item, "cooldown");
     behavior?.onUseFailed?.(runtime, item, pawn, "cooldown");
     return false;
   }
-  let result;
-  try {
-    result = useItemBehavior(runtime, item, pawn, now);
-  } catch (error) {
-    useDiag(pawn, item, `threw: ${error?.stack ?? error}`);
-    throw error;
-  }
+  const result = useItemBehavior(runtime, item, pawn, now);
   if (!result) {
-    useDiag(pawn, item, "behavior_returned_false");
     behavior?.onUseFailed?.(runtime, item, pawn, "failed");
     return false;
   }
@@ -29634,6 +32660,9 @@ function useHeldItem(pawn) {
   item.nextUseAt = now + cooldown;
   item.readyNotified = cooldown <= 0;
   if (result.consumeCharge !== false) item.usesRemaining--;
+  // All input routes converge here. Failed or cooldown-blocked uses emit nothing.
+  if (validEntity(item.entwatchUseRelay)) fireTarget(item.entwatchUseRelay, "Trigger", "", 0, pawn);
+  syncItemEntWatchFuel(item);
   if (item.usesRemaining <= 0 && !result.deferConsume) consumeItem(runtime, item);
   return true;
 }
@@ -29690,11 +32719,6 @@ function processHeldItemInputs(usePressed, pawns = allLivingPawns()) {
     if (usableHeldPlayerItem(pawn)) {
       consumed.add(pawn);
       useHeldItem(pawn);
-    } else {
-      // TEMP USE_DIAG
-      for (const held of slots.values()) {
-        message(`USE_DIAG ${held.name} fail=not_usable state=${held.state} holderMatch=${held.holder === pawn} carrierValid=${validEntity(held.carrier)} ownerMatch=${held.carrier?.GetOwner?.() === pawn}`);
-      }
     }
   }
   return consumed;
@@ -29708,6 +32732,7 @@ function processWorldItemInputs(consumed = new Set(), usePressed, pawns = allLiv
       if (
         ["world", "dropped"].includes(item.state)
         && validEntity(item.carrier)
+        && !validEntity(item.carrier.GetOwner?.())
         && (!state.finaleEscapeActive || item.endingItem === true)
       ) {
         worldItems.push(item);
@@ -29739,7 +32764,7 @@ function processWorldItemInputs(consumed = new Set(), usePressed, pawns = allLiv
         nearestDistance = distance;
       }
     }
-    if (!nearest) continue;
+    if (!nearest || validEntity(nearest.carrier.GetOwner?.())) continue;
     if (itemCarrierClass(nearest.definition) === "weapon_knife") {
       if (!prepareKnifeItemPickup(nearest, pawn, Instance.GetGameTime())) continue;
       nearest.knifePickupPawn = pawn;
@@ -29764,7 +32789,7 @@ function queueDeployableUseInputs(usePressed, consumed = new Set()) {
   }
 }
 
-// Source 1 queued an engine-side Kill when gust/pizza spawned, so they expired
+// Source 1 queued an engine-side Kill for temporary effects, so they expired
 // even if no script tick reached them (outcome_pending, fatal, thrown tick).
 function scheduleDeployableKill(entities, lifetime) {
   for (const entity of entities) {
@@ -29772,7 +32797,7 @@ function scheduleDeployableKill(entities, lifetime) {
   }
 }
 
-const LINEAR_ZOMBIE_PROJECTILE_KINDS = new Set(["pizzabaker", "gust", "gust_echo"]);
+const LINEAR_ZOMBIE_PROJECTILE_KINDS = new Set(["pizzabaker", "gust", "gust_echo", "puller"]);
 
 function retireLinearZombieProjectiles(runtime, filter = () => true) {
   for (const deployable of [...runtime?.itemDeployables ?? []]) {
@@ -29781,6 +32806,7 @@ function retireLinearZombieProjectiles(runtime, filter = () => true) {
 }
 
 function cleanupDeployable(runtime, deployable) {
+  state.stormBladeVisuals.delete(deployable);
   clearSourceAudio(deployable);
   for (const id of deployable.nativeConnections ?? []) {
     disconnectEntityOutput(id);
@@ -29811,8 +32837,10 @@ function cleanupDeployable(runtime, deployable) {
                                                                       
                                                                              
                                                                         
-        if (deployable.kind !== "storm_blade") fireTarget(visual, "StopSound", "");
-        fireTarget(visual, "Volume", "0");
+        if (deployable.kind !== "storm_blade") {
+          fireTarget(visual, "StopSound", "");
+          fireTarget(visual, "Volume", "0");
+        }
       }
       if (deployable.borrowedSounds?.has(visual)) continue;
       if (validEntity(visual)) visual.Kill();
@@ -29823,6 +32851,8 @@ function cleanupDeployable(runtime, deployable) {
     collection?.clear?.();
   }
   deployable.pieceStates?.clear?.();
+  deployable.hitParticlePool?.clear();
+  deployable.indicatorPawns?.clear();
   deployable.borrowedSounds?.clear?.();
 }
 
@@ -30179,7 +33209,10 @@ function hitStoneTarget(runtime, deployable, pawn, stonePosition) {
   const damage = deployable.item.definition.damage;
   const health = pawn.GetHealth?.() ?? 0;
   if (health > damage) pawn.SetHealth?.(health - damage);
-  else damagePawn(pawn, 999999, deployable.user, deployable.visual);
+  else {
+    if (deployable.item.definition.printDeaths !== false) playerNameMessage(pawn, "", " got stoned to death!");
+    damagePawn(pawn, 999999, deployable.user, deployable.visual);
+  }
   if (!deployable.item.definition.stopTargetVelocity) return;
   const velocity = pawn.GetAbsVelocity?.() ?? vec();
   pawn.Teleport?.({ velocity: vec(0, 0, Math.min(0, velocity.z)) });
@@ -30318,6 +33351,7 @@ function processBallisticZombieProjectile(runtime, deployable, now, humans, zomb
   if (deployable.kind === "bomb_chuck") {
     for (const pawn of humans) {
       if (!humanUsesBomb(pawn, deployable, usePressed)) continue;
+      playerNameMessage(pawn, "", " died trying to defuse a bomb");
       damagePawn(pawn, 999999, deployable.user, deployable.visual);
     }
     if (now >= deployable.detonateAt) {
@@ -30372,17 +33406,23 @@ function spawnGustEcho(runtime, deployable, startsAt) {
       + Math.random() * (definition.echoScaleMax - definition.echoScaleMin)
     ),
     color: { r: 255, g: 255, b: 255, a: 200 },
+    lifetime: Math.max(0, startsAt + definition.echoFadeTime - Instance.GetGameTime()),
   });
-  runtime.itemDeployables.add({
+  const echo = {
     id: state.nextItemEffectId++,
     kind: "gust_echo",
     item: deployable.item,
     visual,
     startsAt,
     expiresAt: startsAt + definition.echoFadeTime,
-  });
-  visual.Teleport?.({ position: deployable.position, angles, velocity: vec() });
-  scheduleDeployableKill([visual], startsAt + definition.echoFadeTime - Instance.GetGameTime());
+  };
+  runtime.itemDeployables.add(echo);
+  try {
+    visual.Teleport?.({ position: deployable.position, angles, velocity: vec() });
+  } catch (error) {
+    cleanupDeployable(runtime, echo);
+    throw error;
+  }
 }
 
 function processGustEcho(runtime, deployable, now) {
@@ -30457,7 +33497,7 @@ function processLinearZombieProjectile(runtime, deployable, now, humans) {
       damagePawn(pawn, 999999, deployable.user, deployable.visual);
       spawnPizzaImpactSounds(runtime, deployable, now);
       spawnItemParticle(runtime, deployable.item, "blood_impact_headshot", impactPosition, sourceItemImpactAngles(), 0.05);
-      spawnItemParticle(runtime, deployable.item, "weapon_taser_flash", impactPosition, sourceItemImpactAngles(), 0.05);
+      spawnItemParticle(runtime, deployable.item, "pizza_tesla", impactPosition, sourceItemImpactAngles(), 0.25);
       continue;
     }
     if ((deployable.touchCooldowns.get(pawn) ?? 0) > now) continue;
@@ -30515,6 +33555,24 @@ function processPeanutButter(runtime, deployable, now, zombies) {
   if (now >= deployable.expiresAt || !validEntity(deployable.visual)) {
     cleanupDeployable(runtime, deployable);
     return;
+  }
+  // Source used prop_physics_override. The port's effect visual needs its own
+  // gravity and swept ground collision; keep testing support as platforms move.
+  const elapsed = Math.max(0, Math.min(0.1, now - (deployable.lastAt ?? now)));
+  deployable.lastAt = now;
+  if (elapsed > 0) {
+    const velocity = deployable.fallVelocity ?? 0;
+    const destination = add(deployable.position,
+      vec(0, 0, velocity * elapsed - 0.5 * CONFIG.worldGravity * elapsed * elapsed));
+    const trace = Instance.TraceLine({
+      start: add(deployable.position, vec(0, 0, 1)),
+      end: destination,
+      ignoreEntity: deployable.visual,
+      ignorePlayers: true,
+    });
+    deployable.position = trace?.didHit ? clone(trace.end) : destination;
+    deployable.fallVelocity = trace?.didHit ? 0 : velocity - CONFIG.worldGravity * elapsed;
+    deployable.visual.Teleport?.({ position: deployable.position, velocity: vec() });
   }
   for (const pawn of zombies) {
     if (!validZombieTarget(pawn)) continue;
@@ -30601,22 +33659,20 @@ function processBillNye(runtime, deployable, now, zombies) {
     deployable.startSoundPlayed = true;
     fireTarget(deployable.visual, "Skin", "1");
     hurtFinaleBossAt(add(deployable.position, vec(0, 0, 78)), definition.bossRadius, definition.bossDamage, definition.bossStunChance, definition.bossStunTimeAdd, undefined, "billnye");
-    playSourceAudioCue(7679, add(deployable.position, vec(0, 0, 78)), {parent:deployable.visual,owner:deployable});
+    // Source soundstack = 2: the VHS track is played twice on top of itself.
+    playSourceAudioStack([7679, 7679], add(deployable.position, vec(0, 0, 78)), {parent:deployable.visual,owner:deployable});
   }
   if (now >= deployable.stopsAt) {
     if (!deployable.stopSoundPlayed) {
       deployable.stopSoundPlayed = true;
       fireTarget(deployable.visual, "Skin", "0");
+      // Source Stop() kills the stacked VHS sounds before the turn-off click.
+      clearSourceAudio(deployable);
       playSourceAudioCue(7661, add(deployable.position, vec(0, 0, 78)), {parent:deployable.visual,owner:deployable});
     }
     return;
   }
   if (now < deployable.startsAt) return;
-  if (!deployable.animationStarted) {
-    deployable.animationStarted = true;
-    fireTarget(deployable.visual, "SetAnimation", "play");
-    fireTarget(deployable.visual, "SetDefaultAnimation", "play", 0.02);
-  }
   if (now < deployable.scansAt) return;
   for (const pawn of zombies) {
     if (!validZombieTarget(pawn)) continue;
@@ -30637,6 +33693,10 @@ function processBillNye(runtime, deployable, now, zombies) {
   deployable.scansAt = now + 0.2;
 }
 
+function refillHackermanAmmo(pawn) {
+  for (const weapon of heldWeapons(pawn)) fireTarget(weapon, "SetAmmoAmount", "30");
+}
+
 function processHackerman(runtime, deployable, now) {
   if (now >= deployable.expiresAt) {
     cleanupDeployable(runtime, deployable);
@@ -30646,84 +33706,133 @@ function processHackerman(runtime, deployable, now) {
     cleanupDeployable(runtime, deployable);
     return;
   }
-  if (now >= deployable.nextTickAt) {
-    deployable.nextTickAt = now + 0.15;
-    const userPosition = deployable.user.GetAbsOrigin?.();
-    let target;
-    let targetDistance = Infinity;
-    for (const pawn of allLivingPawns()) {
-      if (!validZombieTarget(pawn)) continue;
-      const position = pawn.GetAbsOrigin?.();
-      if (!position || !userPosition) continue;
-      const distance = Math.hypot(
-        position.x - userPosition.x,
-        position.y - userPosition.y,
-        position.z - userPosition.z,
-      );
-      if (distance <= 800 && distance < targetDistance) {
-        target = pawn;
-        targetDistance = distance;
-      }
-    }
-    if (target) {
-      target.SetHealth?.(1);
-      const eye = deployable.user.GetEyePosition?.() ?? add(userPosition, vec(0, 0, 64));
-      const targetPosition = add(target.GetAbsOrigin?.(), vec(
-        Math.random() * 40 - 20,
-        Math.random() * 40 - 20,
-        Math.random() * 70 - 50,
-      ));
-      deployable.user.Teleport?.({ angles: anglesFromDirection(sub(targetPosition, eye)) });
-      for (const slot of [CSGearSlot.RIFLE, CSGearSlot.PISTOL]) {
-        const weapon = deployable.user.FindWeaponBySlot?.(slot);
-        if (!validEntity(weapon)) continue;
-        weapon.SetClipAmmo?.(30);
-        weapon.SetReserveAmmo?.(30);
-      }
-      spawnItemParticle(runtime, deployable.item, "explosion_child_distort01b",
-        add(target.GetAbsOrigin(), vec(0, 0, 30)), undefined, 0.05);
+  if (now < deployable.nextTickAt) return;
+  const definition = deployable.item.definition;
+  deployable.nextTickAt = now + definition.tickInterval;
+  const userPosition = deployable.user.GetAbsOrigin?.();
+  if (!userPosition) return;
+  let target;
+  let targetDistance = Infinity;
+  for (const pawn of allLivingPawns()) {
+    if (!validZombieTarget(pawn)) continue;
+    const position = pawn.GetAbsOrigin?.();
+    if (!position) continue;
+    const distance = Math.hypot(
+      position.x - userPosition.x,
+      position.y - userPosition.y,
+      position.z - userPosition.z,
+    );
+    if (distance <= definition.targetRange && distance < targetDistance) {
+      target = pawn;
+      targetDistance = distance;
     }
   }
-  for (const indicator of [...deployable.indicators]) {
-    if (!validEntity(indicator)) deployable.indicators.delete(indicator);
+  if (!target) return;
+  // Source applies health, aim and ammo together once per 0.15-second tick.
+  target.SetHealth?.(1);
+  const eye = deployable.user.GetEyePosition?.() ?? add(userPosition, vec(0, 0, 64));
+  const targetPosition = add(target.GetAbsOrigin(), vec(
+    Math.floor(Math.random() * (definition.aimVariance * 2 + 1)) - definition.aimVariance,
+    Math.floor(Math.random() * (definition.aimVariance * 2 + 1)) - definition.aimVariance,
+    definition.aimZMin + Math.floor(Math.random() * (definition.aimZMax - definition.aimZMin + 1)),
+  ));
+  deployable.user.Teleport?.({ angles: anglesFromDirection(sub(targetPosition, eye)) });
+  refillHackermanAmmo(deployable.user);
+  spawnItemParticle(runtime, deployable.item, "explosion_child_distort01b",
+    add(target.GetAbsOrigin(), vec(0, 0, 30)), undefined, 0.05);
+}
+
+function processHackermanIndicators(runtime, markers, now) {
+  if (now >= markers.expiresAt) {
+    cleanupDeployable(runtime, markers);
+    return;
+  }
+  for (const indicator of [...markers.indicators]) {
+    const pawn = markers.indicatorPawns.get(indicator);
+    if (!validEntity(indicator) || !validEntity(pawn)) {
+      if (validEntity(indicator)) indicator.Kill();
+      runtime.entities.delete(indicator);
+      markers.item.effects.delete(indicator);
+      markers.indicators.delete(indicator);
+      markers.indicatorPawns.delete(indicator);
+      continue;
+    }
+    const position = pawn.GetAbsOrigin?.();
+    if (position) indicator.Teleport?.({
+      position: add(position, vec(0, 0, markers.item.definition.wallhackZOffset)),
+    });
+  }
+  if (markers.indicators.size === 0) cleanupDeployable(runtime, markers);
+}
+
+function retireItemRift(runtime, pair) {
+  const item = pair.item;
+  const pending = item?.data?.riftPair === pair;
+  if (pending) item.data.riftPair = undefined;
+  cleanupDeployable(runtime, pair);
+  pair.lastPositions?.clear();
+  pair.touchCooldowns?.clear();
+  pair.mustExitBeforeTouch?.clear();
+  if (item && (pending || item.usesRemaining <= 0) && item.state !== "consumed" && item.state !== "cleaned") {
+    consumeItem(runtime, item);
   }
 }
 
 function processRift(runtime, pair, now, pawns) {
-  if (now >= pair.removeAt || !validEntity(pair.entryVisual) || (pair.complete && !validEntity(pair.exitVisual))) {
-    cleanupDeployable(runtime, pair);
-    if (pair.item?.usesRemaining <= 0 && pair.item.state !== "consumed" && pair.item.state !== "cleaned") {
-      consumeItem(runtime, pair.item);
-    }
+  if (now >= pair.expiresAt || now >= pair.removeAt || !validEntity(pair.entryVisual)
+    || (pair.complete && !validEntity(pair.exitVisual))) {
+    retireItemRift(runtime, pair);
     return;
   }
-  if (!pair.complete || now >= pair.expiresAt) return;
-  const touchesPortal = (pawn, portalBase) => {
+  if (!pair.complete) return;
+  const lastPositions = pair.lastPositions ??= new Map();
+  const livePawns = new Set(pawns);
+  for (const pawn of lastPositions.keys()) {
+    if (!livePawns.has(pawn) || !validEntity(pawn) || !pawn.IsAlive?.()
+      || (pair.item?.definition?.team === 3 && pawn.GetTeamNumber?.() !== 3)) {
+      lastPositions.delete(pawn);
+      pair.touchCooldowns.delete(pawn);
+    }
+  }
+  const touchesPortal = (pawn, portalBase, previous, position) => {
     if (!portalBase) return false;
-                                                                       
-                                                                          
-                                                                          
-                                                                          
-    const center = add(portalBase, vec(0, 0, 61));
-    return projectileTouchesPlayerHull(pawn, center, center, 1);
+    // Source's trigger is +/-1 in XY and spans base+31..91 in Z.
+    // Expand by the player hull and sweep feet between item ticks, rather
+    // than testing only the model centre (which crouched players miss).
+    const hull = playerCollisionHull(pawn);
+    if (!hull) return false;
+    const center = add(portalBase, vec(0, 0, 61 - hull.halfHeight));
+    return segmentIntersectsBox(sub(previous, center), sub(position, center),
+      vec(hull.halfWidth + 1, hull.halfWidth + 1, hull.halfHeight + 30));
   };
   for (const pawn of pawns) {
                                                                           
                                                                
     if (pair.item?.definition?.team === 3 && pawn.GetTeamNumber?.() !== 3) continue;
+    if (!validEntity(pawn) || !pawn.IsAlive?.()) continue;
     const position = pawn.GetAbsOrigin?.();
-    if (!position || (pair.touchCooldowns.get(pawn) ?? 0) > now) continue;
-    const atEntry = touchesPortal(pawn, pair.entry);
-    const atExit = touchesPortal(pawn, pair.exit);
+    if (!position) continue;
+    const sample = lastPositions.get(pawn);
+    const velocity = pawn.GetAbsVelocity?.() ?? vec();
+    const elapsed = sample ? now - sample.at : 0;
+    const travel = sample ? Math.hypot(position.x - sample.position.x,
+      position.y - sample.position.y, position.z - sample.position.z) : 0;
+    const maxTravel = Math.max(128, Math.hypot(velocity.x, velocity.y, velocity.z) * elapsed * 2 + 64);
+    // Do not treat teleports, long pauses or stale samples as a walked path.
+    const previous = sample && elapsed > 0 && elapsed <= 0.1 && travel <= maxTravel ? sample.position : position;
+    lastPositions.set(pawn, { position: clone(position), at: now });
+    if ((pair.touchCooldowns.get(pawn) ?? 0) > now) continue;
+    const atEntry = touchesPortal(pawn, pair.entry, previous, position);
+    const atExit = touchesPortal(pawn, pair.exit, previous, position);
     if (!atEntry && !atExit) continue;
     const destination = atEntry ? pair.exit : pair.entry;
-    const velocity = pawn.GetAbsVelocity?.() ?? vec();
     pair.touchCooldowns.set(pawn, now + 1);
     const safePosition = clone(destination);
     pawn.Teleport({
       position: add(destination, vec(0, 0, 12)),
       velocity: vec(velocity.x, velocity.y, velocity.z < -300 ? 0 : velocity.z),
     });
+    lastPositions.set(pawn, { position: clone(pawn.GetAbsOrigin?.() ?? destination), at: now });
     playRiftTeleportAudio(pawn, atEntry ? pair.entry : pair.exit, destination);
     spawnRiftTeleportParticles(runtime, pair, pawn, atEntry ? pair.entry : pair.exit,
       add(atEntry ? pair.entry : pair.exit, vec(0, 0, 61)));
@@ -30749,7 +33858,7 @@ function processZombieRift(runtime, pair, now, zombies) {
     || !validEntity(pair.exitVisual)
     || (pair.complete && !validEntity(pair.entryVisual))
   ) {
-    cleanupDeployable(runtime, pair);
+    retireItemRift(runtime, pair);
     return;
   }
   if (!pair.complete) return;
@@ -30834,6 +33943,15 @@ function processZombieRift(runtime, pair, now, zombies) {
   }
 }
 
+function otherActiveImpostorExists(excluded) {
+  for (const runtime of activeRuntimes()) {
+    for (const deployable of runtime.itemDeployables ?? []) {
+      if (deployable !== excluded && deployable.kind === "impostor") return true;
+    }
+  }
+  return false;
+}
+
 function otherHiddenImpostorExists(excluded) {
   for (const runtime of activeRuntimes()) {
     for (const deployable of runtime.itemDeployables ?? []) {
@@ -30863,6 +33981,10 @@ function cleanupImpostor(runtime, deployable) {
 function processImpostor(runtime, deployable, now) {
   const user = deployable.user;
   if (!validEntity(user) || !user.IsAlive?.() || user.GetTeamNumber?.() !== 2) {
+    const article = otherActiveImpostorExists(deployable) ? "an" : "the";
+    playerNameMessage(user, "", deployable.hidden
+      ? ` was ${article} impostor - good job finding and killing him before he managed to act!`
+      : ` (${article} impostor) is now dead - good job!`);
     cleanupImpostor(runtime, deployable);
     return;
   }
@@ -30877,8 +33999,9 @@ function processImpostor(runtime, deployable, now) {
   }
   if (!deployable.hidden || now < deployable.revealAt) return;
   deployable.hidden = false;
+  playerNameMessage(user, "", " revealed himself as an impostor, kill him before he kills you!");
   if (deployable.originalModel) user.SetModel?.(deployable.originalModel);
-  playSourceAudioCue(9865, add(user.GetAbsOrigin?.() ?? vec(), vec(0, 0, 48)));
+  playSourceAudioCue(9865, add(user.GetAbsOrigin?.() ?? vec(), vec(0, 0, 48)), {parent:user});
   if (!otherHiddenImpostorExists(deployable)) Instance.ServerCommand("sv_disable_radar 0");
 }
 
@@ -30915,7 +34038,6 @@ function stopStormBladeSounds(runtime, deployable) {
                                                                              
                                                                              
                                                                        
-    fireTarget(sound, "Volume", "0");
     if (deployable.borrowedSounds?.has(sound)) continue;
     sound.Kill?.();
     runtime.entities?.delete(sound);
@@ -30923,15 +34045,16 @@ function stopStormBladeSounds(runtime, deployable) {
   }
 }
 
-function spawnStormBladeEndParticles(runtime, item, position) {
+function spawnStormBladeEndParticles(runtime, item, position, deployable) {
   if (Math.floor(Math.random() * 8) !== 0) return;
-  spawnItemParticle(runtime, item, "explosion_coop_mission_shrapnel02e_1k",
-    add(position, vec(0, 0, -Math.floor(Math.random() * 201))), undefined, 0.05);
+  // Keep Source's burst probability; creation uses the shared visual queue.
+  queueStormBladeParticle(runtime, deployable, "explosion_coop_mission_shrapnel02e_1k",
+    add(position, vec(0, 0, -Math.floor(Math.random() * 201))), 0.05);
   if (Math.random() >= 0.5) return;
-  spawnItemParticle(runtime, item, "explosion_child_core04c_1k", position, undefined, 0.05);
+  queueStormBladeParticle(runtime, deployable, "storm_end_core", position, 0.05);
   if (Math.random() >= 0.5) return;
-  spawnItemParticle(runtime, item, "explosion_child_distort01d_1k", position, undefined, 0.05);
-  spawnItemParticle(runtime, item, "storm_lightning_01", position, undefined, 0.05);
+  queueStormBladeParticle(runtime, deployable, "explosion_child_distort01d_1k", position, 0.05);
+  queueStormBladeParticle(runtime, deployable, "storm_lightning_01", position, 0.05);
 }
 
 function processStormBlade(runtime, deployable, now) {
@@ -30940,111 +34063,110 @@ function processStormBlade(runtime, deployable, now) {
     return;
   }
   if (!deployable.soundsStopped && now >= (deployable.soundStopAt ?? deployable.removeAt)) {
-    stopStormBladeSounds(runtime, deployable);
+    stormBladeStep("stop audio", () => stopStormBladeSounds(runtime, deployable));
   }
   for (const [piece, pieceState] of deployable.pieceStates ?? []) {
     if (!validEntity(piece)) {
-      deployable.pieces?.delete(piece);
-      deployable.pieceStates?.delete(piece);
+      retireStormBladePiece(runtime, deployable, piece);
       continue;
-    }
-    if (!pieceState.glowDisabled && now >= pieceState.glowOffAt) {
-      pieceState.glowDisabled = true;
-      piece.Unglow?.();
     }
     if (now >= pieceState.killAt) {
-      piece.Kill?.();
-      runtime.entities?.delete(piece);
-      deployable.item?.effects?.delete(piece);
-      deployable.pieces?.delete(piece);
-      deployable.pieceStates?.delete(piece);
+      retireStormBladePiece(runtime, deployable, piece);
       continue;
     }
-    const burstProgress = Math.max(
-      0,
-      Math.min(1, (now - pieceState.burstStartAt) / (pieceState.burstEndAt - pieceState.burstStartAt)),
-    );
-    const easedProgress = 1 - ((1 - burstProgress) ** 3);
-    pieceState.position = add(
-      pieceState.burstStart,
-      mul(sub(pieceState.burstTarget, pieceState.burstStart), easedProgress),
-    );
-    pieceState.angles = {
-      pitch: pieceState.burstStartAngles.pitch
-        + (pieceState.burstTargetAngles.pitch - pieceState.burstStartAngles.pitch) * easedProgress,
-      yaw: pieceState.burstStartAngles.yaw
-        + (pieceState.burstTargetAngles.yaw - pieceState.burstStartAngles.yaw) * easedProgress,
-      roll: pieceState.burstStartAngles.roll
-        + (pieceState.burstTargetAngles.roll - pieceState.burstStartAngles.roll) * easedProgress,
-    };
-    const alpha = pieceState.ending
-      ? Math.round(255 * Math.max(0, Math.min(1, (pieceState.killAt - now) / 0.75)))
-      : 255;
-    piece.SetColor?.({ r: 255, g: 255, b: 255, a: alpha });
-    piece.Teleport?.({
-      position: pieceState.position,
-      angles: pieceState.angles,
-      velocity: vec(),
+    const updated = stormBladeStep("update piece", () => {
+      if (!pieceState.glowDisabled && now >= pieceState.glowOffAt) {
+        pieceState.glowDisabled = true;
+        piece.Unglow?.();
+      }
+      updateStormBladeShardTransform(pieceState, now);
+      const alpha = pieceState.ending
+        ? Math.round(255 * Math.max(0, Math.min(1, (pieceState.killAt - now) / 0.75)))
+        : 255;
+      const shade = pieceState.ending ? 0 : 255;
+      piece.SetColor?.({ r: shade, g: shade, b: shade, a: alpha });
+      piece.Teleport?.({
+        position: pieceState.position,
+        angles: pieceState.angles,
+        velocity: vec(),
+      });
+      return true;
     });
+    if (!updated) retireStormBladePiece(runtime, deployable, piece);
   }
   if (!deployable.started && now >= deployable.activeAt) {
     deployable.started = true;
     for (const pawn of allLivingPawns()) {
-      if (!validZombieTarget(pawn)) continue;
-      const targetPosition = pawn.GetAbsOrigin?.();
-      if (!targetPosition || Math.hypot(
-        targetPosition.x - deployable.position.x,
-        targetPosition.y - deployable.position.y,
-        targetPosition.z - deployable.position.z,
-      ) > 800) continue;
-      deployable.frozen.add(pawn);
-      pawn.Teleport({ velocity: vec(0, 0, 550) });
+      stormBladeStep("target", () => {
+        if (!validZombieTarget(pawn)) return;
+        const targetPosition = pawn.GetAbsOrigin?.();
+        if (!targetPosition || Math.hypot(
+          targetPosition.x - deployable.position.x,
+          targetPosition.y - deployable.position.y,
+          targetPosition.z - deployable.position.z,
+        ) > 800) return;
+        deployable.frozen.add(pawn);
+        pawn.Teleport({ velocity: vec(0, 0, 550) });
+      });
     }
   }
   if (now >= deployable.endsAt && !deployable.released) {
     deployable.released = true;
-                                                                           
-                                                                       
-                                                                             
     const heldVisual = deployable.item?.visual;
-    if (validEntity(heldVisual)) {
-      fireTarget(heldVisual, "SetAnimation", "idle");
-      fireTarget(heldVisual, "SetPlaybackRate", "1.0");
-      heldVisual.SetColor?.({ r: 150, g: 220, b: 255, a: 255 });
-    }
-    for (const [piece, pieceState] of deployable.pieceStates ?? []) {
-      spawnStormBladeEndParticles(runtime, deployable.item, pieceState.position);
-      pieceState.ending = true;
-      piece.Unglow?.();
-      piece.SetModelScale?.(4 + Math.random() * 4);
-    }
-    scheduleItemTask(runtime, deployable.item, 0.18, () => {
-      if (deployable.item?.state === "cleaned" || !validEntity(deployable.item?.visual)) return;
-      deployable.item.visual.SetColor?.({ r: 50, g: 50, b: 50, a: 255 });
+    stormBladeStep("release visual", () => {
+      if (validEntity(heldVisual)) {
+        fireTarget(heldVisual, "SetAnimation", "idle");
+        fireTarget(heldVisual, "SetPlaybackRate", "1.0");
+        heldVisual.SetColor?.({ r: 150, g: 220, b: 255, a: 255 });
+      }
     });
-    for (const pawn of deployable.frozen) {
-      if (!validZombieTarget(pawn)) continue;
-      const health = pawn.GetHealth?.() ?? 0;
-      pawn.SetHealth?.(Math.max(1, Math.floor(health * 0.02)));
-      const velocity = pawn.GetAbsVelocity?.() ?? vec();
-      pawn.Teleport({ velocity: vec(velocity.x, velocity.y, Math.max(300, velocity.z)) });
+    let spawnEndParticles = true;
+    for (const [piece, pieceState] of deployable.pieceStates ?? []) {
+      if (!validEntity(piece)) continue;
+      pieceState.ending = true;
+      if (spawnEndParticles) {
+        spawnEndParticles = stormBladeStep("release particles", () => {
+          spawnStormBladeEndParticles(runtime, deployable.item, pieceState.position, deployable);
+          return true;
+        }) === true;
+      }
+      stormBladeStep("release piece", () => {
+        piece.Unglow?.();
+        piece.SetColor?.({ r: 0, g: 0, b: 0, a: 255 });
+        piece.SetModelScale?.(4 + Math.random() * 4);
+      });
     }
-                                                                           
-                                                                         
+    stormBladeStep("release task", () => scheduleItemTask(runtime, deployable.item, 0.18, () => {
+      if (deployable.item?.state === "cleaned" || !validEntity(deployable.item?.visual)) return;
+      stormBladeStep("release color", () => deployable.item.visual.SetColor?.({ r: 50, g: 50, b: 50, a: 255 }));
+    }));
+    for (const pawn of deployable.frozen) {
+      stormBladeStep("target", () => {
+        if (!validZombieTarget(pawn)) return;
+        const health = pawn.GetHealth?.() ?? 0;
+        pawn.SetHealth?.(Math.max(1, Math.floor(health * 0.02)));
+        const velocity = pawn.GetAbsVelocity?.() ?? vec();
+        pawn.Teleport({ velocity: vec(velocity.x, velocity.y, Math.max(300, velocity.z)) });
+      });
+    }
     const center = deployable.position;
     const source = itemEffectSource(runtime, deployable.item, "storm");
     for (const pawn of allLivingPawns()) {
-      if (!validZombieTarget(pawn)) continue;
-      const position = pawn.GetAbsOrigin?.();
-      if (!position || Math.hypot(
-        position.x - center.x,
-        position.y - center.y,
-        position.z - center.z,
-      ) > 800) continue;
-      addPlayerStatus(runtime, pawn, source, 15, { speedMultiplier: -0.45 });
+      stormBladeStep("target", () => {
+        if (!validZombieTarget(pawn)) return;
+        const position = pawn.GetAbsOrigin?.();
+        if (!position || Math.hypot(
+          position.x - center.x,
+          position.y - center.y,
+          position.z - center.z,
+        ) > 800) return;
+        addPlayerStatus(runtime, pawn, source, 15, { speedMultiplier: -0.45 });
+      });
     }
   } else if (!deployable.released && deployable.started && now >= deployable.freezeAt) {
-    for (const pawn of deployable.frozen) if (validZombieTarget(pawn)) pawn.Teleport({ velocity: vec() });
+    for (const pawn of deployable.frozen) stormBladeStep("freeze target", () => {
+      if (validZombieTarget(pawn)) pawn.Teleport({ velocity: vec() });
+    });
   }
 }
 
@@ -31072,23 +34194,76 @@ function processPlanet(runtime, deployable, now, zombies, humans = []) {
 
 // Source 10535-10545/10568-10578: three delayed flashes on the victim, then distort and blood
 // offset back along the captain's attack direction.
-function spawnCaptainPlanetHitParticles(runtime, deployable, victimPosition, attackDirection) {
+// Boss punches repeat every 0.3 s. Keep a bounded pool of emitters instead of
+// ForceSpawn/Kill per punch. A lease is Stopped at its source lifetime and only
+// reused once its particles have lived out, so the pool grows to cover the tail.
+const CAPTAIN_BOSS_PUNCH_INTERVAL = 0.3;
+
+function captainBossParticlePoolSize(effect, lifetime) {
+  const busy = lifetime + itemParticleTail(effect);
+  // Flashes fire three times per punch (0, 0.12, 0.24 s); impacts once.
+  const perPunch = effect === "weapon_taser_flash" ? 3 : 1;
+  return perPunch * Math.max(1, Math.ceil(busy / CAPTAIN_BOSS_PUNCH_INTERVAL));
+}
+
+function spawnCaptainPlanetBossParticle(runtime, deployable, effect, position,
+  angles = { pitch: 0, yaw: 0, roll: 0 }, lifetime = 0.1) {
+  if (!runtime.itemDeployables.has(deployable)
+    || ["outcome_pending", "resolved", "destroyed"].includes(runtime.lifecycle)) return;
+  const now = Instance.GetGameTime();
+  if (now >= deployable.removeAt) return;
+  const pool = deployable.hitParticlePool ??= new Map();
+  const leases = pool.get(effect) ?? [];
+  for (let index = leases.length - 1; index >= 0; index--) {
+    if (validEntity(leases[index].visual)) continue;
+    runtime.entities.delete(leases[index].visual);
+    deployable.pieces?.delete(leases[index].visual);
+    leases.splice(index, 1);
+  }
+  let lease = leases.find(candidate => !candidate.playing && candidate.freeAt <= now);
+  if (!lease) {
+    if (leases.length >= captainBossParticlePoolSize(effect, lifetime)) return;
+    const visual = createItemParticle(runtime, effect, position, angles);
+    if (!visual) return;
+    lease = { visual, expiresAt: 0, freeAt: 0, playing: false };
+    leases.push(lease);
+    pool.set(effect, leases);
+    (deployable.pieces ??= new Set()).add(visual);
+    // One terminal expiry survives a stopped Think; every lease ends before it.
+    scheduleDeployableKill([visual], deployable.removeAt - now);
+  }
+  // Lease expiry is handled in Think, so no old delayed Stop can hit a new lease.
+  // A free lease's particles are already gone; this only resets the system.
+  fireTarget(lease.visual, "DestroyImmediately");
+  lease.visual.Teleport({ position: clone(position), angles, velocity: vec() });
+  lease.expiresAt = now + lifetime;
+  lease.freeAt = lease.expiresAt + itemParticleTail(effect);
+  lease.playing = true;
+  fireTarget(lease.visual, "Start");
+}
+
+function spawnCaptainPlanetHitParticles(runtime, deployable, victimPosition, attackDirection, pooled = false) {
   const item = deployable.item;
   const position = victimPosition();
   if (!position) return;
+  const spawn = pooled
+    ? (activeRuntime, effect, origin, angles, lifetime) =>
+      spawnCaptainPlanetBossParticle(activeRuntime, deployable, effect, origin, angles, lifetime)
+    : (activeRuntime, effect, origin, angles, lifetime) =>
+      spawnItemParticle(activeRuntime, item, effect, origin, angles, lifetime);
   const randomInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
   for (let delay = 0; delay < 0.25; delay += 0.12) {
     scheduleItemParticle(runtime, item, delay, (activeRuntime) => {
       const current = victimPosition();
       if (!current) return;
-      spawnItemParticle(activeRuntime, item, "weapon_taser_flash",
+      spawn(activeRuntime, "weapon_taser_flash",
         add(current, vec(randomInt(-30, 30), randomInt(-30, 30), randomInt(30, 50))), undefined, 0.10);
     });
   }
   const captainAngles = anglesFromDirection(attackDirection);
-  spawnItemParticle(runtime, item, "explosion_child_distort01b",
+  spawn(runtime, "explosion_child_distort01b",
     add(sub(position, mul(attackDirection, 10 + Math.random() * 40)), vec(0, 0, 40)), captainAngles, 0.10);
-  spawnItemParticle(runtime, item, "blood_impact_headshot",
+  spawn(runtime, "blood_impact_headshot",
     add(position, vec(randomInt(-10, 10), randomInt(-10, 10), randomInt(30, 50))),
     { pitch: captainAngles.pitch + 45, yaw: captainAngles.yaw + 180, roll: captainAngles.roll }, 0.10);
 }
@@ -31097,6 +34272,13 @@ function processCaptainPlanet(runtime, deployable, now, pawns) {
   if (now >= deployable.removeAt) {
     cleanupDeployable(runtime, deployable);
     return;
+  }
+  for (const leases of deployable.hitParticlePool?.values() ?? []) {
+    for (const lease of leases) {
+      if (!lease.playing || now < lease.expiresAt) continue;
+      lease.playing = false;
+      if (validEntity(lease.visual)) fireTarget(lease.visual, "Stop");
+    }
   }
   if (!deployable.buffed && now >= deployable.buffAt) {
     deployable.buffed = true;
@@ -31129,10 +34311,11 @@ function processCaptainPlanet(runtime, deployable, now, pawns) {
     deployable.visual?.Teleport?.({ position: captainPosition, angles: anglesFromDirection(attackDirection), velocity: vec() });
     damageFinaleBoss(selected.runtime, boss, deployable.item.definition.captainBossDamage, undefined, { source: "captain_planet" });
     playSourceAudioCue(10539, boss.position);
-    spawnCaptainPlanetHitParticles(runtime, deployable, () => boss.position, attackDirection);
+    spawnCaptainPlanetHitParticles(runtime, deployable, () => boss.position, attackDirection, true);
     return;
   }
-  const zombies = pawns.filter(validZombieTarget);
+  // The punch has no human attacker, so modifyPlayerDamage cannot apply spawn invincibility.
+  const zombies = pawns.filter(pawn => validZombieTarget(pawn) && !zombieStartAreaProtected(pawn));
   if (zombies.length === 0) return;
   const pawn = zombies[Math.floor(Math.random() * zombies.length)];
   const position = pawn.GetAbsOrigin?.() ?? deployable.position;
@@ -31147,7 +34330,7 @@ function processCaptainPlanet(runtime, deployable, now, pawns) {
     () => (validEntity(pawn) ? pawn.GetAbsOrigin?.() : undefined), mul(approach, -1));
   pawn.Teleport({ velocity: vec(0, 0, 500) });
   schedule(0.5, () => {
-    if (validZombieTarget(pawn)) pawn.Teleport({ velocity: vec(0, 0, -700) });
+    if (validZombieTarget(pawn) && !zombieStartAreaProtected(pawn)) pawn.Teleport({ velocity: vec(0, 0, -700) });
   }, runtime.index);
 }
 
@@ -31183,6 +34366,7 @@ function processItemDeployables(runtime, now, targetsByTeam, usePressed = new Se
     else if (deployable.kind === "claymore") processClaymore(runtime, deployable, now, zombies);
     else if (deployable.kind === "billnye") processBillNye(runtime, deployable, now, zombies);
     else if (deployable.kind === "hackerman") processHackerman(runtime, deployable, now);
+    else if (deployable.kind === "hackerman_indicators") processHackermanIndicators(runtime, deployable, now);
     else if (deployable.kind === "rift_z") processZombieRift(runtime, deployable, now, zombies);
     else if (deployable.kind === "rift") processRift(runtime, deployable, now, pawns);
     else if (deployable.kind === "impostor") processImpostor(runtime, deployable, now);
@@ -31307,6 +34491,7 @@ function spawnFeature(request) {
   const themeShape = request.themeShape ?? featureThemeShape(request.feature, request);
   request = {
     ...request,
+    phasingTerrain: !["item", "trap"].includes(request.feature),
     themeName: profile.name,
     themeShape,
     themeModel: request.themeModel ?? (themeShape ? chooseTerrainModel(profile.name, themeShape) : undefined),
@@ -31360,7 +34545,8 @@ function spawnFeature(request) {
       runtime.holds.get(request.group).push(hold);
       if (runtime.interactionsRetired) openHoldEntity(hold, true);
     } else if (request.feature === "teleportDestination") {
-      spawnVisual(runtime, { ...request, feature: "teleportDestinationVisual" }, request.themeModel ?? TELEPORT_MODEL);
+      // Source sets body 1 (Mesh_teleportdest) on TELEPORTDEST tiles.
+      spawnVisual(runtime, { ...request, feature: "teleportDestinationVisual", bodyGroup: 1 }, request.themeModel ?? TELEPORT_MODEL);
     } else if (request.feature === "liquid") {
       if (!spawnLiquidFeature(runtime, request)) return;
     } else if (request.feature === "elevator") {
@@ -31391,7 +34577,7 @@ function spawnFeature(request) {
           + `tile=${request.raceCell?.tile ?? request.tile ?? "?"} feature=${request.feature} error=${String(error)}`,
       );
     }
-    failRuntime(`feature spawn failed for level ${runtime.index}/${request.feature}: ${error}`);
+    skipFailedSpawn(runtime, `feature ${request.feature}`, error);
   }
 }
 
@@ -31420,12 +34606,38 @@ function registerTerrainEntity(runtime, entity, safe = false) {
   ) return false;
   runtime.terrainEntities ??= new Set();
   runtime.terrainEntities.add(entity);
+  registerPhasingTerrain(runtime, entity);
   attachMovementVolumeTerrain(runtime, entity);
   if (safe) {
     runtime.safeTerrainEntities ??= new Set();
     runtime.safeTerrainEntities.add(entity);
   }
   return true;
+}
+
+// Special block visuals also phase, but do not become COLLAPSE/WALLBREAK candidates.
+function registerPhasingTerrain(runtime, entity) {
+  if (!runtime || !validEntity(entity) || typeof entity.SetColor !== "function"
+    || !fadeRenderable(entity)) return;
+  entity.collectivePhasingTerrain = true;
+  entity.collectiveBaseColor ??= { ...(entity.GetColor?.()
+    ?? state.silentHillWorld.visuals.get(entity)?.color ?? { r: 255, g: 255, b: 255, a: 255 }) };
+  if (!runtime.terrainEntities?.has(entity)) {
+    runtime.phasingTerrainEntities ??= new Set();
+    runtime.phasingTerrainEntities.add(entity);
+  }
+  for (const event of state.genericEvents.active.values()) {
+    if (event.name !== "PHASING" || event.ended) continue;
+    if (!(event.targets instanceof Set)) event.targets = new Set(event.targets ?? []);
+    if (event.targets.has(entity)) continue;
+    event.targets.add(entity);
+    const apply = () => {
+      if (validEntity(entity) && !event.ended)
+        genericTerrainAlpha(entity, genericEventVisibleAlpha(entity));
+    };
+    apply();
+    afterThink(apply);
+  }
 }
 
 function spawnOne(request) {
@@ -31446,6 +34658,12 @@ function spawnOne(request) {
       failRuntime(`debug model ${request.themeName}/${request.themeShape} failed: ${error}`);
       return;
     }
+    finishRuntimeSpawn(runtime);
+    return;
+  }
+  // Its prop was built and placed with the pair's first request; only the
+  // per-request accounting is left.
+  if (request.terrainPairDone) {
     finishRuntimeSpawn(runtime);
     return;
   }
@@ -31486,26 +34704,48 @@ function spawnOne(request) {
     runtime.terrainPreloadedEntities?.delete(prepared.entity);
     request.preloadedTerrain = undefined;
   }
+  const pair = reuse || bakedSlope || request.race ? undefined : spawnTerrainPair(runtime, request);
   const spawned = reuse ? [prepared.entity]
+    : pair ? [pair.own]
     : bakedSlope || (request.race && templateKey === "race_surface_flat")
       ? spawnRoundEntities(template, request.position)
       : spawnRoundEntities(template, request.position, request.angles);
   if (!spawned || spawned.length === 0) {
     if (request.race) raceLog(runtime, `SPAWN_FAIL slot=${request.raceRecord?.raceSlot ?? "?"} map=${request.raceRecord?.id ?? "?"} name="${request.raceRecord?.name ?? "?"}" cell=${request.raceCell ? `${request.raceCell.x},${request.raceCell.y}` : "bridge"} tile=${request.raceCell?.tile ?? request.tile ?? "?"} shape=${request.shape} template=${templateKey} reason=ForceSpawn-empty`);
-    failRuntime(`ForceSpawn failed for level ${runtime.index}/${request.shape}`);
+    skipFailedSpawn(runtime, `terrain ${request.shape}`, "ForceSpawn returned no entities");
     return;
   }
   for (const entity of spawned) if (entity) runtime.entities.add(entity);
+  if (!placeTerrainEntities(runtime, request, spawned, reuse, prepared, bakedSlope)) return;
+  if (pair) {
+    // The partner prop takes its own transform, model, colour and safety zone.
+    if (!placeTerrainEntities(runtime, pair.partner, [pair.partnerEntity], false, undefined, false)) return;
+    try { spawnBlockSafetyTrigger(runtime, pair.partner); }
+    catch (error) { reportGuardedError(`spawn safety pair ${pair.partner.shape}`, error); }
+    pair.partner.terrainPairDone = true;
+  }
+  try {
+    spawnBlockSafetyTrigger(runtime, request);
+  } catch (error) {
+    skipFailedSpawn(runtime, `spawn safety ${request.shape}`, error);
+    return;
+  }
+  finishRuntimeSpawn(runtime);
+}
+
+// Per-entity terrain setup shared by single, preloaded and paired spawns.
+// Returns false after failRuntime.
+function placeTerrainEntities(runtime, request, spawned, reuse, prepared, bakedSlope) {
   for (const entity of spawned) {
     if (!entity || !entity.IsValid()) continue;
     if (request.terrainModel) {
       if (typeof entity.SetModel !== "function") {
         failRuntime(`terrain model replacement is unavailable for ${request.themeName}/${request.shape}`);
-        return;
+        return false;
       }
       const model = rememberSilentHillVisual(runtime, entity, request.terrainModel, request);
       if (!reuse || prepared.model !== model) entity.SetModel(model);
-      applyTerrainAppearance(entity, 0, request.renderColor);
+      applyTerrainAppearance(entity, 0, request.renderColor, reuse && prepared.model === model);
       const silentHillRecord = state.silentHillWorld.visuals.get(entity);
       if (silentHillRecord) silentHillRecord.restore = () => applyTerrainAppearance(entity, 0, request.renderColor);
     }
@@ -31536,22 +34776,21 @@ function spawnOne(request) {
       // settled long ago and nothing else moves it, so one origin input suffices.
       if (!reuse) afterThink(applyFinalTransform);
     }
-    entity.SetEntityName(`block_${runtime.index}_${request.shape}`);
+    // Road templates already have RACE dimensions; other terrain keeps its model.
+    if (request.race && !request.raceSurfaceKey) entity.SetModelScale?.(RACE_CONFIG.gridSize / CONFIG.gridSize);
+    entity.SetEntityName(`block_${request.shape}`);
+    // Only plain level terrain may return to the pool when its level retires.
+    entity.collectivePoolKey = !request.race && !bakedSlope && !runtime.kind && !runtime.raceLevel
+      && TERRAIN_POOL_KEYS.has(request.shape) ? request.shape : undefined;
     runtime.entities.add(entity);
     registerTerrainEntity(runtime, entity, request.safe === true);
     beginTerrainSpawnFade(entity, runtime);
   }
-  try {
-    spawnBlockSafetyTrigger(runtime, request);
-  } catch (error) {
-    failRuntime(`spawn safety failed for level ${runtime.index}/${request.shape}: ${error}`);
-    return;
-  }
-  finishRuntimeSpawn(runtime);
+  return true;
 }
 
 function genericEventBudgetAllows(cost) {
-  let live = cost + terrainPreloadEntityCount();
+  let live = cost + terrainPreloadEntityCount() + terrainPoolSize();
   for (const runtime of activeRuntimes()) live += runtime.entities?.size ?? 0;
   for (const event of state.genericEvents.active.values()) live += event.entityRuntime.entities.size + event.cost;
   return live < 12000;
@@ -31576,10 +34815,17 @@ const GENERIC_EVENT_WEAPON_CLASSES = Object.freeze([
   "weapon_revolver", "weapon_sawedoff", "weapon_scar20", "weapon_sg556", "weapon_ssg08",
   "weapon_tec9", "weapon_ump45", "weapon_usp_silencer", "weapon_xm1014",
 ]);
+const ITEM_WEAPON_CLASSES = Object.freeze([
+  ...GENERIC_EVENT_WEAPON_CLASSES,
+  "weapon_knife", "weapon_knife_t", "weapon_taser", "weapon_c4", "weapon_healthshot",
+  "weapon_flashbang", "weapon_decoy", "weapon_hegrenade", "weapon_molotov",
+  "weapon_incgrenade", "weapon_tagrenade", "weapon_smokegrenade",
+]);
 function genericTerrainAlpha(entity, alpha) {
-  const color = entity.collectiveBaseColor ?? state.silentHillWorld.visuals.get(entity)?.color
+  const color = entity.GetColor?.() ?? entity.collectiveBaseColor ?? state.silentHillWorld.visuals.get(entity)?.color
     ?? { r: 255, g: 255, b: 255, a: 255 };
-  entity.SetColor?.({ ...color, a: alpha });
+  const baseAlpha = entity.collectiveBaseColor?.a ?? 255;
+  entity.SetColor?.({ ...color, a: terrainRenderAlpha(entity, Math.min(alpha, baseAlpha)) });
 }
 function tryStartGenericEvent(name, runtime, options) {
   try { return startGenericEvent(name, runtime, options); }
@@ -31591,13 +34837,14 @@ function tryStartGenericEvent(name, runtime, options) {
 
 function genericEventResourceIssue(name) {
   if (name === "DEBRIS") {
-    for (const tile of RACE_CONFIG.rubbleTypes) {
-      const templateName = FEATURE_TEMPLATE_NAMES[`race_rubble_touch_${tile}`];
-      const template = state.featureTemplates.get(`race_rubble_touch_${tile}`);
+    for (const tile of GENERIC_DEBRIS_CONFIG.rubbleTypes) {
+      const key = `race_rubble_touch_${tile}`;
+      const template = state.featureTemplates.get(key);
       if (!validEntity(template) || typeof template.ForceSpawn !== "function")
-        return `missing native rubble contact template '${templateName}'; compile the updated VMAP`;
+        return `missing native rubble contact template '${FEATURE_TEMPLATE_NAMES[key]}'; compile the updated VMAP`;
     }
   }
+
   const config = name === "PIZZADOOM" ? GENERIC_PIZZADOOM_CONFIG
     : name === "WORLD_EATER" ? GENERIC_WORLD_EATER_CONFIG : undefined;
   if (config) {
@@ -31631,11 +34878,13 @@ function genericEventResourceIssue(name) {
 }
 function setThemeFog(runtime) {
   if ([...state.genericEvents.active.values()].some(e => e.name === "THICK_FOG" && !e.ended)) return;
-  if (state.endingRuntime?.kind === "FINALE"
+  if (finaleUsesFinaleSky(state.endingRuntime)
       && ["spawning", "active"].includes(state.endingRuntime.lifecycle)) {
     setFinaleSkyFog(); return;
   }
-  const stage = campaignStageSnapshot().infiniteMode && !state.endingRuntime
+  // The infinite checkout Finale keeps the running infinite theme's fog, like Source.
+  const stage = campaignStageSnapshot().infiniteMode
+      && (!state.endingRuntime || (state.endingRuntime.kind === "FINALE" && state.endingRuntime.infinite))
     ? campaignStageSnapshot() : stageSnapshotForRuntime(runtime);
   if (themeProfile(stage.theme).name === "silenthill") {
     setSilentHillFog(state.silentHillWorld.visualDark); return;
@@ -31645,8 +34894,48 @@ function setThemeFog(runtime) {
   if (!validEntity(fog) || !profile) return;
   fireTarget(fog, "SetFogStartDistance", String(profile.start));
   fireTarget(fog, "SetFogEndDistance", String(profile.end));
-  fireTarget(fog, "SetFogMaxOpacity", String(profile.density));
+  // CS2 blends fog in linear space, so CS:GO opacities read much denser; scale non-SH themes.
+  fireTarget(fog, "SetFogMaxOpacity", String(Math.round(profile.density * THEME_FOG_OPACITY_SCALE * 1000) / 1000));
   fireTarget(fog, "SetFogColor", profile.color);
+  fireTarget(fog, "SetFogFalloffExponent", FOG_LINEAR_FALLOFF);
+}
+// THICK_FOG is the Silent Hill light look made denser: gray fog over the flat gray SH sky, so fully
+// fogged geometry blends into the sky instead of showing as a cutout (CS2 env_sky is never fogged).
+// Where the sky is already black (campaign Finale sky, SH dark) the fog goes black to match it.
+const THICK_FOG_END = 1200;
+function thickFogSkyTheme() {
+  const runtime = state.currentLevel ?? state.transitionLevel;
+  return campaignStageSnapshot().infiniteMode ? campaignStageSnapshot().theme
+    : runtime?.stageSnapshot?.theme ?? campaignStageSnapshot().theme;
+}
+function applyThickFog(event, fog) {
+  const finaleSky = finaleUsesFinaleSky(state.endingRuntime) && state.endingRuntime.finaleSky
+    && ["spawning", "active"].includes(state.endingRuntime.lifecycle);
+  const shDark = themeProfile(thickFogSkyTheme()).name === "silenthill" && state.silentHillWorld.visualDark;
+  const black = finaleSky || shDark;
+  if (!black) {
+    event.previousSkyOverride = themeModelSky.override;
+    event.skySwapped = true;
+    themeModelSky.failedTheme = undefined;
+    if (ensureThemeModelSky("silenthill", state.currentLevel?.end?.z ?? 0, true)) themeModelSky.override = "silenthill";
+    else setCollectiveSkybox("silenthill_light", true);
+  }
+  fireTarget(fog, "SetFogColor", black ? "0 0 0" : "100 100 100");
+  fireTarget(fog, "SetFogStartDistance", String(FOG_CLEAR_DISTANCE));
+  fireTarget(fog, "SetFogEndDistance", String(THICK_FOG_END));
+  fireTarget(fog, "SetFogMaxOpacity", "1");
+  fireTarget(fog, "SetFogFalloffExponent", FOG_LINEAR_FALLOFF);
+}
+function restoreThickFogSky(event) {
+  if (!event.skySwapped) return;
+  event.skySwapped = false;
+  if (themeModelSky.override === "silenthill") themeModelSky.override = event.previousSkyOverride;
+  themeModelSky.failedTheme = undefined;
+  if (themeModelSky.override === "off") { clearThemeModelSky(); themeModelSky.override = "off"; return; }
+  const theme = themeModelSky.override ?? thickFogSkyTheme();
+  ensureThemeModelSky(theme, state.currentLevel?.end?.z ?? 0, themeModelSky.override !== undefined);
+  // SH theme: ensure keeps the SH scene, so re-apply the light/dark flat sky it expects.
+  if (themeProfile(theme).name === "silenthill") setSilentHillSky(state.silentHillWorld.visualDark);
 }
 function clearGenericEvents() {
   for (const event of [...state.genericEvents.active.values()]) endGenericEvent(event, { reset: true });
@@ -31738,8 +35027,10 @@ function genericPizzaBreak(event) {
   event.pizza.broken = true;
   event.pizza.brokenAt = Instance.GetGameTime();
   event.pizza.visual?.SetColor?.({ r: 100, g: 50, b: 50, a: 255 });
-  for (const [delay, text] of [[0, "WE DID IT!"], [1.03, "the pizza of doom is flying away"], [2.06, "we are finally safe"]])
-    for (let i = 0; i < 3; i++) genericEventTask(event, delay + i * 0.01, () => announce(`EVENT: ${text}`));
+  // Source EntFire lines outlive the shrinking pizza, so they are not event-owned.
+  for (const [delay, text] of [[0, "***WE DID IT***"], [1.03, "***THE PIZZA OF DOOM IS FLYING AWAY***"],
+    [2.06, "***WE ARE FINALLY SAFE***"]])
+    schedule(delay, () => announceRepeated(text));
   return true;
 }
 
@@ -31820,10 +35111,10 @@ function spawnGenericBeam(event, runtime, now) {
   const angles = { pitch: 0, yaw: Math.random() * 360, roll: 0 };
   const visual = spawnGenericEventVisual(event, runtime, "genericBeamGrid", GENERIC_BEAMGRID_CONFIG.model, position, angles);
   visual.SetModelScale?.(3);
-  visual.SetColor?.({ r: 0, g: 0, b: 0, a: 255 });
-  visual.Glow({ r: 255, g: 255, b: 0, a: 255 });
+  // Yellow comes from the self-illum material; Source's black tint + glow is not used.
+  visual.SetColor?.({ r: 255, g: 255, b: 255, a: 255 });
   const beam = { visual, position, initialPosition: clone(position), angles,
-    spawnedAt: now, armedAt: now + 0.02, moveAt: undefined, fadeAlpha: 255, glowLevel: 255,
+    spawnedAt: now, armedAt: now + 0.02, moveAt: undefined, fadeAlpha: 255,
     touched: new Set(), pawnCenters: new Map() };
   event.beams.push(beam);
   return beam;
@@ -31837,8 +35128,8 @@ function startGenericBeamMove(event) {
   event.beamKillAt = now + config.lifetime;
   event.endsAt = event.beamKillAt + config.activeEndPadding;
   for (const beam of event.beams) beam.moveAt = event.beamMoveAt;
-  announce("EVENT: look out for the grid of beams above");
-  genericEventTask(event, 1.03, () => announce("EVENT: they're coming down"));
+  announceRepeated("Look out for the grid of beams above");
+  genericEventTask(event, 1.03, () => announceRepeated("They're coming down!"));
   genericEventTask(event, config.lifetime, () => retireGenericBeams(event));
   genericEventTask(event, config.lifetime + config.activeEndPadding,
     () => endGenericEvent(event, { natural: true }));
@@ -31886,12 +35177,7 @@ function processGenericBeamGrid(event, now) {
       const elapsed = now - event.beamFadeAt;
       const alpha = Math.max(0, Math.round(255 * (1 - elapsed / config.fadeDuration)));
       if (beam.fadeAlpha !== alpha) {
-        beam.visual.SetColor({ r: 0, g: 0, b: 0, a: alpha }); beam.fadeAlpha = alpha;
-      }
-                                                                                    
-      const glow = Math.max(5, 255 - config.glowFadeStep * Math.floor(elapsed / config.glowFadeInterval + 0.000001));
-      if (beam.glowLevel !== glow) {
-        beam.visual.Glow({ r: glow, g: glow, b: 0, a: 255 }); beam.glowLevel = glow;
+        beam.visual.SetColor({ r: 255, g: 255, b: 255, a: alpha }); beam.fadeAlpha = alpha;
       }
     }
     if (now < beam.armedAt) continue;
@@ -31949,9 +35235,9 @@ function spawnGenericPizza(event, runtime) {
     sound.Teleport({ position }); fireTarget(sound, "Pitch", "50");
     fireTarget(sound, "PlaySound"); fireTarget(sound, "Volume", "100");
   }
-  for (const [delay, text, repeats] of [[0.7, "WHAT THE HELL IS THAT?!", 1], [6, "LOOK UP!", 3],
-    [9, "THE PIZZA OF DOOM IS COMING OUR WAY!", 3], [11, "SHOOT IT OR PERISH!", 3]])
-    for (let i = 0; i < repeats; i++) genericEventTask(event, delay + i * 0.01, () => announce(`EVENT: ${text}`));
+  for (const [delay, text, repeats] of [[0.7, "***WHAT IS THAT...?***", 1], [6, "***LOOK UP!***", 3],
+    [9, "***THE PIZZA OF DOOM IS COMING OUR WAY***", 3], [11, "***SHOOT IT OR PERISH***", 3]])
+    genericEventTask(event, delay, () => announceRepeated(text, repeats));
   return true;
 }
 
@@ -31999,6 +35285,8 @@ function spawnGenericPizzaContactFx(event, position, now) {
     particle.Teleport({ position: clone(position), angles: randomAngles(), velocity: vec() });
     fireTarget(particle, "Start");
   }
+  // Keep the original brief blood burst while allowing the Tesla arcs to finish.
+  fireTarget(members.blood, "Kill", undefined, 0.05);
   const pitch = 40 + Math.floor(Math.random() * 61), soundPosition = add(position, vec(0, 0, 8));
   for (const sound of entities.filter(entity => !particles.has(entity))) {
     sound.Teleport({ position: soundPosition });
@@ -32051,7 +35339,7 @@ function processGenericPizza(event, now) {
     pizza.pawnCenters.set(pawn, clone(hull.center));
     const contactPosition = touches ? clone(pawn.GetAbsOrigin()) : undefined;
     if (touches && genericEventKillHuman(event, pawn, pizza.visual)) {
-      genericEventTask(event, 1.55, () => announce("EVENT: THE PIZZA IS AGGRESSIVE!"));
+      schedule(1.55, () => announce("***THE PIZZA IS AGGRESSIVE***"));
       spawnGenericPizzaContactFx(event, contactPosition, now);
     }
   }
@@ -32210,9 +35498,10 @@ function spawnGenericWorldEater(event, runtime) {
     if (!validEntity(carrier) || Number(carrier.GetHealth()) <= 0) genericWorldEaterDie(event);
   });
   genericEventTask(event, 0.10, () => fireTarget(trigger, "Enable"));
-  for (const [delay, text] of [[10, "you're feeling watched"], [30, "something is coming for you"],
-    [50, "you sense a looming presence above you"]])
-    genericEventTask(event, delay, () => announce(`EVENT: ${text}`));
+  // Source SpawnVauff() queues these with EntFire; they fire even if it dies.
+  for (const [delay, text] of [[10, "You're feeling watched..."], [30, "Something is coming for you..."],
+    [50, "You sense a looming presence above you..."]])
+    schedule(delay, () => announce(text));
   return true;
 }
 
@@ -32525,9 +35814,8 @@ function finishGenericCollapse(event) {
                                                                           
                                                                              
                                 
-  const next = state.currentLevel && state.currentLevel !== event.collapseSource
-    ? state.currentLevel
-    : state.pendingLevel;
+  const next = [state.currentLevel, state.transitionLevel, state.pendingLevel]
+    .find(runtime => runtime && runtime !== event.collapseSource);
   if (next?.tp && next.incoming) moveTeleportDestination(next.tp, next.incoming);
 }
 
@@ -32535,7 +35823,8 @@ function genericEventVisibleAlpha(entity, baseAlpha = 255) {
   let alpha = baseAlpha;
   for (const event of state.genericEvents.active.values()) {
     if (event.ended) continue;
-    if (event.name === "PHASING") alpha = Math.min(alpha, 30);
+    if (event.name === "PHASING" && entity.collectivePhasingTerrain)
+      alpha = Math.min(alpha, GENERIC_EVENT_DEFINITIONS.PHASING.terrainAlpha);
     if (event.name === "WALLBREAK") {
       const target = event.targets?.find(target => target.entity === entity);
       if (target) alpha = Math.min(alpha, target.alpha ?? 255);
@@ -32546,6 +35835,11 @@ function genericEventVisibleAlpha(entity, baseAlpha = 255) {
 
 function endGenericEvent(event, { reset = false, natural = false } = {}) {
   if (!event || event.ended) return;
+  if (natural && !event.endLineAnnounced) {
+    event.endLineAnnounced = true;
+    const [line, times] = GENERIC_EVENT_END_LINES[event.name] ?? [];
+    if (line) announceRepeated(line, times);
+  }
                                                                        
                                                                               
   if (natural && event.name === "BIGNADES" && event.projectiles?.size) {
@@ -32576,6 +35870,7 @@ function endGenericEvent(event, { reset = false, natural = false } = {}) {
       runtime.rubbleProfile = event.previousDebrisState?.rubbleProfile;
       runtime.rubbleSpawnedCount = event.previousDebrisState?.rubbleSpawnedCount ?? 0;
       runtime.nextRubbleAt = event.previousDebrisState?.nextRubbleAt;
+      runtime.rubbleTarget = event.previousDebrisState?.rubbleTarget;
     }
   } else if (event.name === "LOWGRAV") {
     for (const pawn of state.playerEffects.keys()) removeGravitySource(pawn, source);
@@ -32583,6 +35878,7 @@ function endGenericEvent(event, { reset = false, natural = false } = {}) {
     state.genericEvents.pledgeUntil = 0;
     clearPledgePrompt();
   } else if (event.name === "THICK_FOG") {
+    restoreThickFogSky(event);
     setThemeFog(state.currentLevel ?? state.transitionLevel ?? { stageSnapshot: event.stageSnapshot });
   } else if (event.name === "BLOODLUST") {
     state.genericEvents.bloodlustHits.clear();
@@ -32635,11 +35931,14 @@ function endGenericEvent(event, { reset = false, natural = false } = {}) {
   state.genericEvents.active.delete(event.id);
                                                                         
                                                                              
-  if (event.collapseSource && !reset && Number.isFinite(Number(state.currentLevel?.index)))
-    cleanupExpiredLevels(Number(state.currentLevel.index));
+  // reachEnd clears currentLevel until the next level commits. COLLAPSE can
+  // finish during that handoff, after normal history retirement skipped it.
+  const cleanupRuntime = state.currentLevel ?? state.transitionLevel ?? state.pendingLevel;
+  if (event.collapseSource && !reset && Number.isFinite(Number(cleanupRuntime?.index)))
+    cleanupExpiredLevels(Number(cleanupRuntime.index));
 }
 
-function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
+function startGenericEvent(name, runtime, { manualProbe = false, continuousDebug = false } = {}) {
   const definition = GENERIC_EVENT_DEFINITIONS[name];
   if (definition?.disabled) return false;
   if (!(definition?.supported || (manualProbe && definition?.manualProbe)) || !runtime || (runtime.lifecycle !== "active"
@@ -32673,6 +35972,7 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
     phaseAlpha: 255,
     owner: `generic:${state.genericEvents.serial}`,
     tasks: new Set(),
+    continuousDebug: name === "DEBRIS" && continuousDebug,
     createdRubblePieces: new Set(),
     entities: new Set(),
     runtime,
@@ -32687,17 +35987,18 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
     event.projectiles = new Map();
     event.acceptingThrows = true;
     event.endsAt = now + GENERIC_BIGNADES_CONFIG.duration;
-    announce("EVENT: our grenades are big and strong");
-    genericEventTask(event, 1, () => announce("EVENT: beware the knockback"));
+    announceRepeated("Our grenades are big and strong!");
+    genericEventTask(event, 1.03, () => announceRepeated("Maybe too powerful.. beware knockback!"));
   } else if (name === "KAMIKAZE") {
     if (!state.motherZombies.size || !state.spawnPlatformKilled) return false;
     event.kamikazeRuntime = event.entityRuntime;
     const delay = Math.random() * FINALE_KAMIKAZE_CONFIG.dispatchDelayMax;
     genericEventTask(event, delay, () => {
-      if (!startFinaleKamikaze(event.kamikazeRuntime, "generic_event")) endGenericEvent(event);
+      if (startFinaleKamikaze(event.kamikazeRuntime, "generic_event")) return;
+      message(`[KAMIKAZE] launch skipped: ${event.kamikazeRuntime.kamikazeNote ?? "runtime not ready"}`);
+      endGenericEvent(event);
     });
     event.endsAt = now + delay + FINALE_KAMIKAZE_CONFIG.explodeTime + 1;
-    announce("EVENT: incoming kamikaze");
   } else if (name === "PIZZADOOM") {
     const delay = GENERIC_PIZZADOOM_CONFIG.runtimeMin
       + Math.random() * (GENERIC_PIZZADOOM_CONFIG.runtimeMax - GENERIC_PIZZADOOM_CONFIG.runtimeMin);
@@ -32712,14 +36013,14 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
       const humans = genericEventPlayers();
       const target = humans[Math.floor(Math.random() * humans.length)];
       event.beamOrigin = clone(target?.GetAbsOrigin?.() ?? runtime.center ?? runtime.anchor ?? vec());
-      announce("EVENT: something is happening above us");
+      announce("Something is happening above us...");
     });
     genericEventTask(event, GENERIC_BEAMGRID_CONFIG.startDelay + 0.1, () => spawnGenericBeamTick(event));
   } else if (name === "DOORHUG_BOMB") {
     if (runtime.kind === "FINALE" || runtime.raceLevel || Number(runtime.index) <= 1) return false;
     event.endsAt = now + GENERIC_DOORHUG_CONFIG.explodeTime + GENERIC_DOORHUG_CONFIG.activeEndPadding;
     genericEventTask(event, GENERIC_DOORHUG_CONFIG.spawnDelay, () => spawnGenericDoorhug(event, runtime));
-    announce("EVENT: doorhuggers watch out");
+    announceRepeated("Woah, doorhuggers watch out!");
   } else if (name === "WORLD_EATER") {
     event.endsAt = Infinity;
     if (!spawnGenericWorldEater(event, runtime)) return false;
@@ -32732,24 +36033,26 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
       playSourceAudioCue(3544, pawn.GetAbsOrigin?.() ?? vec(), { recipient: pawn });
     event.lastTickAt = now + 0.05;
     state.genericEvents.pledgeUntil = event.endsAt;
+    // Source PLEDGE has no chat line; the [STATE YOUR PLEDGE] prompt is HUD-only.
     syncPledgePrompt(event);
-    announce("EVENT: pledge to do your part for the collective");
   } else if (name === "LOWGRAV") {
     state.genericEvents.fallDamageDisabledUntil = event.endsAt + 5;
-    announce("EVENT: low gravity");
+    announceRepeated("Gravity suddenly became lower for humans");
+    if (event.endsAt - now - 5 > 0) genericEventTask(event, event.endsAt - now - 5,
+      () => announceRepeated("Gravity reverts in 5s"));
   } else if (name === "BLOODLUST") {
     if (state.motherZombies.size === 0 || genericEventPlayers(2).length === 0) return false;
     state.genericEvents.bloodlustHits.clear();
-    announce("EVENT: shoot zombies to quench the bloodthirst");
+    announceRepeated("You humans suddenly feel a thirst for blood...");
+    genericEventTask(event, 1.05, () => announceRepeated("Shoot the zombies to prevent dying from bloodthirst!"));
   } else if (name === "THICK_FOG") {
     const fog = Instance.FindEntityByName("fog");
     if (!validEntity(fog)) return false;
                                                                           
                                                                        
-    fireTarget(fog, "SetFogStartDistance", "-500");
-    fireTarget(fog, "SetFogEndDistance", "750");
-    fireTarget(fog, "SetFogMaxOpacity", "1");
-    announce("EVENT: thick fog");
+    applyThickFog(event, fog);
+    genericEventTask(event, 1, () => announce("The fog is turning thick..."));
+    genericEventTask(event, 3, () => announce("We must find our way through the limited visibility"));
   } else if (name === "SILENCE") {
     event.ringingEmitter = genericSilenceEmitter();
     if (!event.ringingEmitter) return false;
@@ -32760,9 +36063,9 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
     fireTarget(event.ringingEmitter, "Volume", "10");
     fireTarget(event.ringingEmitter, "PlaySound", "");
     message("SILENCE ringing substitute requested: 15s global low-volume ring; no explosion, blindness, DSP or voice mute (game verification pending)");
-    announce("EVENT: ringing (test)");
+    for (const delay of [1, 2, 3, 4, 5]) genericEventTask(event, delay, () => announce("Our human ears are falling deaf..."));
   } else if (name === "WEAPON_JAM") {
-    announce("EVENT: weapon jam");
+    announceRepeated("Weapons jammed - RELOAD!", 5);
   } else if (name === "WALLBREAK") {
     event.targets = [];
     for (const level of activeRuntimes()) {
@@ -32773,6 +36076,8 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
       }
     }
     genericEventTask(event, event.activeAt - now, () => {
+      // Source WALLBREAK.RunPost() announces at run_delay, not at Run().
+      announceRepeated("All the 'WALL' tiles are disappearing!");
       for (const target of event.targets ?? []) {
         const { entity } = target;
         if (!validEntity(entity)) continue;
@@ -32787,17 +36092,17 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
         });
       }
     });
-    announce("EVENT: wall tiles are disappearing");
   } else if (name === "PHASING") {
-    event.targets = [];
+    event.targets = new Set();
     for (const level of activeRuntimes()) {
-      for (const entity of level.terrainEntities ?? []) {
-        if (validEntity(entity)) event.targets.push(entity);
-      }
+      for (const entity of level.terrainEntities ?? []) registerPhasingTerrain(level, entity);
+      for (const entity of level.phasingTerrainEntities ?? []) registerPhasingTerrain(level, entity);
     }
-    announce("EVENT: our eyes are phasing");
+    announce("Our eyes are phasing");
+    genericEventTask(event, 1, () => announce("We can see through the world"));
+    genericEventTask(event, 2, () => announce("Tread carefully or wait it out..."));
   } else if (name === "DISTORT") {
-    announce("EVENT: our eyes are tripping out");
+    announce("Our human eyes are tripping out...");
   } else if (name === "DEBRIS") {
                                                                           
                                                                              
@@ -32812,21 +36117,28 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
       rubbleProfile: runtime.rubbleProfile,
       rubbleSpawnedCount: runtime.rubbleSpawnedCount,
       nextRubbleAt: runtime.nextRubbleAt,
+      rubbleTarget: runtime.rubbleTarget,
     };
     runtime.raceRubbleStarted = true;
     runtime.raceRubbleStopped = false;
     runtime.rubbleProfile = { ...GENERIC_DEBRIS_CONFIG,
+      maxActiveRubble: CONFIG.maxActiveRubble,
       debrisDamage: runtime.kind === "FINALE" ? (runtime.infinite ? 16 : 11) : GENERIC_DEBRIS_CONFIG.debrisDamage };
     runtime.rubbleSpawnedCount = 0;
+    runtime.rubbleTarget = undefined;
     runtime.nextRubbleAt = now;
     event.endsAt = now + GENERIC_DEBRIS_CONFIG.duration + GENERIC_DEBRIS_CONFIG.rubbleLifetime;
                                                                          
                                                                           
                                                                           
     event.repeatAfter = now + GENERIC_DEBRIS_CONFIG.duration + GENERIC_DEBRIS_CONFIG.repeatReleaseDelay;
-    genericEventTask(event, GENERIC_DEBRIS_CONFIG.duration, () => { runtime.raceRubbleStopped = true; });
-    genericEventTask(event, GENERIC_DEBRIS_CONFIG.duration + 3, () => announce("EVENT: the debris has stopped falling"));
-    announce("EVENT: watch out for falling debris");
+    if (event.continuousDebug) {
+      event.endsAt = event.repeatAfter = Infinity;
+    } else {
+      genericEventTask(event, GENERIC_DEBRIS_CONFIG.duration, () => { runtime.raceRubbleStopped = true; });
+      genericEventTask(event, GENERIC_DEBRIS_CONFIG.duration + 3, () => announce("The debris seems to have stopped falling..."));
+    }
+    announce("Watch out for falling debris!");
   } else if (name === "COLLAPSE") {
     const collapseSource = genericCollapseSource(runtime);
     const candidates = genericCollapseCandidates(collapseSource);
@@ -32846,9 +36158,9 @@ function startGenericEvent(name, runtime, { manualProbe = false } = {}) {
       + GENERIC_COLLAPSE_CONFIG.fadeEndPadding;
     event.endsAt = now + elapsed + lastFade + 0.1;
     genericEventTask(event, elapsed + lastFade, () => finishGenericCollapse(event));
-    announce("EVENT: the old stage is unstable");
-    genericEventTask(event, 1, () => announce("EVENT: get out before it collapses"));
-    genericEventTask(event, GENERIC_COLLAPSE_CONFIG.startDelay, () => announce("EVENT: the old stage is collapsing"));
+    announceRepeated("The old stage is unstable");
+    genericEventTask(event, 1.03, () => announceRepeated("Get out of there before it collapses!"));
+    genericEventTask(event, GENERIC_COLLAPSE_CONFIG.startDelay, () => announceRepeated("The old stage is collapsing!"));
   }
   state.genericEvents.active.set(event.id, event);
   state.genericEvents.history.push({ name, level: runtime.index, at: now });
@@ -32996,6 +36308,11 @@ function processGenericEvents(now) {
       if (runtime && runtime.lifecycle !== "destroyed") {
         const before = new Set(runtime.rubblePieces ?? []);
         processRaceRubble(runtime, now);
+        if (event.continuousDebug) {
+          const live = new Set(runtime.rubblePieces ?? []);
+          for (const piece of event.createdRubblePieces)
+            if (!live.has(piece)) event.createdRubblePieces.delete(piece);
+        }
         for (const piece of runtime.rubblePieces ?? []) {
           if (!before.has(piece)) event.createdRubblePieces.add(piece);
         }
@@ -33015,7 +36332,11 @@ function processGenericEvents(now) {
         if (!validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 3) event.pledged.delete(pawn);
       }
       for (const pawn of genericEventPlayers()) {
-        if (event.pledged.has(pawn)) damageRaceRubblePawn(pawn, 2);
+        if (event.pledged.has(pawn)) {
+          if (GENERIC_EVENT_DEFINITIONS.PLEDGE.calloutFail && Number(pawn.GetHealth?.()) <= 2)
+            playerNameMessage(pawn, "", " did not state the pledge");
+          damageRaceRubblePawn(pawn, 2);
+        }
       }
       syncPledgePrompt(event);
       if (!event.pledged.size) endGenericEvent(event);
@@ -33027,6 +36348,7 @@ function processGenericEvents(now) {
         if (state.genericEvents.bloodlustHits.get(pawn)) {
           if (health < 150) pawn.SetHealth?.(Math.min(150, health + 3));
         } else {
+          if (health <= 2) playerNameMessage(pawn, "", " did not quench the bloodthirst");
           damageRaceRubblePawn(pawn, 2);
         }
         state.genericEvents.bloodlustHits.delete(pawn);
@@ -33046,11 +36368,10 @@ function processGenericEvents(now) {
       message("SILENCE ringing emitter was removed; stopping the probe");
       endGenericEvent(event);
     } else if (event.name === "PHASING" && now >= event.lastTickAt) {
-      event.phaseAlpha = 30;
+      event.phaseAlpha = GENERIC_EVENT_DEFINITIONS.PHASING.terrainAlpha;
       for (const level of activeRuntimes()) {
-        for (const entity of level.terrainEntities ?? []) {
-          if (validEntity(entity) && !event.targets.includes(entity)) event.targets.push(entity);
-        }
+        for (const entity of level.terrainEntities ?? []) registerPhasingTerrain(level, entity);
+        for (const entity of level.phasingTerrainEntities ?? []) registerPhasingTerrain(level, entity);
       }
       for (const entity of event.targets ?? []) {
         if (validEntity(entity)) genericTerrainAlpha(entity, genericEventVisibleAlpha(entity));
@@ -33093,6 +36414,172 @@ function setGenericEventManualMode(enabled) {
 
 
 
+// These webscript events are absent from the older script/manager.nut snapshot.
+// Source: CS:GO scripts/vscripts/luffaren/manager.nut, HardCodedStageEvents.
+function hardCodedStageEventLive(runtime) {
+  return state.running && !state.fatal && state.levels.get(runtime.index) === runtime
+    && runtime.lifecycle !== "destroyed" && runtime.lifecycle !== "fading";
+}
+
+function stageEventTask(runtime, delay, callback) {
+  return schedule(delay, () => {
+    if (hardCodedStageEventLive(runtime)) callback();
+  }, runtime.index);
+}
+
+function jumpscareHudWarning(error) {
+  if (jumpscareHudWarningPrinted) return;
+  jumpscareHudWarningPrinted = true;
+  message(`Maze jumpscare HUD unavailable: ${error}; load the updated compiled map and layout`);
+}
+
+function clearJumpscareHud(owner, pawn) {
+  for (const [slot, record] of jumpscareHudPlayers) {
+    if ((owner !== undefined && record.owner !== owner) || (pawn && record.pawn !== pawn)) continue;
+    try {
+      if (validEntity(record.hud)) record.hud.SetHasClassForPlayer(slot, JUMPSCARE_HUD_PANEL, "Active", false);
+    } catch (error) {
+      jumpscareHudWarning(error);
+      continue; // Retain failed clears so the next Think/reset can retry.
+    }
+    jumpscareHudPlayers.delete(slot);
+  }
+}
+
+function syncJumpscareHud(now) {
+  for (const record of jumpscareHudPlayers.values()) {
+    if (!state.running || state.fatal || record.until <= now || !validEntity(record.pawn)
+      || !record.pawn.IsAlive?.() || record.pawn.GetTeamNumber?.() !== 3
+      || playerSlotForHud(record.pawn) !== record.slot
+      || !validEntity(record.hud) || !state.levels.has(record.owner)
+      || !hardCodedStageEventLive(state.levels.get(record.owner)))
+      clearJumpscareHud(record.owner, record.pawn);
+  }
+}
+
+function touchMazeJumpscare(runtime, data) {
+  if (!hardCodedStageEventLive(runtime) || !validEntity(runtime.mazeJumpscare?.trigger)) return false;
+  const pawn = resolvePawn(data?.activator);
+  if (!validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 3
+    || runtime.mazeJumpscare.touchers.has(pawn)) return false;
+  const slot = playerSlotForHud(pawn);
+  if (slot === undefined) return false;
+  const hud = Instance.FindEntityByName(JUMPSCARE_HUD_TARGET);
+  if (!validEntity(hud) || typeof hud.SetHasClassForPlayer !== "function") {
+    jumpscareHudWarning(JUMPSCARE_HUD_TARGET);
+    return false;
+  }
+  const previous = jumpscareHudPlayers.get(slot);
+  if (previous) {
+    clearJumpscareHud(previous.owner, previous.pawn);
+    if (jumpscareHudPlayers.has(slot)) return false;
+  }
+  try { hud.SetHasClassForPlayer(slot, JUMPSCARE_HUD_PANEL, "Active", true); }
+  catch (error) { jumpscareHudWarning(error); return false; }
+  jumpscareHudPlayers.set(slot, { pawn, slot, hud, owner: runtime.index,
+    until: Instance.GetGameTime() + 0.7 });
+  runtime.mazeJumpscare.touchers.add(pawn);
+  spawnSourceAudio("shellbert_despair", pawn.GetAbsOrigin(),
+    { owner: runtime.index, recipient: pawn, radius: -1, lifetime: 0.2 });
+  announce("HOLY SHIT");
+  return true;
+}
+
+// Source spawned every My Thighs spider on one point; CS2 collision jams them.
+// Give each its own floor tile in the room around that point: flood-fill the
+// exit-height floor connected to the nearest tile, take the closest tiles, and
+// jitter inside each tile so the swarm looks scattered rather than gridded.
+function stageSpiderSpawnPoints(runtime, center, count) {
+  const rows = runtime.previewRows;
+  const markers = markerData(rows);
+  const elevations = entryExitElevations(rows, markers);
+  const world = (x, y) => {
+    const point = gridWorld(runtime.entry, runtime.incoming, markers.entryCenter, x, y,
+      elevations.exit, elevations.entry);
+    return vec(point.x, point.y, runtime.end.z);
+  };
+  const isFloor = (x, y) => {
+    const tile = rows[y]?.[x];
+    // floor or floorceiling (the event point sits in My Thighs' floorceiling pool)
+    return ((tile >= 5 && tile <= 24) || (tile >= 45 && tile <= 64))
+      && surfaceHeight(tile) === elevations.exit;
+  };
+  const distance = (p) => Math.hypot(p.x - center.x, p.y - center.y);
+  let start;
+  for (let y = 0; y < CONFIG.mapSize; y++) for (let x = 0; x < CONFIG.mapSize; x++) {
+    if (isFloor(x, y) && (!start || distance(world(x, y)) < distance(world(start.x, start.y)))) start = { x, y };
+  }
+  const tiles = [];
+  if (start) {
+    const seen = new Set([`${start.x},${start.y}`]);
+    for (let queue = [start]; queue.length;) {
+      const { x, y } = queue.shift();
+      tiles.push(world(x, y));
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const key = `${x + dx},${y + dy}`;
+        if (seen.has(key) || !isFloor(x + dx, y + dy)) continue;
+        seen.add(key);
+        queue.push({ x: x + dx, y: y + dy });
+      }
+    }
+  }
+  tiles.sort((a, b) => distance(a) - distance(b));
+  // +-16u jitter keeps neighbours >= 64u apart on 96u tiles.
+  const jitter = () => Math.round((Math.random() * 2 - 1) * 16);
+  const points = tiles.slice(0, count).map(p => add(p, vec(jitter(), jitter(), 0)));
+  // Too little floor: pair up the nearest tiles at +-24u across the exit axis.
+  const side = leftOf(runtime.outgoing);
+  for (let i = 0; points.length < count; i++) {
+    const base = tiles[Math.floor(i / 2) % Math.max(1, tiles.length)] ?? center;
+    points.push(add(base, mul(side, i % 2 ? 24 : -24)));
+  }
+  return points;
+}
+
+function startHardCodedStageEvent(runtime) {
+  if (runtime.hardCodedStageEventStarted || runtime.raceLevel) return;
+  if (runtime.id === "#1660527778") {
+    featureTemplate("trap_thigh_spider");
+    featureTemplate("trapSpiderDamage");
+    const center = add(sub(runtime.end, mul(runtime.outgoing, 530)), mul(runtime.incoming, 40));
+    for (const position of stageSpiderSpawnPoints(runtime, center, 10)) state.trapSpawnQueue.push({
+      levelIndex: runtime.index, kind: "feature", feature: "trap", tile: 88,
+      trapName: "thigh_spider", stageEvent: true, position,
+      themeName: runtime.stageSnapshot?.theme,
+    });
+    const lines = [[5, "Oh my god these thighs"], [6, "I wish to dive deep into them"],
+      [6, "Let me explore them"], [7, "Deeper"], [8, "Deeper..."],
+      [9, "Lord forgive me for what i'm about to do to Shellbert"]];
+    for (const [delay, line] of lines) stageEventTask(runtime, delay, () => announce(line));
+    let delay = 4.5;
+    for (let i = 0; i < 50; i++) {
+      stageEventTask(runtime, delay, () => spawnSourceAudio("popgasm", vec(), {
+        owner: runtime.index, radius: 0, lifetime: 0.2, pitch: 60 + Math.floor(Math.random() * 51),
+      }));
+      delay += 0.01 + Math.random() * 0.99;
+    }
+  } else if (runtime.id === "#1658255300") {
+    const position = sub(runtime.end, mul(runtime.outgoing, 500));
+    const trigger = spawnTriggerVolume(runtime, { templateKey: "jumpscare",
+      feature: "mazeJumpscare", position, angles: { pitch: 0, yaw: 0, roll: 0 } },
+      vec(-100, -100, -100), vec(100, 100, 200));
+    trigger.SetEntityName?.("block_jumpscare");
+    runtime.mazeJumpscare = { trigger, touchers: new Set() };
+    connectOwnedOutput(runtime, trigger, "OnStartTouch", data => touchMazeJumpscare(runtime, data));
+    fireTarget(trigger, "Enable", "", 0.05);
+    for (const [delay, line] of [[5, "What a nice looking maze"], [6, "Let's go through it"],
+      [7, "What could go wrong?"]]) stageEventTask(runtime, delay, () => announce(line));
+  } else return;
+  runtime.hardCodedStageEventStarted = true;
+}
+
+// Source map_server_printout, sent ::STAGE_ENTRY_MSG_DELAY after postspawn.
+function announceLevelEntry(level) {
+  if (!level?.name) return;
+  const text = `Now entering: '${level.name}' by '${level.author}' [${level.id}]`;
+  schedule(0.7, () => announce(text));
+}
+
 function finishPendingLevel() {
   const runtime = state.pendingLevel;
   if (!runtime) return;
@@ -33108,6 +36595,8 @@ function finishPendingLevel() {
   ensureThemeModelSky(campaignStageSnapshot().infiniteMode ? campaignStageSnapshot().theme
     : runtime.stageSnapshot?.theme ?? campaignStageSnapshot().theme, runtime.end.z);
   setLevelLifecycle(runtime, "active");
+  try { startHardCodedStageEvent(runtime); }
+  catch (error) { failRuntime(`stage event failed for level ${runtime.index}: ${error}`); return; }
   updateTerrainPreviewHud(runtime, "spawn-complete");
   if (runtime.debugLiquidFall) {
     message(`[LIQUID FALL DEBUG] ready: ${runtime.debugLiquidFallSamples.size}/32 samples; use ze_debug_liquid_fall status`);
@@ -33143,7 +36632,7 @@ function finishPendingLevel() {
   }
   if (!runtime.sourceGenerationScheduled)
     schedule(CONFIG.previousLevelRetention, () => cleanupExpiredLevels(runtime.index), runtime.index);
-  announce(`Level ${runtime.index}: '${runtime.name}' by ${runtime.author}`);
+  announceLevelEntry(runtime);
   setThemeFog(runtime);
   armThemeTerrainWarmup(runtime);
   if (runtime.debugTeleport) {
@@ -33165,7 +36654,7 @@ function moveTrackedEntityCollection(fromRuntime, toRuntime, entities) {
 
 function itemOwnedEntities(item) {
   return new Set([
-    item.visual, item.carrier, item.measureReference, item.measureMovement,
+    item.visual, item.carrier, item.measureReference, item.measureMovement, item.entwatchUseRelay,
     item.stripTrigger, ...(item.effects ?? []), ...(item.auxiliaryVisuals ?? []),
   ].filter(Boolean));
 }
@@ -33197,6 +36686,7 @@ function restoreLevelFadeColor(runtime, entity) {
   if (!color) return;
   if (validEntity(entity)) {
     entity.collectiveRetireAlpha = undefined;
+    entity.collectiveRetireRenderedAlpha = undefined;
     entity.SetColor?.(color);
   }
   runtime.levelFadeColors.delete(entity);
@@ -33224,6 +36714,8 @@ function transferItemOwnership(item, fromRuntime, toRuntime) {
 
 function transferDeployableEntities(fromRuntime, toRuntime, deployable) {
   moveTrackedEntityCollection(fromRuntime, toRuntime, deployableOwnedEntities(deployable));
+  const pending = state.stormBladeVisuals.get(deployable);
+  if (pending) pending.runtime = toRuntime;
 }
 
 function transferPickedItemState(fromRuntime, toRuntime) {
@@ -33261,11 +36753,13 @@ function beginLevelFade(runtime) {
   if ([...state.genericEvents.active.values()].some(event => !event.ended && event.collapseSource === runtime)) return;
   if (!runtime || runtime.lifecycle === "destroyed" || runtime.lifecycle === "fading") return;
   setLevelLifecycle(runtime, "fading");
+  clearJumpscareHud(runtime.index);
   runtime.fadeStartedAt = Instance.GetGameTime();
   runtime.fadeStep = state.finaleEscapeActive ? 50 : CONFIG.despawnFadeStep;
   runtime.fadeInterval = state.finaleEscapeActive ? 0.05 : CONFIG.despawnFadeInterval;
   runtime.fadeAlpha = 255;
-  runtime.fadeTickScheduled = false;
+  runtime.fadeIterator = undefined;
+  runtime.fadeNextAt = 0;
   fadeLevelTick(runtime);
 }
 
@@ -33287,35 +36781,96 @@ function fadeLevelTick(runtime) {
   const interval = runtime.fadeInterval ?? CONFIG.despawnFadeInterval;
   const steps = Math.min(Math.ceil((255 - 3) / step) - 1, Math.floor((elapsed + 1e-6) / interval));
   runtime.fadeAlpha = Math.max(0, 255 - steps * step);
-  const persistentEntities = persistentItemEntities(runtime);
-  for (const entity of runtime.entities ?? []) {
-    if (!validEntity(entity) || typeof entity.SetColor !== "function" || !fadeRenderable(entity)) continue;
-                                                                             
-                                                                              
-    if (persistentEntities.has(entity)) {
-      restoreLevelFadeColor(runtime, entity);
-      continue;
-    }
-    runtime.levelFadeColors ??= new Map();
-    if (!runtime.levelFadeColors.has(entity)) {
-      const color = entity.collectiveBaseColor ?? entity.GetColor?.() ?? { r: 255, g: 255, b: 255, a: 255 };
-      runtime.levelFadeColors.set(entity, { ...color });
-    }
-    const base = runtime.levelFadeColors.get(entity);
-    entity.collectiveRetireAlpha = runtime.fadeAlpha;
-                                                                          
-                                                                          
-                                                                             
-    fireTarget(entity, "Alpha", Math.round((base.a ?? 255) * runtime.fadeAlpha / 255));
+  // No native work or per-interval catch-up tasks here. The maintenance pass
+  // walks live Set iterators and always applies the latest absolute-time alpha.
+  state.levelFades.add(runtime);
+}
+
+function maintenanceWorkAvailable() {
+  return generationBudget.ms < generationBudget.msLimit
+    && generationBudget.maintenanceMs < CONFIG.deferredKillMsPerThink
+    && generationClock() - generationBudget.startedAt < generationBudget.thinkMsLimit;
+}
+
+function runMaintenanceWork(callback) {
+  if (!maintenanceWorkAvailable()) return false;
+  const budget = generationBudget, before = budget.ms;
+  budget.maintenanceMode = true;
+  try { return runGenerationWork(callback, false); }
+  finally {
+    budget.maintenanceMode = false;
+    budget.maintenanceMs += Math.max(0, budget.ms - before);
   }
-  if (runtime.fadeAlpha <= 0 || runtime.fadeTickScheduled) return;
-  runtime.fadeTickScheduled = true;
-  const endAt = runtime.fadeStartedAt + Math.ceil((255 - 3) / step) * interval;
-  if (Instance.GetGameTime() >= endAt) { runtime.fadeTickScheduled = false; return; }
-  runtime.fadeTask = schedule(interval, () => {
-    runtime.fadeTickScheduled = false;
-    fadeLevelTick(runtime);
-  }, runtime.index);
+}
+
+function processLevelFades(now = Instance.GetGameTime()) {
+  return withGenerationBudget(() => {
+    const protectedEntities = new Map();
+    let sleeping = 0;
+    while (state.levelFades.size && generationBudget.fadeChecks < CONFIG.levelFadePerThink
+      && maintenanceWorkAvailable()) {
+      // Rotate every inspected handle, so a large level cannot monopolize the
+      // slice when several levels fade together.
+      const runtime = state.levelFades.values().next().value;
+      state.levelFades.delete(runtime);
+      if (runtime.lifecycle !== "destroyed") state.levelFades.add(runtime);
+      generationBudget.fadeChecks++;
+      if (runtime.lifecycle === "destroyed") continue;
+      if (now < (runtime.fadeNextAt ?? 0)) {
+        if (++sleeping >= state.levelFades.size) break;
+        continue;
+      }
+      sleeping = 0;
+      runMaintenanceWork(() => {
+        fadeLevelTick(runtime);
+        if (!runtime.fadeIterator) {
+          runtime.fadeIterator = (runtime.entities ?? new Set()).values();
+          runtime.fadePassAlpha = runtime.fadeAlpha;
+        }
+        const next = runtime.fadeIterator.next();
+        if (next.done) {
+          runtime.fadeIterator = undefined;
+          const interval = runtime.fadeInterval ?? CONFIG.despawnFadeInterval;
+          const step = runtime.fadeStep ?? CONFIG.despawnFadeStep;
+          const startedAt = runtime.fadeStartedAt ?? now;
+          const endAt = startedAt + Math.ceil((255 - 3) / step) * interval;
+          if (runtime.fadePassAlpha !== runtime.fadeAlpha) runtime.fadeNextAt = now;
+          else if (now >= endAt) state.levelFades.delete(runtime);
+          else runtime.fadeNextAt = startedAt
+            + (Math.floor((now - startedAt + 1e-6) / interval) + 1) * interval;
+          return;
+        }
+        const entity = next.value;
+        if (!validEntity(entity) || typeof entity.SetColor !== "function" || !fadeRenderable(entity)) return;
+        let persistent = protectedEntities.get(runtime);
+        if (!persistent) protectedEntities.set(runtime, persistent = persistentItemEntities(runtime));
+        if (persistent.has(entity)) { restoreLevelFadeColor(runtime, entity); return; }
+        runtime.levelFadeColors ??= new Map();
+        if (!runtime.levelFadeColors.has(entity)) {
+          const color = entity.collectiveBaseColor ?? entity.GetColor?.() ?? { r: 255, g: 255, b: 255, a: 255 };
+          runtime.levelFadeColors.set(entity, { ...color });
+        }
+        const base = runtime.levelFadeColors.get(entity);
+        entity.collectiveRetireAlpha = runtime.fadeAlpha;
+        const alpha = terrainRenderAlpha(entity, base.a ?? 255);
+        if (entity.collectiveRetireRenderedAlpha === alpha) return;
+        fireTarget(entity, "Alpha", alpha);
+        entity.collectiveRetireRenderedAlpha = alpha;
+      });
+    }
+  });
+}
+
+function processRuntimeMaintenance(now) {
+  // One shared time slice, with alternating priority to prevent either fades
+  // or physical deletion from starving the other under maintenance pressure.
+  return withGenerationBudget(() => {
+    state.maintenanceKillsFirst = !state.maintenanceKillsFirst;
+    const fades = () => guardStep("processLevelFades", () => processLevelFades(now));
+    const kills = () => guardStep("processDeferredEntityKills", () => processDeferredEntityKills());
+    if (state.maintenanceKillsFirst) { kills(); fades(); }
+    else { fades(); kills(); }
+  });
 }
 
 function retireSourceHistory(reached) {
@@ -33366,24 +36921,58 @@ function destroyEntities(entities, force = false) {
 // one frame. Ownership/records are dropped immediately by destroyLevel.
 let deferredEntityKills = [];
 let deferredEntityKillCursor = 0;
+const deferredEntityKillSet = new Set();
 
 function queueEntityKills(entities) {
-  for (const entity of entities) if (entity) deferredEntityKills.push(entity);
+  for (const entity of entities) {
+    if (!entity || deferredEntityKillSet.has(entity)) continue;
+    deferredEntityKillSet.add(entity);
+    deferredEntityKills.push(entity);
+  }
+}
+
+function queueFinaleEntityRetirement(runtime, entities) {
+  queueEntityKills(entities);
+  // Keep the round fallback ownership, but remove retired geometry from the
+  // live ending so collapse/appearance controllers cannot reuse queued props.
+  for (const entity of entities) {
+    for (const key of ["entities", "terrainEntities", "safeTerrainEntities", "internalEntities",
+      "externalEntities", "externalTerrainEntities", "endingTerrainEntities", "endingSafeTerrainEntities"])
+      runtime[key]?.delete(entity);
+    state.terrainSpawnFades.delete(entity);
+    state.silentHillWorld.visuals.delete(entity);
+    runtime.levelFadeColors?.delete(entity);
+  }
 }
 
 function processDeferredEntityKills(limit = CONFIG.deferredKillPerThink) {
-  let killed = 0;
-  while (killed < limit && deferredEntityKillCursor < deferredEntityKills.length) {
-    const entity = deferredEntityKills[deferredEntityKillCursor++];
-    if (validEntity(entity)) {
-      entity.Kill();
-      killed++;
+  if (deferredEntityKillCursor >= deferredEntityKills.length) return;
+  // Explicit reset/fatal drains must finish even inside an exhausted Think.
+  const immediate = limit === Infinity;
+  const drain = () => {
+    let processed = 0;
+    while (processed < limit && deferredEntityKillCursor < deferredEntityKills.length) {
+      if (!immediate && (generationBudget.killChecks >= CONFIG.deferredKillPerThink
+        || !maintenanceWorkAvailable())) break;
+      const remove = () => {
+        const entity = deferredEntityKills[deferredEntityKillCursor];
+        // Release consumed handles without retaining them until the full
+        // queue drains. A throwing Kill must not block all later handles;
+        // roundEntities still owns the failed entity for lifecycle cleanup.
+        deferredEntityKills[deferredEntityKillCursor++] = undefined;
+        deferredEntityKillSet.delete(entity);
+        if (validEntity(entity)) entity.Kill();
+      };
+      if (immediate) remove();
+      else { generationBudget.killChecks++; runMaintenanceWork(remove); }
+      processed++;
     }
-  }
-  if (deferredEntityKillCursor >= deferredEntityKills.length) {
-    deferredEntityKills = [];
-    deferredEntityKillCursor = 0;
-  }
+    if (deferredEntityKillCursor >= deferredEntityKills.length) {
+      deferredEntityKills = [];
+      deferredEntityKillCursor = 0;
+    }
+  };
+  return immediate ? drain() : withGenerationBudget(drain);
 }
 
 function flushDeferredEntityKills() {
@@ -33428,6 +37017,9 @@ function settleEngineRelease() {
 function destroyLevel(index, preservePickedItems = false, deferKill = false) {
   const runtime = state.levels.get(index);
   if (!runtime) return;
+  state.levelFades.delete(runtime);
+  runtime.fadeIterator = undefined;
+  clearJumpscareHud(index);
   clearGenerationWork(index);
   clearBoostPads(runtime);
   clearSpawnSafetyTriggers(index);
@@ -33490,12 +37082,15 @@ function destroyLevel(index, preservePickedItems = false, deferKill = false) {
   for (const [entity, record] of state.silentHillWorld.visuals) {
     if (record.runtime === runtime) state.silentHillWorld.visuals.delete(entity);
   }
+  // Normal history retirement (fade, then destroy) keeps clean flat terrain.
+  if (preservePickedItems && deferKill) releaseTerrainToPool(runtime);
   const destroy = deferKill ? queueEntityKills : destroyEntities;
   destroy([...runtime.entities]);
   destroy([...(runtime.terrainPreloadedEntities ?? [])]);
   runtime.terrainPreloadedEntities?.clear();
   runtime.levelFadeColors?.clear();
   runtime.terrainEntities?.clear?.();
+  runtime.phasingTerrainEntities?.clear?.();
   runtime.terrainCompanions?.clear?.();
   runtime.safeTerrainEntities?.clear?.();
   state.spawnQueue = state.spawnQueue.filter((entry) => entry.levelIndex !== index);
@@ -33523,7 +37118,7 @@ function endPositionStatus(runtime, position) {
 function endCheckGate(now) {
   if (state.fatal) return "fatal";
   if (!state.running) return "runtime-stopped";
-  if (state.debugAllModelsMode || state.currentLevel?.debugTeleport || state.currentLevel?.debugLiquidFall || state.currentLevel?.debugKarts) return "debug-lab";
+  if (state.debugAllModelsMode || state.currentLevel?.debugTeleport || state.currentLevel?.debugLiquidFall || state.currentLevel?.debugKarts || state.currentLevel?.debugEntwatch) return "debug-lab";
   if (state.endingRuntime?.kind === "RACE" && state.endingRuntime.lifecycle === "active") return "race-owns-end";
   if (!state.currentLevel) return "no-current-level";
   if (state.pendingLevel) return "level-still-spawning";
@@ -33578,7 +37173,7 @@ function debugEndCommand(args) {
 
 function checkEnd(now) {
   endDiagnostics.lastPollAt = now;
-  if (state.debugAllModelsMode || state.currentLevel?.debugTeleport || state.currentLevel?.debugLiquidFall || state.currentLevel?.debugKarts) return;
+  if (state.debugAllModelsMode || state.currentLevel?.debugTeleport || state.currentLevel?.debugLiquidFall || state.currentLevel?.debugKarts || state.currentLevel?.debugEntwatch) return;
   if (state.endingRuntime?.kind === "RACE" && state.endingRuntime.lifecycle === "active") return;
   if (!state.currentLevel || state.pendingLevel || now < state.endLockedUntil || now < state.nextEndCheckAt) return;
   state.nextEndCheckAt = now + CONFIG.endCheckInterval;
@@ -33692,9 +37287,15 @@ function reachEnd() {
   state.lastTriggeredEndIndicator = reached;
   const legacyRuntime = !reached.stageSnapshot;
   const delay = legacyRuntime ? CONFIG.transitionDelay : stageEndDelay(reached);
-  announce(reached.debugEndingSnapshot
-    ? `DEBUG: level ${reached.index} complete; entering ${reached.debugEndingSnapshot.ending} after the normal endpoint handoff`
-    : `Level ${reached.index} complete; generating next level in ${delay} seconds`);
+  if (reached.debugEndingSnapshot) {
+    consoleNotice(`DEBUG: level ${reached.index} complete; entering ${reached.debugEndingSnapshot.ending} after the normal endpoint handoff`);
+  }
+  // Source EndFound() / endbutton Press().
+  const found = reached.endProvider === "button" ? "END BUTTON PRESSED" : "END FOUND";
+  if (delay > 0) {
+    announce(`***${found} - GENERATING NEXT MAP IN ${sqNumber(delay)} SECONDS***`);
+    schedule(delay, () => announce("***GENERATING NEXT MAP***"));
+  } else announce(`***${found} - GENERATING NEXT MAP***`);
   if (legacyRuntime) schedule(delay, () => handoffTransition(reached), reached.index);
   else schedule(delay, () => beginTransition(reached), reached.index);
 }
@@ -33741,6 +37342,33 @@ function spawnTeleRoundStart(inputData) {
     velocity: vec(),
   });
   applyCheapPlayerModel(pawn, CHEAP_PLAYERMODEL_CONFIG.humanModel);
+  restoreKnifeAfterReturn(pawn);
+}
+
+function restoreKnifeAfterReturn(pawn) {
+  restoreMissingKnife(pawn);
+  if (!validEntity(pawn) || !pawn.IsAlive?.()) return;
+  const team = pawn.GetTeamNumber?.();
+  if (team !== 2 && team !== 3) return;
+  // OnStartTouch can precede native teleport/inventory updates. Recheck even
+  // when a knife is still present now, and retry a failed GiveNamedItem call.
+  // Round-scoped tasks discard these checks when the round ends.
+  for (const delay of [0.1, 0.5]) {
+    schedule(delay, () => {
+      if (validEntity(pawn) && pawn.GetTeamNumber?.() === team) restoreMissingKnife(pawn);
+    });
+  }
+}
+
+// Restore a plain knife only on a return teleport; the knife slot also covers
+// custom knives and artifact carriers. Keep the player's active weapon.
+function restoreMissingKnife(pawn) {
+  if (!validEntity(pawn) || !pawn.IsAlive?.()) return;
+  const team = pawn.GetTeamNumber?.();
+  if (team !== 2 && team !== 3) return;
+  if (typeof pawn.FindWeaponBySlot !== "function") return;
+  if (validEntity(pawn.FindWeaponBySlot(CSGearSlot.KNIFE))) return;
+  pawn.GiveNamedItem?.("weapon_knife", false);
 }
 
 function spawnTele(inputData) {
@@ -33762,6 +37390,7 @@ function spawnTele(inputData) {
   if (infectionHasStarted() && pawn.GetTeamNumber?.() === 2) {
     applyCheapPlayerModel(pawn, CHEAP_PLAYERMODEL_CONFIG.zombieModel);
   }
+  restoreKnifeAfterReturn(pawn);
 }
 
 // 原版 ::CHEAP_PLAYERMODELS。CS2 版默认关闭，由服务器用 StripperCS2 添加名为
@@ -33875,6 +37504,7 @@ function fallDownTouchTrigger(inputData) {
     });
     if (typeof pawn.SetHealth === "function") pawn.SetHealth(rescuedHealth);
     else pawn.TakeDamage?.({ damage: CONFIG.falldownCheckpointDamage, damageFlags: CSDamageFlags.IGNORE_ARMOR ?? 0 });
+    restoreKnifeAfterReturn(pawn);
     const checkpointName = checkpointEntity.GetEntityName?.() ?? "block_*";
     message(`[FALL] rescued CT: -${CONFIG.falldownCheckpointDamage} HP -> ${Math.round(rescuedHealth)}, checkpoint=${checkpointName}`);
     return;
@@ -33931,57 +37561,73 @@ function closeBlockSpawnSafety(runtime) {
   clearSpawnSafetyTriggers(runtime.index);
 }
 
+// Spawn safety used to ForceSpawn a 0.1 s trigger_multiple per terrain block
+// (about 400 per level, half of all generation spawns). Engine ForceSpawn cost
+// grows over a map session, so the same test now runs in script. The volume
+// matches template_spawn_safety's trigger: a 94x94 column from 6232 below to
+// 5032 above the block origin, widened by the player hull (32x32x72).
+const BLOCK_SPAWN_SAFETY_ZONE = Object.freeze({ halfWidth: 47 + 16, below: 6232 + 72, above: 5032 });
+
 function spawnBlockSafetyTrigger(runtime, request) {
   if (!blockSpawnSafetyIsOpen(runtime)) return undefined;
   let destination = Object.hasOwn(runtime, "spawnSafetyReturn")
     ? runtime.spawnSafetyReturn : spawnSafetyReturnFor(runtime.index);
-                                                                        
   if (runtime.index === 1 && !destination) destination = spawnSafetyReturnFor(1);
-                                                                             
   if (runtime.index === 1 && !destination) return undefined;
-  const spawned = spawnRoundEntities(featureTemplate("spawnSafety"), request.position, request.angles) ?? [];
-  const triggers = spawned.filter(entity => validEntity(entity)
-    && entity.GetClassName?.() === "trigger_multiple");
-  if (triggers.length !== 1 || spawned.length !== 1) {
-    destroyEntities(spawned);
-    throw new Error("template_spawn_safety must spawn exactly one trigger_multiple");
-  }
-  const trigger = triggers[0];
-                                                                              
-                                                                                
-  trigger.SetEntityName(`spawn_safety_${runtime.index}`);
-  runtime.entities.add(trigger);
-  state.spawnSafetyTriggers.set(trigger, {
+  const zone = { position: clone(request.position), touched: new Set(),
+    halfWidth: request.race || runtime.raceLevel ? RACE_CONFIG.gridSize / 2 + 16 : BLOCK_SPAWN_SAFETY_ZONE.halfWidth };
+  state.spawnSafetyTriggers.set(zone, {
     runtime,
     destination,
     expiresAt: Instance.GetGameTime() + BLOCK_SPAWN_SAFETY.lifetime,
   });
-  fireTarget(trigger, "Disable");
-  fireTarget(trigger, "Enable", undefined, 0.01);
-  fireTarget(trigger, "Enable", undefined, 0.03);
-                                                              
-  fireTarget(trigger, "Kill", undefined, BLOCK_SPAWN_SAFETY.lifetime);
-  return trigger;
+  return zone;
 }
 
 function clearSpawnSafetyTriggers(owner, now) {
-  for (const [trigger, record] of state.spawnSafetyTriggers) {
+  for (const [zone, record] of state.spawnSafetyTriggers) {
     if (owner !== undefined && record.runtime.index !== owner) continue;
-    if (now !== undefined && now < record.expiresAt && validEntity(trigger)) continue;
-    if (validEntity(trigger)) trigger.Kill();
-    record.runtime.entities.delete(trigger);
-    state.spawnSafetyTriggers.delete(trigger);
+    if (now !== undefined && now < record.expiresAt) continue;
+    state.spawnSafetyTriggers.delete(zone);
   }
 }
 
+// Per-Think replacement for the trigger's OnStartTouch: each living pawn inside
+// a live zone is handled once, like one StartTouch per toucher.
+function processSpawnSafetyZones(now) {
+  if (!state.spawnSafetyTriggers.size || !state.running || state.fatal) return;
+  let pawns;
+  const { below, above } = BLOCK_SPAWN_SAFETY_ZONE;
+  for (const [zone, record] of state.spawnSafetyTriggers) {
+    if (now >= record.expiresAt || !blockSpawnSafetyIsOpen(record.runtime)) continue;
+    pawns ??= allLivingPawns().map(pawn => ({ pawn, origin: pawn.GetAbsOrigin() }));
+    const p = zone.position;
+    const halfWidth = zone.halfWidth ?? BLOCK_SPAWN_SAFETY_ZONE.halfWidth;
+    for (const { pawn, origin } of pawns) {
+      if (zone.touched.has(pawn)) continue;
+      if (Math.abs(origin.x - p.x) > halfWidth || Math.abs(origin.y - p.y) > halfWidth
+        || origin.z < p.z - below || origin.z > p.z + above) continue;
+      zone.touched.add(pawn);
+      if (!pawn.IsValid() || !pawn.IsAlive()) continue;
+      handleSpawnSafetyTouch(record, pawn);
+      if (!state.running || state.fatal) return;
+    }
+  }
+}
+
+// Map I/O from template_spawn_safety, kept for any trigger still spawned by an
+// old map build. Script zones carry no entity, so nothing matches here now.
 function touchBlockSpawnTrigger(inputData) {
   const record = state.spawnSafetyTriggers.get(inputData?.caller);
-                                                                       
   if (!record || !state.running || state.fatal
     || !validEntity(inputData.caller) || Instance.GetGameTime() >= record.expiresAt
     || !blockSpawnSafetyIsOpen(record.runtime)) return;
   const pawn = resolvePawn(inputData?.activator);
   if (!pawn || !pawn.IsAlive()) return;
+  handleSpawnSafetyTouch(record, pawn);
+}
+
+function handleSpawnSafetyTouch(record, pawn) {
   if (pawn.GetTeamNumber() === 2) {
     pawn.Teleport({ position: vec(0, 0, -16160), velocity: vec() });
   } else if (pawn.GetTeamNumber() === 3) {
@@ -33991,7 +37637,6 @@ function touchBlockSpawnTrigger(inputData) {
     const origin = pawn.GetAbsOrigin();
     if (!destination || (!initialPlatform && Math.hypot(origin.x - destination.position.x,
       origin.y - destination.position.y, origin.z - destination.position.z) > BLOCK_SPAWN_SAFETY.maxDistance)) {
-                                                                              
       message(`[SPAWN SAFETY] lethal CT: level=${record.runtime.index}, reason=${destination ? "return farther than 800" : "missing predecessor return"}`);
       pawn.TakeDamage({ damage: 999999,
         damageFlags: (CSDamageFlags.FORCE_DEATH ?? 0) | (CSDamageFlags.IGNORE_ARMOR ?? 0) });
@@ -34011,6 +37656,78 @@ function zombieAttackerTeleportsVictim(attacker) {
   return !!activeImpostorController(attacker);
 }
 
+function returnZombieInfectionVictim(pawn) {
+  if (!validEntity(pawn)) return;
+  let record = state.zombieInfectionReturns.get(pawn);
+  if (record?.returned) return;
+  if (!record) state.zombieInfectionReturns.set(pawn, record = {});
+  record.returned = true;
+  // Keep the authored tele_spawn route and its second teleport 0.1 s later:
+  // infection/class changes can otherwise overwrite the first position.
+  pawn.Teleport({ position: vec(0, 0, -16160), velocity: vec() });
+  schedule(0.1, () => {
+    if (state.zombieInfectionReturns.get(pawn) !== record) return;
+    state.zombieInfectionReturns.delete(pawn);
+    if (!state.running || state.fatal || state.adminSlayActive
+      || !validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 2) return;
+    pawn.Teleport({ position: vec(0, 0, -16160), velocity: vec() });
+  });
+}
+
+function confirmZombieInfectionReturn(pawn, record) {
+  if (state.zombieInfectionReturns.get(pawn) !== record || record.returned
+    || !state.running || state.fatal || state.adminSlayActive
+    || !validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 2) return;
+  returnZombieInfectionVictim(pawn);
+}
+
+// Skinned knives keep their own class (weapon_bayonet, weapon_knife_karambit),
+// so prefer the gear slot and fall back to the known knife class names.
+function isKnifeWeapon(weapon) {
+  const slot = weapon?.GetData?.()?.GetGearSlot?.();
+  if (slot !== undefined && CSGearSlot.KNIFE !== undefined) return slot === CSGearSlot.KNIFE;
+  const name = weapon?.GetClassName?.() ?? "";
+  return name.startsWith("weapon_knife") || name === "weapon_bayonet";
+}
+
+function rememberZombieInfectionHit(event, attacker) {
+  const pawn = resolvePawn(event.player);
+  if (!state.running || state.fatal || !pawn || !pawn.IsAlive?.()
+    || pawn === attacker || pawn.GetTeamNumber?.() !== 3
+    || !attacker?.IsAlive?.() || attacker.GetTeamNumber?.() !== 2
+    || !isKnifeWeapon(event.weapon)) return;
+  // Remember the actual attacker's eligibility before infection strips items
+  // or resets players. An ordinary zombie's later hit supersedes this one.
+  if (!zombieAttackerTeleportsVictim(attacker)) {
+    state.zombieInfectionReturns.delete(pawn);
+    return;
+  }
+  const record = { returned: false, position: clone(pawn.GetAbsOrigin?.() ?? vec()) };
+  state.zombieInfectionReturns.set(pawn, record);
+  // CS2Fixes cancels the health damage and infects a living CT via SwitchTeam;
+  // its synthetic player_death does not require native OnPlayerKill to fire.
+  // Confirm the real team change instead of teleporting on attempted damage.
+  afterThink(() => confirmZombieInfectionReturn(pawn, record));
+  schedule(0.1, () => {
+    confirmZombieInfectionReturn(pawn, record);
+    if (state.zombieInfectionReturns.get(pawn) === record && !record.returned)
+      state.zombieInfectionReturns.delete(pawn);
+  });
+}
+
+function handleZombieInfectionTeamChanged(event) {
+  const pawn = resolvePawn(event?.player);
+  if (!pawn) return;
+  const record = state.zombieInfectionReturns.get(pawn);
+  if (event.oldTeam === 3 && pawn.GetTeamNumber?.() === 2) {
+    recordRoundReportDeath(pawn, record?.position ?? pawn.GetAbsOrigin?.());
+    if (record) confirmZombieInfectionReturn(pawn, record);
+  } else {
+    if (pawn.GetTeamNumber?.() === 3) state.roundReportVictims.delete(pawn);
+    state.zombieInfectionReturns.delete(pawn);
+  }
+}
+
 function releaseItemsOnDeath(pawn) {
   for (const item of [...(playerItemSlots(pawn)?.values() ?? [])]) {
     const runtime = itemRuntime(item);
@@ -34021,6 +37738,7 @@ function releaseItemsOnDeath(pawn) {
 
 function handlePlayerKill(event) {
   const pawn = resolvePawn(event?.player ?? event?.victim ?? event?.controller);
+  if (pawn?.GetTeamNumber?.() === 3) recordRoundReportDeath(pawn);
   if (pawn) hideInvincibilityForPlayer(pawn);
   if (pawn) hidePledgePromptForPlayer(pawn);
   if (pawn) hideSquidBlindForPlayer(pawn);
@@ -34033,11 +37751,15 @@ function handlePlayerKill(event) {
       if (validEntity(pawn) && pawn.GetTeamNumber?.() === 2) applyCheapPlayerModel(pawn, CHEAP_PLAYERMODEL_CONFIG.zombieModel);
     });
   }
-  if (!pawn || !attacker || attacker === pawn || !zombieAttackerTeleportsVictim(attacker)) return;
+  if (!pawn) return;
+  if (!attacker || attacker === pawn || !zombieAttackerTeleportsVictim(attacker)) {
+    state.zombieInfectionReturns.delete(pawn);
+    return;
+  }
                                                                          
                                                                                
                                                        
-  pawn.Teleport?.({ position: vec(0, 0, -16160), velocity: vec() });
+  returnZombieInfectionVictim(pawn);
 }
 
                                                                               
@@ -34304,9 +38026,19 @@ function reportGeneratedTeleports() {
 function resetPlayerEffects(event) {
   const pawn = resolvePawn(event?.player ?? event?.controller ?? event?.pawn ?? event);
   if (!pawn) return;
+  if (state.roundReportVictims.has(pawn)) {
+    const victims = state.roundReportVictims;
+    // Reset also fires during infection. Wait until the team switch settles
+    // before allowing another death for a new living human life.
+    afterThink(() => {
+      if (victims === state.roundReportVictims && validEntity(pawn)
+        && pawn.IsAlive?.() && pawn.GetTeamNumber?.() === 3) victims.delete(pawn);
+    });
+  }
   clearAirslide(pawn);
   hideInvincibilityForPlayer(pawn);
   hidePledgePromptForPlayer(pawn);
+  clearJumpscareHud(undefined, pawn);
   hideItemTutorialForPlayer(pawn);
   hideZombieItemLockForPlayer(pawn);
   dropHeldItem(pawn);
@@ -34330,6 +38062,7 @@ function resetPlayerEffects(event) {
 // An uncaught throw used to skip SetNextThink and freeze the whole script.
 // Each step is isolated and the next Think is always scheduled.
 const guardedErrorLog = new Map();
+
 function reportGuardedError(step, error) {
   const now = Instance.GetGameTime();
   if ((guardedErrorLog.get(step) ?? -Infinity) > now) return;
@@ -34348,8 +38081,10 @@ function guardStep(step, callback, fallback) {
 
 function think() {
   try {
-    thinkPlayerPawns = resolvePlayerPawns();
-    thinkBody();
+    withGenerationBudget(() => {
+      thinkPlayerPawns = guardStep("resolvePlayerPawns", () => resolvePlayerPawns(), []);
+      thinkBody();
+    });
   } catch (error) {
     reportGuardedError("think", error);
   } finally {
@@ -34365,22 +38100,26 @@ function think() {
 function thinkBody() {
   const now = Instance.GetGameTime();
   guardStep("recoverStalledAfterThinks", () => recoverStalledAfterThinks(now));
-  guardStep("processDeferredEntityKills", () => processDeferredEntityKills());
   guardStep("pruneRoundEntities", () => pruneRoundEntities(now));
   endDiagnostics.lastThinkAt = now;
   if (endDiagnostics.enabled && now >= endDiagnostics.nextReportAt) {
     endDiagnostics.nextReportAt = now + 2;
     guardStep("reportEndDiagnostics", () => reportEndDiagnostics(now));
   }
+  guardStep("processSpawnSafetyZones", () => processSpawnSafetyZones(now));
   guardStep("clearSpawnSafetyTriggers", () => clearSpawnSafetyTriggers(undefined, now));
   guardStep("processSourceAudio", () => processSourceAudio(now));
   guardStep("processTasks", () => processTasks(now));
+  guardStep("processThemePreloadCleanup", () => processThemePreloadCleanup());
   guardStep("processDebugThunder", () => processDebugThunder(now));
+  guardStep("processDebugKamikaze", () => processDebugKamikaze(now));
   guardStep("processThemeModelSky", () => processThemeModelSky(now));
   if (state.running && !state.fatal) {
     guardStep("processThemePreload", () => processThemePreload(now));
     guardStep("processThemeMusic", () => processThemeMusic(now));
+    guardStep("processDebugDebris", () => processDebugDebris(now));
     guardStep("processGenericEvents", () => processGenericEvents(now));
+    guardStep("processTrollMessages", () => processTrollMessages(now));
     guardStep("processSilentHillVisualChange", () => processSilentHillVisualChange());
     guardStep("processEndingRuntime", () => processEndingRuntime());
     guardStep("updateInfectionState", () => updateInfectionState(now));
@@ -34402,12 +38141,15 @@ function thinkBody() {
     guardStep("processLiquids", () => processLiquids(now));
     guardStep("processTraps", () => processTraps(now));
     guardStep("processItems", () => processItems(now));
+    guardStep("processStormBladeVisuals", () => processStormBladeVisuals(now));
     guardStep("processGenerationQueues", () => processGenerationQueues());
     if (!state.fatal) guardStep("processTerrainSpawnFades", () => processTerrainSpawnFades(now));
   }
   guardStep("syncInvincibilityHud", () => syncInvincibilityHud(now));
+  guardStep("syncJumpscareHud", () => syncJumpscareHud(now));
   guardStep("syncItemTutorials", () => syncItemTutorials(now));
   guardStep("syncZombieItemLocks", () => syncZombieItemLocks(now));
+  guardStep("processRuntimeMaintenance", () => processRuntimeMaintenance(now));
 }
 
 function wakeRuntime(source) {
@@ -34577,9 +38319,11 @@ Instance.OnScriptReload({
   before: () => {
     clearThemeTerrainWarmup();
     stopDebugThunder();
+    stopDebugKamikaze();
     clearSpawnSafetyTriggers();
     clearSourceAudio();
     const memory = {
+      reportSessionId: state.reportSessionId,
       debugShowcaseMode: state.debugShowcaseMode,
       debugSilentHillTheme: state.debugSilentHillTheme,
       debugGravityMode: state.debugGravityMode,
@@ -34616,6 +38360,9 @@ Instance.OnScriptReload({
     return memory;
   },
   after: (memory) => {
+    if (/^#[a-zA-Z0-9_]{8}#$/.test(memory?.reportSessionId ?? "")) {
+      state.reportSessionId = String(memory.reportSessionId);
+    }
     state.debugShowcaseMode = DEBUG_HOOKS.enabled && memory?.debugShowcaseMode === true;
     state.debugSilentHillTheme = DEBUG_HOOKS.enabled && memory?.debugSilentHillTheme === true;
     state.debugGravityMode = DEBUG_HOOKS.enabled && memory?.debugGravityMode === true;
@@ -34623,7 +38370,7 @@ Instance.OnScriptReload({
     state.debugAllModelsMode = DEBUG_HOOKS.enabled && memory?.debugAllModelsMode === true;
     state.debugTrapMode = DEBUG_HOOKS.enabled && memory?.debugTrapMode === true;
     state.debugStageId = DEBUG_HOOKS.enabled && (ALL_LEVELS.some(level => level.id === memory?.debugStageId)
-      || [DEBUG_DATA.spiderLevel.id, DEBUG_DATA.teleportLevel.id, DEBUG_DATA.liquidFallLevel.id, DEBUG_DATA.kartsLevel.id].includes(memory?.debugStageId))
+      || [DEBUG_DATA.entwatchLevel.id, DEBUG_DATA.spiderLevel.id, DEBUG_DATA.liquidFallLevel.id, DEBUG_DATA.kartsLevel.id].includes(memory?.debugStageId))
       ? memory.debugStageId : undefined;
     state.debugStageMirror = state.debugStageId ? memory?.debugStageMirror === true : false;
     if (memory?.campaign) {
@@ -34687,6 +38434,7 @@ Instance.OnRoundEnd((event = {}) => {
   state.running = false;
   cancelScheduledTasks();
   const ending = state.endingRuntime;
+  const report = guardStep("capture round report", () => captureRoundReport(ending));
   const raceAudio = ending?.kind === "RACE" ? {
     sequence: ending.sequence,
     raceFinish: clone(ending.raceFinish ?? ending.anchor ?? vec()),
@@ -34699,17 +38447,29 @@ Instance.OnRoundEnd((event = {}) => {
       && ending.debugForced !== true
       && ["active", "defending", "collapsing"].includes(ending.lifecycle)
       && !state.campaign.endingResolved;
-    if (unresolvedOrdinaryEnding && winningTeam === 3) resolveStageEnding(true);
+    // The spawn killer's last zombie kill can end the round before the next
+    // think reaches processFinaleEnding's finalRising win check.
+    const unresolvedFinaleRise = ending?.kind === "FINALE"
+      && ending.lifecycle === "active"
+      && ending.finalRising === true
+      && ending.massKillTriggeredAt === undefined
+      && !state.campaign.endingResolved;
+    if ((unresolvedOrdinaryEnding || unresolvedFinaleRise) && winningTeam === 3) resolveStageEnding(true);
     else if (unresolvedOrdinaryEnding && winningTeam === 2) resolveStageEnding(false);
     if (!state.campaign.endingResolved)
       retainCampaignStage(ending?.debugForced ? "debug_race_round_end" : "round_end");
   });
+  let deferredChat = [];
+  roundCleanupStep("round report", () => { deferredChat = printRoundReport(report, ending) ?? []; });
   // The world stays up through the round-end delay; the round restart removes it.
   releaseRoundToEngine({ preserveCampaignOutcome: true });
+  // Queued after the release so the fresh round scope keeps them.
+  for (const [delay, text] of deferredChat) schedule(delay, () => announce(text));
   if (raceAudio) scheduleRaceRoundAudio(raceAudio, winningTeam);
 });
 Instance.OnRoundStart(roundStartRuntime);
 Instance.OnPlayerReset(resetPlayerEffects);
+Instance.OnPlayerTeamChanged?.(handleZombieInfectionTeamChanged);
 Instance.OnPlayerKill?.(handlePlayerKill);
 Instance.OnPlayerPing?.(useItemFromPing);
 Instance.OnPlayerChat?.(useItemFromChat);
@@ -34749,6 +38509,7 @@ Instance.OnScriptInput("FallDownTouchTrigger", fallDownTouchTrigger);
 Instance.OnScriptInput("SpawnPlatformKill", spawnPlatformKill);
 Instance.OnScriptInput("TouchBlockSpawnTrig", touchBlockSpawnTrigger);
 Instance.OnScriptInput("AdminRoomPressed", adminRoomPressed);
+Instance.OnScriptInput("RubbleStartTouch", rubbleStartTouch);
 Instance.OnScriptInput("CheapPlayerModelsOn", () => setCheapPlayerModelOverride(true));
 Instance.OnScriptInput("CheapPlayerModelsOff", () => setCheapPlayerModelOverride(false));
 Instance.OnScriptInput("CheapPlayerModelsAuto", () => setCheapPlayerModelOverride(undefined));
@@ -34828,6 +38589,7 @@ function refreshNativeDebugAliases() {
 }
 
 function debugLevelDefinition(id) {
+  if (id === DEBUG_DATA.entwatchLevel.id) return DEBUG_DATA.entwatchLevel;
   if (id === DEBUG_DATA.spiderLevel.id) return DEBUG_DATA.spiderLevel;
   if (id === DEBUG_DATA.teleportLevel.id) return DEBUG_DATA.teleportLevel;
   if (id === DEBUG_DATA.liquidFallLevel.id) return DEBUG_DATA.liquidFallLevel;
@@ -34880,7 +38642,7 @@ function debugKartsCommand(args) {
   state.debugMovementThemesMode = false;
   state.debugAllModelsMode = false;
   state.debugTrapMode = false;
-  announce("debug kart lab enabled: flat floor + 100 driveable karts; rebuilding generated area");
+  consoleNotice("debug kart lab enabled: flat floor + 100 driveable karts; rebuilding generated area");
   beginRound();
   return true;
 }
@@ -34964,10 +38726,31 @@ function debugSkyboxCommand(args) {
 
 function debugSkyModelsCommand(args) {
   const key = String(args?.value ?? args ?? "").trim().toLowerCase();
+  const scaleMatch = /^scale\s+([\d.]+)$/.exec(key);
+  if (scaleMatch) {
+    // Live A/B of the cloud size: rescales theme and Finale clouds in place and keeps the value for
+    // clouds spawned later this session (scale 0 resets to SKY_CLOUD_MODEL_SCALE); not saved to config.
+    const scale = Number(scaleMatch[1]);
+    skyCloudScaleOverride = scale > 0 ? scale : undefined;
+    const applied = skyCloudScale();
+    const clouds = [...(themeModelSky.active?.clouds ?? []), ...(state.endingRuntime?.finaleSky?.clouds ?? [])];
+    for (const cloud of clouds) if (validEntity(cloud.visual)) {
+      cloud.scale = applied * (cloud.layerScale ?? 1);
+      cloud.visual.SetModelScale(cloud.scale);
+    }
+    message("cloud scale " + applied + " applied to " + clouds.length + " clouds and later spawns (Source 15)");
+    return true;
+  }
   if (key === "status") {
     message("model sky: " + (themeModelSky.active?.theme ?? "none") + ", clouds=" +
       (themeModelSky.active?.clouds.length ?? 0) + ", entities=" + (themeModelSky.active?.entities.size ?? 0) +
       ", retiring=" + themeModelSky.retiring.length);
+    for (const record of themeModelSky.active?.records ?? []) if (validEntity(record.visual)) {
+      const at = record.visual.GetAbsOrigin(), want = record.position;
+      message("  " + record.visual.GetModelName?.() + " scale=" + Number(record.scale).toFixed(2) +
+        " engineScale=" + (record.visual.GetModelScale?.() ?? "n/a") +
+        " at=" + [at.x, at.y, at.z].map(Math.round).join(",") + " spawn=" + [want.x, want.y, want.z].map(Math.round).join(","));
+    }
     return true;
   }
   if (key === "off") {
@@ -34979,7 +38762,7 @@ function debugSkyModelsCommand(args) {
     return ensureThemeModelSky(campaignStageSnapshot().theme);
   }
   if (!Object.hasOwn(THEME_MODEL_SKY_PROFILES, key)) {
-    message("usage: ze_debug_sky_models [generic|castle|factory|temple|nature|hell|frost|silenthill|off|auto|status]");
+    message("usage: ze_debug_sky_models [generic|castle|factory|temple|nature|hell|frost|silenthill|off|auto|status|scale <n>]");
     return false;
   }
   themeModelSky.failedTheme = undefined;
@@ -35328,6 +39111,15 @@ function validateDebugFinaleEntities(mode = "boss") {
   return false;
 }
 
+// ze_debug_finale escape: the boss dies through the normal defeat path as soon as it
+// opens, so the real escape route builds; the infinite stinger/screen FX start at once.
+function debugSkipFinaleBoss(runtime, now = Instance.GetGameTime()) {
+  runtime.debugSkipToEscape = false;
+  if (runtime.infinite && !runtime.finaleInfiniteMusicStaticPlayed) startFinaleMusicLoop(runtime, now);
+  for (const boss of [...(runtime.bosses ?? [])]) defeatFinaleBoss(runtime, boss);
+  message("[FINALE DEBUG] boss skipped; escape route opens after the normal death delay");
+}
+
 function prepareDebugDirectBoss(runtime) {
   if (!runtime || runtime.kind !== "FINALE" || runtime.bossMode !== "boss") return false;
   // startFinaleEnding normally queues the bridge and tower first.  A direct
@@ -35357,6 +39149,56 @@ function prepareDebugDirectBoss(runtime) {
   structure.towerCleanupOrder = [];
   runtime.debugDirectBoss = true;
   queueFinaleBossArena(runtime);
+  return true;
+}
+
+// Continuous falling debris uses the normal event ownership, physics and cleanup.
+function stopDebugDebris() {
+  state.debugDebrisMode = false;
+  for (const event of [...state.genericEvents.active.values()])
+    if (event.continuousDebug) endGenericEvent(event);
+}
+
+function processDebugDebris(now) {
+  if (!state.debugDebrisMode) return;
+  if (!state.debugShowcaseMode) { stopDebugDebris(); return; }
+  const runtime = state.currentLevel;
+  if (!runtime || runtime.lifecycle !== "active" || state.pendingLevel
+    || runtime.remaining > 0 || state.spawnQueue.length
+    || [...state.generationQueues.values()].some(queue => queue.length)
+    || state.itemSpawnQueue.length || state.trapSpawnQueue.length) return;
+  if ([...state.genericEvents.active.values()].some(event => event.name === "DEBRIS" && !event.ended)) return;
+  if (now < state.debugDebrisNextAt) return;
+  state.debugDebrisNextAt = now + 1;
+  tryStartGenericEvent("DEBRIS", runtime, { continuousDebug: true });
+}
+
+function debugDebrisCommand(args) {
+  const action = String(args?.value ?? args ?? "").trim().toLowerCase() || "on";
+  if (action === "status") {
+    const event = [...state.genericEvents.active.values()].find(event => event.continuousDebug);
+    message(`[DEBRIS DEBUG] enabled=${state.debugDebrisMode} showcase=${state.debugShowcaseMode}`
+      + ` active=${!!event} spawned=${event?.debrisRuntime?.rubbleSpawnedCount ?? 0}`
+      + ` live=${event?.debrisRuntime?.rubblePieces?.length ?? 0}`);
+    return true;
+  }
+  if (action === "off" || (action === "toggle" && state.debugDebrisMode)) {
+    stopDebugDebris();
+    message("[DEBRIS DEBUG] off; showcase remains selected");
+    return true;
+  }
+  if (!["on", "restart", "toggle"].includes(action)) {
+    message("usage: ze_debug_debris <on|off|restart|toggle|status>"); return false;
+  }
+  const issue = genericEventResourceIssue("DEBRIS");
+  if (issue) { message(`[DEBRIS DEBUG] ${issue}`); return false; }
+  if (state.debugDebrisMode && state.debugShowcaseMode && action !== "restart") return true;
+  stopDebugDebris();
+  if (action === "restart" && state.debugShowcaseMode) beginRound();
+  else debugShowcaseCommand("on");
+  state.debugDebrisMode = true;
+  state.debugDebrisNextAt = 0;
+  message("[DEBRIS DEBUG] continuous falling debris on showcase; waiting for terrain to finish");
   return true;
 }
 
@@ -35393,6 +39235,119 @@ function debugThunderCommand(args) {
   processDebugThunder();
   message(`[THUNDER DEBUG] ${action} distance=${distance}; follows the first living player's facing direction`);
   return !!state.debugThunder;
+}
+
+// ze_debug_strike [aim|me|sky] [count 1..10]: strike where the first living player aims, or at their
+// feet; sky = the 3x finale variant at the aim point.
+function debugStrikeCommand(args) {
+  const parts = String(args ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const mode = parts[0] ?? "aim";
+  const count = parts[1] === undefined ? 1 : Number(parts[1]);
+  if (!["aim", "me", "sky"].includes(mode) || !Number.isInteger(count) || count < 1 || count > 10) {
+    message("usage: ze_debug_strike [aim|me|sky] [count 1..10]"); return false;
+  }
+  const templateKey = mode === "sky" ? "lightningStrikeSky" : "lightningStrike";
+  if (!state.featureTemplates.has(templateKey)) {
+    message(`[STRIKE DEBUG] ${FEATURE_TEMPLATE_NAMES[templateKey]} missing; rebuild the map`); return false;
+  }
+  const pawn = allLivingPawns()[0];
+  if (!pawn) { message("[STRIKE DEBUG] requires a living player"); return false; }
+  let target = pawn.GetAbsOrigin();
+  if (mode !== "me") {
+    const eye = pawn.GetEyePosition?.() ?? add(target, vec(0, 0, 64));
+    const trace = Instance.TraceLine({ start: eye,
+      end: add(eye, mul(forwardFromAngles(viewAngles(pawn) ?? { pitch: 0, yaw: 0, roll: 0 }), 8192)),
+      ignoreEntity: pawn, ignorePlayers: true });
+    target = trace?.position ?? trace?.end ?? target;
+  }
+  for (let i = 0; i < count; i++) {
+    // Extra strikes scatter within 256u and are staggered so each one reads separately.
+    const spread = i === 0 ? vec() : vec((Math.random() - 0.5) * 512, (Math.random() - 0.5) * 512, 0);
+    schedule(i * 0.15, () => strikeLightning(add(target, spread), { template: templateKey }));
+  }
+  message(`[STRIKE DEBUG] ${count} strike(s) at ${Math.round(target.x)} ${Math.round(target.y)} ${Math.round(target.z)}`);
+  return true;
+}
+
+// ze_debug_kamikaze [launch|me|status|off]: launch one KAMIKAZE plane now, skipping the
+// generic-event gates (mother zombie, spawn platform, moving candidate). launch picks any
+// living zombie (bots count); me pilots the first living zombie player. The plane aims at
+// the first living human, then homes like the real event.
+function stopDebugKamikaze() {
+  const debug = state.debugKamikaze;
+  if (!debug) return false;
+  cancelFinaleKamikaze(debug.runtime);
+  debug.runtime.lifecycle = "destroyed";
+  for (const task of debug.runtime.tasks) task.cancelled = true;
+  debug.runtime.tasks.clear();
+  for (const id of debug.runtime.outputConnections) {
+    disconnectEntityOutput(id);
+    state.outputConnections.delete(id);
+  }
+  debug.runtime.outputConnections.clear();
+  destroyEntities([...debug.runtime.entities]);
+  debug.runtime.entities.clear();
+  state.debugKamikaze = undefined;
+  return true;
+}
+
+function processDebugKamikaze(now = Instance.GetGameTime()) {
+  const debug = state.debugKamikaze;
+  if (!debug) return false;
+  if (debug.runtime.kamikaze) { processFinaleKamikaze(debug.runtime, now); return true; }
+  // Flight finished (exploded or cancelled): drop the debug runtime and report.
+  const last = debug.runtime.kamikazeHistory.at(-1);
+  message(`[KAMIKAZE DEBUG] done reason=${last?.reason ?? "unknown"} hits=${last?.hitCount ?? 0}`
+    + ` visual=${last?.visual ?? false} hitbox=${last?.damageHitbox ?? false}`);
+  stopDebugKamikaze();
+  return false;
+}
+
+function debugKamikazeCommand(args) {
+  const mode = String(args?.value ?? args ?? "").trim().toLowerCase() || "launch";
+  if (mode === "status") {
+    const flight = state.debugKamikaze?.runtime.kamikaze;
+    if (!flight) { message("[KAMIKAZE DEBUG] idle"); return true; }
+    const p = flight.position;
+    message(`[KAMIKAZE DEBUG] flying ${(Instance.GetGameTime() - flight.startedAt).toFixed(2)}s`
+      + ` pos=${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.z)}`
+      + ` visual=${validEntity(flight.visual)} hitbox=${validEntity(flight.damageHitbox)}`
+      + ` hp=${flight.damageHitbox?.GetHealth?.() ?? "none"}`);
+    return true;
+  }
+  if (mode === "off") {
+    message(stopDebugKamikaze() ? "[KAMIKAZE DEBUG] cancelled; pilot restored" : "[KAMIKAZE DEBUG] idle");
+    return true;
+  }
+  if (!["launch", "me"].includes(mode)) { message("usage: ze_debug_kamikaze [launch|me|status|off]"); return false; }
+  if (state.debugKamikaze) { message("[KAMIKAZE DEBUG] already flying; use ze_debug_kamikaze off first"); return false; }
+  const living = allLivingPawns();
+  let pilot;
+  if (mode === "me") {
+    pilot = living[0];
+    if (pilot?.GetTeamNumber?.() !== 2) {
+      message("[KAMIKAZE DEBUG] me requires the first living player to be a zombie (T)"); return false;
+    }
+  } else {
+    const zombies = living.filter((pawn) => pawn.GetTeamNumber?.() === 2 && !kamikazePilots.get(pawn)?.active);
+    pilot = zombies[Math.floor(Math.random() * zombies.length)];
+    if (!pilot) { message("[KAMIKAZE DEBUG] requires a living zombie; try bot_add_t"); return false; }
+  }
+  const human = living.find((pawn) => pawn.GetTeamNumber?.() === 3);
+  const target = human?.GetAbsOrigin?.() ?? state.currentLevel?.anchor ?? pilot.GetAbsOrigin();
+  const runtime = { index: "debug_kamikaze", sequence: "debug_kamikaze", owner: "debug_kamikaze",
+    lifecycle: "active", tasks: new Set(), entities: new Set(), outputConnections: new Set(),
+    rubblePieces: [], anchor: clone(target), direction: vec(1, 0, 0), kamikazeHistory: [] };
+  state.debugKamikaze = { runtime };
+  if (!startFinaleKamikaze(runtime, "debug", { pawn: pilot, target })) {
+    message(`[KAMIKAZE DEBUG] launch failed: ${runtime.kamikazeNote ?? "unknown"}`);
+    stopDebugKamikaze();
+    return false;
+  }
+  message(`[KAMIKAZE DEBUG] launched pilot=${pilot.GetPlayerController?.()?.GetPlayerName?.() ?? "zombie"}`
+    + ` target=${Math.round(target.x)},${Math.round(target.y)},${Math.round(target.z)}`
+    + ` visual=${validEntity(runtime.kamikaze?.visual)}${runtime.kamikazeNote ? ` note=${runtime.kamikazeNote}` : ""}`);
+  return true;
 }
 
 function debugFinaleCommand(args) {
@@ -35449,8 +39404,9 @@ function debugFinaleCommand(args) {
         + ` rainStarted=${runtime.finaleRainStartedAt ?? "waiting"}`);
       const sky = runtime.finaleSky;
       message(`[FINALE SKY] clouds=${sky?.clouds.filter(cloud => validEntity(cloud.visual)).length ?? 0}/7`
-        + ` rotating=${sky?.rotating === true} scale=${FINALE_SKY_CONFIG.modelScale}`
-        + ` z=${finaleSkyCenter(runtime).z + FINALE_SKY_CONFIG.cloudOffsetZ}`);
+        + ` rotating=${sky?.rotating === true} speed=${Number(sky?.speed ?? 0).toFixed(1)} scale=${finaleSkyCloudScale()}`
+        + ` engineScale=${sky?.clouds.find(cloud => validEntity(cloud.visual))?.visual.GetModelScale?.() ?? "n/a"}`
+        + ` z=${finaleSkyCenter(runtime).z + finaleSkyCloudOffsetZ()}`);
       if (runtime.escape) message(`[FINALE ESCAPE] maps=${runtime.escape.levelCount}/${runtime.escape.levelTarget}`
         + ` history=${runtime.escape.history.length} vellerJobs=${runtime.escape.vellerPlayers.size}`);
       for (const bullet of [...runtime.bossBullets ?? []].slice(0, 4)) {
@@ -35470,10 +39426,13 @@ function debugFinaleCommand(args) {
     message("debug FINALE is inactive");
     return false;
   }
-  const directBoss = ["direct", "boss_direct", "bossdirect"].includes(command);
-  const infinite = command === "infinite";
-  if (command && !["restart", "start", "boss", "pyramid", "direct", "boss_direct", "bossdirect", "infinite"].includes(command)) {
-    message("usage: ze_debug_finale [start|restart|status|pyramid|boss_direct|infinite] or attack [sight|spin|tailsnap|tailshoot|fling|stun]");
+  const skipToEscape = ["escape", "infinite_escape"].includes(command);
+  const directBoss = ["direct", "boss_direct", "bossdirect"].includes(command) || skipToEscape;
+  const infinite = command === "infinite" || command === "infinite_escape";
+  if (command && !["restart", "start", "boss", "pyramid", "direct", "boss_direct", "bossdirect", "infinite",
+    "escape", "infinite_escape"].includes(command)) {
+    message("usage: ze_debug_finale [start|restart|status|pyramid|boss_direct|infinite|escape|infinite_escape]"
+      + " or attack [sight|spin|tailsnap|tailshoot|fling|stun]");
     return false;
   }
   const mode = command === "pyramid" ? "pyramid" : "boss";
@@ -35537,9 +39496,12 @@ function debugFinaleCommand(args) {
     runtime.debugCommand = command || "start";
     runtime.debugUsesFormalTimeline = true;
     runtime.debugMode = mode;
-    announce(mode === "pyramid"
+    runtime.debugSkipToEscape = skipToEscape;
+    consoleNotice(mode === "pyramid"
       ? "DEBUG: entering Finale pyramid tail"
-      : directBoss
+      : skipToEscape
+        ? `DEBUG: entering ${infinite ? "infinite " : ""}Finale escape route (boss auto-skipped)`
+        : directBoss
         ? "DEBUG: entering direct Finale Boss arena"
         : "DEBUG: entering full Finale Boss ending");
     return true;
@@ -35666,7 +39628,7 @@ function debugEndingCommand(args) {
   schedule(CONFIG.interactionRetirementDelay, () => {
     if (state.endingRuntime === runtime && source.lifecycle !== "destroyed") retireInteractions(source);
   }, source.index);
-  announce(`DEBUG: entering formal ${name}; restart the round before selecting another ordinary ending`);
+  consoleNotice(`DEBUG: entering formal ${name}; restart the round before selecting another ordinary ending`);
   return true;
 }
 
@@ -35750,7 +39712,7 @@ function debugRaceCommand(args) {
     runtime.debugForced = true;
     runtime.debugCommand = command || "start";
     runtime.debugUsesFormalTimeline = true;
-    announce(`DEBUG: entering formal RACE; authored RACE levels build at +${RACE_CONFIG.generateBuildTimes[0]}s and +${RACE_CONFIG.generateBuildTimes[1]}s`);
+    consoleNotice(`DEBUG: entering formal RACE; authored RACE levels build at +${RACE_CONFIG.generateBuildTimes[0]}s and +${RACE_CONFIG.generateBuildTimes[1]}s`);
     return true;
   } catch (error) {
     failRuntime(`debug RACE startup failed: ${error}`);
@@ -35849,7 +39811,7 @@ function debugLiquidFallCommand(args) {
   state.debugAllModelsMode = false;
   state.debugTrapMode = false;
   printDebugLiquidFallLayout();
-  announce("debug LIQUID FALL skin lab enabled; rebuilding generated area");
+  consoleNotice("debug LIQUID FALL skin lab enabled; rebuilding generated area");
   beginRound();
   return true;
 }
@@ -35895,7 +39857,7 @@ function debugTeleportMapCommand(args) {
   state.debugMovementThemesMode = false;
   state.debugAllModelsMode = false;
   state.debugTrapMode = false;
-  announce("debug TELEPORT lab enabled; rebuilding generated area");
+  consoleNotice("debug TELEPORT lab enabled; rebuilding generated area");
   beginRound();
   return true;
 }
@@ -36088,7 +40050,7 @@ function debugStageCommand(args) {
     }
     state.debugStageId = undefined;
     state.debugStageMirror = false;
-    announce("debug stage disabled; rebuilding generated area");
+    consoleNotice("debug stage disabled; rebuilding generated area");
     beginRound();
     return true;
   }
@@ -36109,7 +40071,7 @@ function debugStageCommand(args) {
   state.debugMovementThemesMode = false;
   state.debugAllModelsMode = false;
   state.debugTrapMode = false;
-  announce(`debug stage ${level.id} '${level.name}' by ${level.author}`
+  consoleNotice(`debug stage ${level.id} '${level.name}' by ${level.author}`
     + ` selected; mirror=${mirrored}; rebuilding generated area`);
   beginRound();
   return true;
@@ -36142,7 +40104,7 @@ function debugShowcaseCommand(args) {
   state.debugMovementThemesMode = false;
   state.debugAllModelsMode = false;
   state.debugTrapMode = false;
-  announce(`debug showcase ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
+  consoleNotice(`debug showcase ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
   beginRound();
 }
 
@@ -36173,7 +40135,7 @@ function debugGravityCommand(args) {
     state.debugStageId = undefined;
     state.debugStageMirror = false;
   }
-  announce(`debug gravity lab ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
+  consoleNotice(`debug gravity lab ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
   beginRound();
 }
 
@@ -36204,7 +40166,7 @@ function debugMovementThemesCommand(args) {
     state.debugStageId = undefined;
     state.debugStageMirror = false;
   }
-  announce(`debug movement themes lab ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
+  consoleNotice(`debug movement themes lab ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
   beginRound();
 }
 
@@ -36246,7 +40208,7 @@ function debugAllModelsCommand(args) {
     state.debugStageId = undefined;
     state.debugStageMirror = false;
   }
-  announce(`debug all models gallery ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
+  consoleNotice(`debug all models gallery ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
   beginRound();
 }
 
@@ -36279,7 +40241,7 @@ function debugSilentHillCommand(args) {
       state.debugStageId = undefined;
       state.debugStageMirror = false;
     }
-    announce(`Silent Hill theme override ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
+    consoleNotice(`Silent Hill theme override ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
     beginRound();
     return;
   }
@@ -36326,7 +40288,7 @@ function debugSpidersCommand(args) {
   state.debugMovementThemesMode = false;
   state.debugAllModelsMode = false;
   state.debugTrapMode = false;
-  announce("debug flat spider lab enabled: 12 thigh spiders; rebuilding generated area");
+  consoleNotice("debug flat spider lab enabled: 12 thigh spiders; rebuilding generated area");
   beginRound();
   return true;
 }
@@ -36367,8 +40329,90 @@ function debugTrapsCommand(args) {
     state.debugStageId = undefined;
     state.debugStageMirror = false;
   }
-  announce(`debug trap pixel lab ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
+  consoleNotice(`debug trap pixel lab ${enabled ? "enabled" : "disabled"}; rebuilding generated area`);
   beginRound();
+}
+
+// Spawn real map weapons in bulk and leave BOT pickup to the engine.
+const DEBUG_ENTWATCH_ITEMS = Object.freeze([
+  ["pizzabaker"], ["dragonslayer"], ["minislots"], ["billnye"],
+  ["planetcrystal", "earth"], ["planetcrystal", "fire"],
+  ["planetcrystal", "wind"], ["planetcrystal", "water"],
+  ["bhop_steroids"], ["rift"], ["storm_blade"], ["heal_orb"],
+  ["hackerman"], ["claymore"], ["peanutbutter"], ["baguette"],
+]);
+let debugEntwatchCount = 48;
+function debugEntwatchLog(text) { Instance.Msg(`[ENTWATCH DEBUG] ${text}`); }
+function debugEntwatchCommand(args) {
+  const [action = "on", count] = (String(args ?? "").trim().toLowerCase() || "on").split(/\s+/);
+  const selected = state.debugStageId === DEBUG_DATA.entwatchLevel.id;
+  if (action === "status") {
+    const runtime = state.currentLevel;
+    const items = [...runtime?.items ?? []].filter(item => item.debugEntwatch);
+    debugEntwatchLog(`selected=${selected} requested=${debugEntwatchCount} spawned=${items.length} held=${items.filter(item => item.state === "held").length}`);
+    return;
+  }
+  if (action === "off") {
+    if (selected) debugStageCommand("off");
+    return;
+  }
+  if (!["on", "restart"].includes(action) || (count !== undefined && !/^(?:[1-9]|[1-5][0-9]|6[0-4])$/.test(count))) {
+    debugEntwatchLog("usage: ze_debug_entwatch <on [1-64]|restart [1-64]|status|off>"); return;
+  }
+  if (count !== undefined) debugEntwatchCount = Number(count);
+  if (selected && action === "on") { debugEntwatchLog("already selected; use restart to rebuild"); return; }
+  state.debugStageId = DEBUG_DATA.entwatchLevel.id;
+  state.debugStageMirror = false;
+  state.debugShowcaseMode = state.debugGravityMode = state.debugMovementThemesMode = false;
+  state.debugAllModelsMode = state.debugTrapMode = false;
+  debugEntwatchLog(`building flat lab with ${debugEntwatchCount} artifacts; stripping ordinary BOT pistols`);
+  beginRound();
+}
+function stripDebugBotPistols() {
+  // Protect every artifact carrier, including weapons picked up before JS has
+  // observed their owner and changed the item state to held.
+  const carriers = new Set(activeRuntimes().flatMap(runtime =>
+    [...runtime.items ?? []].map(item => item.carrier)));
+  let stripped = 0;
+  for (const controller of Instance.GetAllPlayerControllers()) {
+    if (!validEntity(controller) || !controller.IsBot?.()) continue;
+    const pawn = controller.GetPlayerPawn?.();
+    if (!validEntity(pawn) || !pawn.IsAlive?.()) continue;
+    const pistol = pawn.FindWeaponBySlot?.(CSGearSlot.PISTOL);
+    if (validEntity(pistol) && !carriers.has(pistol)) {
+      pawn.DestroyWeapon?.(pistol);
+      stripped++;
+    }
+  }
+  return stripped;
+}
+function startDebugEntwatchLab(runtime, markers, elevations) {
+  let spawned = false;
+  function tick() {
+    if (state.debugStageId !== DEBUG_DATA.entwatchLevel.id || !state.levels.has(runtime.index)) return;
+    if (runtime.remaining > 0 || state.currentLevel !== runtime) { schedule(0.5, tick, runtime.index); return; }
+    if (!spawned) {
+      spawned = true;
+      for (let index = 0; index < debugEntwatchCount; index++) {
+        const [name, variant] = DEBUG_ENTWATCH_ITEMS[index % DEBUG_ENTWATCH_ITEMS.length];
+        const position = add(gridWorld(runtime.entry, runtime.incoming, markers.entryCenter,
+          2 + (index % 8) * 2, 3 + Math.floor(index / 8) * 1.8,
+          elevations.entry, elevations.entry), vec(0, 0, 32));
+        const before = new Set(runtime.items);
+        try {
+          spawnItemFeature(runtime, { position, angles: anglesFor(runtime.incoming),
+            itemName: name, itemVariant: variant, team: 3, debugItem: true });
+          const item = [...runtime.items].find(candidate => !before.has(candidate));
+          if (item) item.debugEntwatch = true;
+        } catch (error) { debugEntwatchLog(`${name}: ${error}`); }
+      }
+      debugEntwatchCommand("status");
+    }
+    // Also handle late spawns and BOT purchases, without deleting held items.
+    stripDebugBotPistols();
+    schedule(0.5, tick, runtime.index);
+  }
+  schedule(0.5, tick, runtime.index);
 }
 
 function debugSpawnItem(args) {
@@ -36430,7 +40474,9 @@ function debugItemPositions() {
 
 
 const DEBUG_COMMAND_HANDLERS = Object.freeze({
+  debugEntwatchCommand,
   debugEndCommand,
+  debugTrollMessageCommand,
   debugNextEndingCommand,
   debugEndingCommand,
   debugEventCommand,
@@ -36451,6 +40497,9 @@ const DEBUG_COMMAND_HANDLERS = Object.freeze({
   debugKartsCommand,
   debugFinaleCommand,
   debugThunderCommand,
+  debugStrikeCommand,
+  debugKamikazeCommand,
+  debugDebrisCommand,
   debugTeleportCommand,
   debugTeleportMapCommand,
   debugLiquidFallCommand,
@@ -36466,6 +40515,7 @@ const debugNativeBridge = { owner: undefined, request: undefined, reply: undefin
   session: undefined, completedId: 0 };
 
 const DEBUG_NATIVE_MAP_KEYS = Object.freeze({
+  entwatchLevel: ["#debug_entwatch", "debugEntwatch"],
   showcaseLevel: ["#debug_showcase", "debugShowcase"], gravityLevel: ["#debug_gravity", "debugGravity"],
   movementThemesLevel: ["#debug_movement_themes", "debugMovementThemes"],
   teleportLevel: ["#debug_teleport", "debugTeleport"], liquidFallLevel: ["#debug_liquid_fall", "debugLiquidFall"],
