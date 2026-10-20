@@ -25,6 +25,7 @@ async function restartRoundWithDelay() {
     Instance.ServerCommand("say 即将重启回合");
     await Instance.Delay(1);
     Instance.ServerCommand("endround");
+    Instance.ServerCommand("rr 2");
 }
 
 
@@ -65,6 +66,7 @@ Instance.OnPlayerChat((event) => {
             case "取消指定":
             case "停止指定":
                 forcedNextMode = 0;
+                Instance.ServerCommand(`say 已取消模式指定`);
                 break;
         }
         const match = event.text.match(/^(?:禁用模式|关闭模式|禁用|disablemode|disable_mode)\s*[:：]?\s*(.+)$/i);
@@ -72,13 +74,13 @@ Instance.OnPlayerChat((event) => {
             const key = match[1].trim();
             const mode = MODE_ALIASES[key];
             if (mode === undefined) {
-                Instance.ServerCommand(`say 未知模式: ${key}`);
+                Instance.ServerCommand(`say 未知模式 ${key}`);
                 return;
             }
             if (disableMode(mode)) {
-                Instance.ServerCommand(`say 已禁用（${MODE_NAMES[mode]}）`);
+                Instance.ServerCommand(`say 已禁用 ${MODE_NAMES[mode]}`);
             } else {
-                Instance.ServerCommand(`say （${MODE_NAMES[mode]}）已经是禁用状态`);
+                Instance.ServerCommand(`say ${MODE_NAMES[mode]} 已经是禁用状态`);
             }
             return;
         }
@@ -95,13 +97,15 @@ Instance.OnPlayerChat((event) => {
             const key = forceModeMatch[1].trim();
             const mode = MODE_ALIASES[key];
             if (mode === undefined) {
-                Instance.ServerCommand(`say 未知模式: ${key}`);
+                Instance.ServerCommand(`say 未知模式 ${key}`);
                 return;
             }
             forcedNextMode = mode;
-            Instance.ServerCommand(`say 已指定模式为（${MODE_NAMES[mode]}）`);
+            Instance.ServerCommand(`say 已指定模式为 ${MODE_NAMES[mode]}`);
             return;
         }
+
+
     }
 });
 
@@ -143,6 +147,9 @@ Instance.OnScriptInput("PickMode", () => {
         const winner = forcedNextMode;
         modeProgress[winner] = 0;
         EntFire(`mgmode${winner}`, 'Trigger');
+        if (winner == 3) {
+            EntFire('mgrunrandom', 'PickRandomShuffle');
+        }
         return;
     }
     let winner = 0;
@@ -180,14 +187,9 @@ Instance.OnScriptInput("Heal300", ({ activator }) => {
     activator.SetHealth(hp + 300);
 });
 
-Instance.OnPlayerKill((event) => {
-    const attacker = event.attacker;
-    if (!(attacker instanceof CSPlayerPawn)) return;
-    if (!attacker.IsAlive()) return;
-    const controller = attacker.GetPlayerController();
-    if (!controller) return;
-    controller.AddMoneySpendableNow(2000);
-});
+
+
+
 
 /** 所有活跃的跟随对 { follower, root } */
 const activePairs = new Set();
