@@ -239,27 +239,59 @@ function wiring(templates, install) {
 }
 
 // life_blizzard_lua_order_20261018_r8/src/life_tap.js
+// 2026-10-28：速度阶段改为 0 秒 1.2、2 秒 1.4、4~10 秒 1.6，11 秒恢复 1.1；
+// 施法者生命值高于 13000 时同一时间线最高 1.8（与 4×500 扣血同组），否则只到 1.6；
+// 治疗脉冲不再写入速度；治疗和加速都只在主要范围内生效，范围内按约 0.1 秒节拍持续写入，
+// 离开范围立即恢复 1.1。
 var casts = /* @__PURE__ */ new Map()
+var speeds = /* @__PURE__ */ new Map()
 var drains = /* @__PURE__ */ new Map()
 var boosts = /* @__PURE__ */ new Map()
 var legacyPulse = /* @__PURE__ */ new Map()
 var pulses = 0
 var castEvents = 0
 var duplicateCasts = 0
+var speedSeq = 0
+// 速度阶梯：0 秒 1.2、2 秒 1.4、4 秒 1.6，11 秒统一恢复 1.1；施法者 1.8 仅在扣血组生效时替换 1.6。
+var SPEED_STEPS = [
+  { at: 0, value: 1.2 },
+  { at: 2, value: 1.4 },
+  { at: 4, value: 1.6 },
+]
+var SPEED_CASTER = 1.8
+var SPEED_END = 11
+var SPEED_RADIUS = 300
+var SPEED_RADIUS2 = SPEED_RADIUS * SPEED_RADIUS
+var SPEED_JOIN = {
+  1.2: 'lifeTap12',
+  1.4: 'lifeTap14',
+  1.6: 'lifeTap16',
+  1.8: 'lifeTap18',
+}
+var SPEED_STEP = {
+  1.2: 'lifeTapPhase12',
+  1.4: 'lifeTapPhase14',
+  1.6: 'lifeTapPhase16',
+  1.8: 'lifeTapPhase18',
+}
 var loop = clock(
   'life_tap',
   tick,
   () => {
     casts.clear()
+    speeds.clear()
     drains.clear()
     boosts.clear()
     legacyPulse.clear()
     pulses = castEvents = duplicateCasts = 0
+    speedSeq = 0
   },
   drop,
 )
 loop.setInspect(() => ({
   casts: casts.size,
+  speeds: speeds.size,
+  speedTargets: [...speeds.values()].reduce((n, r) => n + r.targets.size, 0),
   drains: drains.size,
   boosts: boosts.size,
   pulses,
@@ -275,6 +307,14 @@ function drop(p, slot) {
         q.GetPlayerController().GetPlayerSlot() === slot
       )
         map.delete(q)
+  for (const r of speeds.values())
+    for (const q of r.targets.keys())
+      if (
+        q === p ||
+        !live(q, 2) ||
+        q.GetPlayerController().GetPlayerSlot() === slot
+      )
+        r.targets.delete(q)
 }
 function pulse(e) {
   if (!valid(e)) return
@@ -284,7 +324,6 @@ function pulse(e) {
     if (distance(p.GetAbsOrigin(), c) <= 300) {
       const hp = p.GetHealth()
       if (hp < 1e5) p.SetHealth(Math.min(1e5, hp + 2e3))
-      effect(p, 'lifeTap', e)
     }
 }
 function ownEntities(base, source, p) {
@@ -301,28 +340,108 @@ function ownEntities(base, source, p) {
     )
   return candidates.length === 1 ? candidates : []
 }
+function speedValue(index, caster, empowered) {
+  const step = SPEED_STEPS[index]
+  if (!step) return 1.1
+  return caster && empowered && index === SPEED_STEPS.length - 1
+    ? SPEED_CASTER
+    : step.value
+}
+function speedInRange(p, r) {
+  const o = p.GetAbsOrigin(),
+    dx = o.x - r.x,
+    dy = o.y - r.y,
+    dz = o.z - r.z
+  return dx * dx + dy * dy + dz * dz <= SPEED_RADIUS2
+}
+function offerSpeed(r, index) {
+  if (valid(r.particle)) {
+    const o = r.particle.GetAbsOrigin()
+    r.x = o.x
+    r.y = o.y
+    r.z = o.z
+  }
+  // 离开主要范围：立即写回 1.1，并取消该玩家的加速记录；再次进入时按新目标补写当前阶段。
+  for (const p of r.targets.keys())
+    if (!live(p, 2) || !speedInRange(p, r)) {
+      if (live(p, 2)) effect(p, 'lifeTapEnd', r.particle)
+      r.targets.delete(p)
+    }
+  for (const p of players(2)) {
+    if (!speedInRange(p, r)) continue
+    const value = speedValue(index, p === r.caster, r.empowered),
+      last = r.targets.get(p)
+    // 在范围内按约 0.1 秒节拍持续写入当前阶段速度（与原 Lua 的重复 keyvalue 写入一致）。
+    r.targets.set(p, value)
+    effect(p, (last === void 0 ? SPEED_JOIN : SPEED_STEP)[value], r.particle)
+  }
+}
+function beginSpeed(e, p, empowered) {
+  const o = e.GetAbsOrigin(),
+    r = {
+      caster: p,
+      empowered,
+      particle: e,
+      x: o.x,
+      y: o.y,
+      z: o.z,
+      born: now(),
+      end: now() + SPEED_END,
+      applied: 0,
+      targets: /* @__PURE__ */ new Map(),
+    }
+  speeds.set(++speedSeq, r)
+  offerSpeed(r, 0)
+  r.applied = 1
+  loop.wake()
+}
+function releaseSpeed(r) {
+  for (const p of r.targets.keys())
+    if (live(p, 2)) effect(p, 'lifeTapEnd', r.particle)
+  r.targets.clear()
+}
+function tickSpeed(t) {
+  for (const [id, r] of speeds) {
+    if (t + 1e-6 >= r.end) {
+      releaseSpeed(r)
+      speeds.delete(id)
+      continue
+    }
+    while (
+      r.applied < SPEED_STEPS.length &&
+      t + 1e-6 >= r.born + SPEED_STEPS[r.applied].at
+    ) {
+      offerSpeed(r, r.applied)
+      r.applied++
+    }
+    if (r.applied) offerSpeed(r, r.applied - 1)
+  }
+}
 function activate({ activator: p, source }) {
   if (live(p, 2) && boosts.get(p)?.at === now()) {
     duplicateCasts++
     return
   }
   castEvents++
+  // 扣血与施法者 1.8 属于同一组：只有施法瞬间生命值高于阈值才同时生效。
+  const empowered = live(p, 2) && p.GetHealth() > 13e3
   if (live(p, 2)) {
-    if (p.GetHealth() > 13e3) {
+    if (empowered) {
       damage(p, 500)
       drains.set(p, { left: 3, next: now() + 1 })
     }
     boosts.set(p, { at: now(), phase: 0 })
-    effect(p, 'lifeTap12')
   }
   for (const e of ownEntities('life_tap_particle', source, p)) {
     fire(e, 'Start')
     fire(e, 'Stop', '', 4)
   }
+  // 与原 Lua healzombie 一致：0.3 秒一拍、共 21 拍，这里整体后移到第 4~10 秒。
   for (const e of ownEntities('life_tap_particle_2', source, p)) {
     if (!casts.has(e) && casts.size >= 32)
       casts.delete(casts.keys().next().value)
     casts.set(e, { begin: now() + 4, end: now() + 10, next: now() + 4 })
+    if (live(p, 2)) beginSpeed(e, p, empowered)
   }
   loop.wake()
 }
@@ -353,7 +472,8 @@ function tick(t) {
       if (index >= 20) casts.delete(e)
     }
   }
-  return Boolean(casts.size || drains.size || boosts.size)
+  tickSpeed(t)
+  return Boolean(casts.size || speeds.size || drains.size || boosts.size)
 }
 wiring(
   ['zm_life_tap_random_template', ...['zm_life_tap_random_template']],
@@ -373,4 +493,4 @@ Instance.OnScriptInput('life_tap', () => {
   for (const e of all('life_tap_area')) pulse(e)
 })
 
-Instance.Msg('SLICOO_NATIVE_LOAD:life_tap:20261018-r8')
+Instance.Msg('SLICOO_NATIVE_LOAD:life_tap:20261028-r9')

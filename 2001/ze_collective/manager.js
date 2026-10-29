@@ -98,6 +98,9 @@ const CONFIG = Object.freeze({
   teleportIndicatorFallback: 50,
   infectionFallback: 30,
   infectionMinTime: 5,
+  delayTimeout: 60,
+  delaySlayTimeout: 80,
+  delayMinPlayers: 2,
   roundTimeMinutes: 60,
   freezeTimeSeconds: 3,
   airAccelerate: 12,
@@ -2798,6 +2801,10 @@ const FINALE_BOSS_CONFIG = Object.freeze({
   grenadeDamage: 2500,
   grenadeCritChance: 30,
   grenadeCritStun: 2,
+  // CS HE blast reach (damage 99 * 3.5) to the grenade box centre.
+  grenadeBlastRadius: 350,
+  // A native grenade-box hit this recent already counted the detonation.
+  grenadeNativeWindow: 0.5,
                                                                             
                                        
   hurtFxLimit: 5,
@@ -3019,6 +3026,14 @@ const FINALE_RAIN_CONFIG = Object.freeze({
                                                                               
                                                                           
 const FINALE_STRUCTURE_CONFIG = Object.freeze({
+  // Z elevators, tower lift and final pyramid rise use solid driver boxes when
+  // the map has them; false restores the non-solid drivers (A/B switch).
+  solidLiftDrivers: true,
+  // CS2 never pushes a player a lift hits in the air. Every this many seconds,
+  // pawns inside a lift that moved are set on its tile top (0 disables).
+  liftUnstickInterval: 0.5,
+  // Collision depth below the tile top per lift feature prefix; others (doors) are skipped.
+  liftUnstickDepths: Object.freeze({ finaleZElevator_: 15, finaleTowerLift: 30, finalePyramid: 930 }),
   // CSS bridge/tower cadence, also applied to the arena to spread CS2 spawns.
   manualSpawnInterval: 0.05,
   bridgeLength: 70,
@@ -3326,8 +3341,10 @@ const GENERIC_BEAMGRID_CONFIG = Object.freeze({
   lifetime: 15,
   fadeDuration: 2,
   activeEndPadding: 0.5,
+  // Static beamgrid_aligned.dmx is baked along local X to these world extents.
+  modelScale: 3,
   halfLength: 20000,
-  halfWidth: 5,
+  halfWidth: 10,
   damage: 999999,
   model: "models/luffaren/beamgrid.vmdl",
 });
@@ -3637,7 +3654,15 @@ const FEATURE_TEMPLATE_NAMES = Object.freeze({
   finaleCheckoutDamage: "template_finale_checkout_damage",
   finaleMover: "template_finale_movelinear",
   finaleZombieMover: "template_finale_zmovelinear",
-  finaleCheckoutText: "template_finale_checkout_text",
+  // Solid unparented drivers: the mover's own toolsinvisible box matches the lift
+  // and movedir is authored per template (up, or the Z elevator's travel yaw).
+  finaleSolidZElevator: "template_finale_solid_zelevator",
+  finaleSolidZElevator90: "template_finale_solid_zelevator_y90",
+  finaleSolidZElevator180: "template_finale_solid_zelevator_y180",
+  finaleSolidZElevator270: "template_finale_solid_zelevator_y270",
+  finaleSolidTowerLift: "template_finale_solid_towerlift_up",
+  finaleSolidPyramidTop: "template_finale_solid_pyramidtop_up",
+  finaleCheckoutText:"template_finale_checkout_text",
   finaleThunder: "template_finale_thunder",
   finaleRain: "template_finale_rain",
   finaleRainGround: "template_finale_rain_ground",
@@ -3841,7 +3866,7 @@ function featureTemplateIsRequired(key) {
   if (key === "jumpscare") return false;
                                                                            
                                                                     
-  if (["bossPieceTouch", "bossEyeTouch", "bossEyeDamage", "bossGrenadeDamage", "finaleCheckoutDamage", "finaleMover", "finaleZombieMover", "finaleCheckoutText", "finaleThunder", "finaleRain", "finaleRainGround", "lightningStrike", "lightningStrikeSky"].includes(key)) return false;
+  if (["bossPieceTouch", "bossEyeTouch", "bossEyeDamage", "bossGrenadeDamage", "finaleCheckoutDamage", "finaleMover", "finaleZombieMover", "finaleSolidZElevator", "finaleSolidZElevator90", "finaleSolidZElevator180", "finaleSolidZElevator270", "finaleSolidTowerLift", "finaleSolidPyramidTop", "finaleCheckoutText", "finaleThunder", "finaleRain", "finaleRainGround", "lightningStrike", "lightningStrikeSky"].includes(key)) return false;
                                                                          
                                                                            
                                                            
@@ -6083,6 +6108,7 @@ const TROLL_MESSAGE_CONFIG = Object.freeze({
 // theme resources, warnings, slot HUD maps) must stay out of this list.
 function createRoundScope() {
   return {
+    progressionDelay: { since: undefined, nextCheckAt: 0, invincible: false, slayed: false, contextPawns: new Set() },
     trollMessages: createTrollMessageState(),
     roundReportLevels: new Map(),
     roundReportRecent: [],
@@ -6579,9 +6605,10 @@ function resolveStageEnding(humansWon) {
                                                                              
                                                                               
                                                                         
-    const source = state.endingRuntime?.sourceRuntime;
-    state.campaign.finaleAnchor = source?.end ? clone(source.end) : undefined;
-    state.campaign.finaleDirection = source?.outgoing ? clone(source.outgoing) : undefined;
+    // Campaign Finale begins in a new round, back at the spawn platform.
+    // Only an infinite checkout continues from the current level's exit.
+    state.campaign.finaleAnchor = undefined;
+    state.campaign.finaleDirection = undefined;
     state.campaign.complete = false;
     state.campaign.stageIndex = FINALE_STAGE_INDEX;
     state.campaign.phase = "finale_pending";
@@ -7416,9 +7443,11 @@ function markEndingOutcomePending(runtime, humansWon) {
   // Both runtimes leave activeRuntimes() below; retire temporary projectiles
   // and Puller beams instead of leaving them frozen until the round resets.
   retireLinearZombieProjectiles(runtime);
+  retireBallisticZombieProjectiles(runtime);
   retireHealOrbs(runtime);
   if (source && source.lifecycle !== "destroyed") {
     retireLinearZombieProjectiles(source);
+    retireBallisticZombieProjectiles(source);
     retireHealOrbs(source);
   }
   if (source && !["outcome_pending", "destroyed"].includes(source.lifecycle)) {
@@ -8231,7 +8260,7 @@ function destroyEndingEntity(runtime, entity, deferKill = false) {
     return;
   }
   if (deferKill) queueEntityKills([entity]);
-  else if (entity.IsValid?.()) entity.Kill?.();
+  else destroyEntities([entity]);
   runtime.entities?.delete(entity);
   state.terrainSpawnFades.delete(entity);
   state.silentHillWorld.visuals.delete(entity);
@@ -8426,7 +8455,9 @@ function finishEndingRuntime(runtime, lifecycle = "resolved") {
   }
   runtime.itemDeployables?.clear?.();
   for (const fall of [...(runtime.nativeFallingPieces ?? [])]) retireEndingNativeFall(runtime, fall);
-  for (const entity of runtime.entities ?? []) if (entity?.IsValid?.()) entity.Kill?.();
+  // Keep ending terrain through the result screen, just like ordinary levels.
+  // Explicit resets still kill it; engine-backed releases wait for restart.
+  destroyEntities(runtime.entities ?? []);
   runtime.lifecycle = lifecycle;
   if (runtime.lifecycleHistory) runtime.lifecycleHistory.push(lifecycle);
   if (runtime.spawnQueue) runtime.spawnQueue.length = 0;
@@ -8658,7 +8689,9 @@ function releaseEndingSourceLevels(runtime) {
   const sourceLevels = new Set(runtime.endingSourceLevels ?? []);
   for (const event of [...state.genericEvents.active.values()]) {
     // COLLAPSE otherwise prevents beginLevelFade from retiring its old source.
-    if (sourceLevels.has(event.collapseSource)) endGenericEvent(event, { reset: true });
+    // endingSourceReleased is already set: a throw here would skip the fades below for good.
+    if (sourceLevels.has(event.collapseSource))
+      guardStep(`release source ${event.name}`, () => endGenericEvent(event, { reset: true }));
   }
   for (const level of sourceLevels) {
     if (state.levels.get(level.index) !== level || level.lifecycle === "destroyed") continue;
@@ -10453,12 +10486,17 @@ function chooseRaceLevel(runtime) {
                                                                            
                                                                 
   const pool = [];
-  for (const level of RACE_LEVELS) {
-    for (const mirrored of [false, true]) {
-      const plan = raceCandidatePlan(level, runtime, incoming, mirrored);
-      if (plan) pool.push(plan);
+  const collect = (levels) => {
+    for (const level of levels) {
+      for (const mirrored of [false, true]) {
+        const plan = raceCandidatePlan(level, runtime, incoming, mirrored);
+        if (plan) pool.push(plan);
+      }
     }
-  }
+  };
+  // !testrace: the devmap is the only pool entry while it fits the bounds.
+  if (devmap.raceTest && devmap.level) collect([devmap.level]);
+  if (pool.length === 0) collect(RACE_LEVELS);
   runtime.raceCandidateCount = pool.length;
   if (pool.length === 0) {
     runtime.raceSelectionNote = "no authored RACE layout orientation satisfies the current bounds";
@@ -12792,7 +12830,7 @@ function startRaceEnding(stageSnapshot, sourceRuntime) {
   // ~23s kart preparation gives humans nothing to shoot and drains them at 4 HP/s.
   for (const event of [...state.genericEvents.active.values()]) {
     if (event.name !== "BLOODLUST") continue;
-    endGenericEvent(event);
+    guardStep("RACE end BLOODLUST", () => endGenericEvent(event));
     announceRepeated("The bloodthirst has ended!");
   }
   runtime.raceProfile = undefined;
@@ -13239,21 +13277,110 @@ function buildFinaleTower(runtime) {
   runtime.finaleStructure.towerHeight = config.towerHeight;
 }
 
-function createFinaleNativeLift(runtime, pieces, displacement, speed, feature, onArrived) {
-  const steps = createFinaleNativeLiftSteps(runtime, pieces, displacement, speed, feature, onArrived);
+function createFinaleNativeLift(runtime, pieces, displacement, speed, feature, onArrived, solid) {
+  const steps = createFinaleNativeLiftSteps(runtime, pieces, displacement, speed, feature, onArrived, solid);
   let result;
   do { result = steps.next(); } while (!result.done);
   return result.value;
 }
 
-function* createFinaleNativeLiftSteps(runtime, pieces, displacement, speed, feature, onArrived) {
+// Tile tops of a lift's pieces, averaged: the driver origin a solid box is authored around.
+function finaleLiftCenter(members) {
+  const origins = members.map(piece => piece.entities.find(validEntity).GetAbsOrigin());
+  const sum = origins.reduce((total, origin) => add(total, origin), vec());
+  return mul(sum, 1 / origins.length);
+}
+
+function finaleLiftUnstickDepth(feature) {
+  const entry = Object.entries(FINALE_STRUCTURE_CONFIG.liftUnstickDepths)
+    .find(([prefix]) => String(feature).startsWith(prefix));
+  return entry?.[1];
+}
+
+// Low-frequency rescue, not a per-tick scan. A lift is checked on passes where
+// its driver moved, plus one pass after it stops. A pawn whose hull overlaps a
+// tile below its top is set on that top, keeping at least the lift's rise speed.
+function processFinaleLiftUnstick(runtime, now) {
+  const interval = FINALE_STRUCTURE_CONFIG.liftUnstickInterval;
+  if (!(interval > 0) || now < (runtime.nextLiftUnstickAt ?? 0)) return;
+  runtime.nextLiftUnstickAt = now + interval;
+  const boxes = [];
+  const addTiles = (lift, depth, riseSpeed) => {
+    for (const piece of lift.pieces ?? []) {
+      const tile = piece.entities?.find(validEntity);
+      if (tile) boxes.push({ top: clone(tile.GetAbsOrigin()), depth, riseSpeed });
+    }
+  };
+  // Lifts retire on arrival; give each one last pass for a pawn swallowed just before.
+  for (const lift of runtime.finaleRetiredLifts ?? []) addTiles(lift, finaleLiftUnstickDepth(lift.feature), 0);
+  runtime.finaleRetiredLifts = [];
+  for (const lift of runtime.finaleNativeLifts ?? []) {
+    const depth = finaleLiftUnstickDepth(lift.feature);
+    if (!depth || !validEntity(lift.driver)) continue;
+    const origin = clone(lift.driver.GetAbsOrigin());
+    const last = lift.unstickOrigin;
+    lift.unstickOrigin = origin;
+    const moved = last && Math.hypot(origin.x - last.x, origin.y - last.y, origin.z - last.z) > 0.5;
+    lift.unstickPasses = moved ? 2 : Math.max(0, (lift.unstickPasses ?? 0) - 1);
+    if (lift.unstickPasses === 0) continue;
+    addTiles(lift, depth, moved ? Math.max(0, (origin.z - last.z) / interval) : 0);
+  }
+  if (boxes.length === 0) return;
+  // Tile half-width 48 plus the 16-unit player half-width, minus 2 so a pawn
+  // merely touching a side is left alone; 72 is the standing hull height.
+  const reach = 48 + 16 - 2;
+  for (const pawn of allLivingPawns()) {
+    const feet = pawn.GetAbsOrigin();
+    const box = boxes.find(({ top, depth }) => Math.abs(feet.x - top.x) < reach && Math.abs(feet.y - top.y) < reach
+      && feet.z < top.z - 2 && feet.z + 72 > top.z - depth + 2);
+    if (!box) continue;
+    const velocity = pawn.GetAbsVelocity?.() ?? vec();
+    pawn.Teleport({ position: vec(feet.x, feet.y, box.top.z + 1),
+      velocity: vec(velocity.x, velocity.y, Math.max(velocity.z, box.riseSpeed)) });
+  }
+}
+
+// Solid template for this travel: vertical lifts use the key as is (movedir up),
+// horizontal ones the variant authored for the cardinal travel yaw.
+function solidLiftTemplateKey(solid, displacement) {
+  if (!solid) return undefined;
+  if (Math.hypot(displacement.x, displacement.y) < 0.01) return displacement.z > 0 ? solid : undefined;
+  if (Math.abs(displacement.z) >= 0.01) return undefined;
+  const yaw = ((Math.round(yawOf(displacement) / 90) * 90) % 360 + 360) % 360;
+  if (Math.abs(normalizeYaw(yawOf(displacement) - yaw)) > 0.5) return undefined;
+  return yaw === 0 ? solid : `${solid}${yaw}`;
+}
+
+// Unparented solid driver: the template authors movedir, so the engine moves it
+// as a root pusher. A driver parented to the rotated frame did not push.
+function spawnSolidLiftLeg(runtime, feature, templateKey, position, distance, speed) {
+  const spawned = spawnRoundEntities(featureTemplate(templateKey), position, { pitch: 0, yaw: 0, roll: 0 }) ?? [];
+  const driver = spawned.find(entity => validEntity(entity) && entity.GetClassName?.() === "func_movelinear");
+  if (!driver || spawned.length !== 1) {
+    destroyEntities(spawned);
+    throw new Error(`${feature}: ${FEATURE_TEMPLATE_NAMES[templateKey]} must spawn exactly one func_movelinear`);
+  }
+  assignRecycledEntityName(driver, `block_${feature}_driver`);
+  runtime.entities.add(driver);
+  fireTarget(driver, "SetMoveDistanceFromStart", String(distance));
+  fireTarget(driver, "SetSpeed", String(speed));
+  return { driver, anchor: undefined, distance, connections: [] };
+}
+
+// solid: feature template key of a solid driver box. The driver then sits on the
+// lift center; without that template (older compile) the non-solid mover is kept.
+function* createFinaleNativeLiftSteps(runtime, pieces, displacement, speed, feature, onArrived, solid) {
   const members = pieces.filter(piece => (piece.entities ?? []).some(validEntity));
   const first = members[0]?.entities.find(validEntity);
   if (!first) throw new Error(`${feature}: no spawned lift pieces`);
-  const start = clone(first.GetAbsOrigin());
-  const leg = spawnNativeMoverLeg(runtime, { feature, nativeTemplateKey: feature.startsWith("finaleZElevator_")
-    ? "finaleZombieMover" : "finaleMover" }, first.GetModelName(), start, add(start, displacement), speed);
-  const lift = { ...leg, pieces: members, start, displacement: clone(displacement), finished: false };
+  const solidKey = FINALE_STRUCTURE_CONFIG.solidLiftDrivers ? solidLiftTemplateKey(solid, displacement) : undefined;
+  const useSolid = solidKey && state.featureTemplates.has(solidKey);
+  const start = useSolid ? finaleLiftCenter(members) : clone(first.GetAbsOrigin());
+  const distance = Math.hypot(displacement.x, displacement.y, displacement.z);
+  const leg = useSolid ? spawnSolidLiftLeg(runtime, feature, solidKey, start, distance, speed)
+    : spawnNativeMoverLeg(runtime, { feature, nativeTemplateKey: feature.startsWith("finaleZElevator_")
+      ? "finaleZombieMover" : "finaleMover" }, first.GetModelName(), start, add(start, displacement), speed);
+  const lift = { ...leg, feature, pieces: members, start, displacement: clone(displacement), finished: false };
   runtime.finaleNativeLifts ??= new Set();
   runtime.finaleNativeLifts.add(lift);
   try {
@@ -13295,6 +13422,7 @@ function retireFinaleNativeLift(runtime, lift) {
     }
   }
   runtime.finaleNativeLifts?.delete(lift);
+  if (finaleLiftUnstickDepth(lift.feature)) (runtime.finaleRetiredLifts ??= []).push(lift);
   releaseNativeMoverLeg(runtime, lift);
 }
 
@@ -13627,7 +13755,7 @@ function* spawnFinaleZElevatorSteps(runtime) {
       sub(mover.target, start), mover.speed, `finaleZElevator_${platform.y}`, () => {
         mover.direction = -1;
         mover.waitUntil = Instance.GetGameTime() + FINALE_BOSS_CONFIG.zPlatformElevatorWait;
-      });
+      }, "finaleSolidZElevator");
     mover.nativeLift.connections.push(connectOwnedOutput(runtime, mover.nativeLift.driver, "OnFullyClosed", () => {
       if (mover.nativeLift.retired) return;
       mover.direction = 1;
@@ -13774,9 +13902,12 @@ function startFinaleStructureTimeline(runtime) {
   // Source starts finale_towerelevator_leavetime only when the elevator relay
   // is spawned: after five 0.05s setup steps, the shared manual queue spawns
   // every bridge and tower item (lowgrav visuals included) at 0.05s each.
-  // Mirror that ~32s delay instead of counting from the round start, so the
+  // Mirror that ~40s delay instead of counting from the round start, so the
   // zombies' tower entry (~76s) still precedes departure as in the original.
-  const sourceElevatorSpawnDelay = 0.25 + 0.05 * (
+  // Each chained EntFire(0.05) only fires on a tick boundary: on a 64-tick
+  // server that is 4 ticks, so a Source queue step really took 0.0625s.
+  const sourceQueueStep = Math.ceil(0.05 * 64) / 64;
+  const sourceElevatorSpawnDelay = 5 * sourceQueueStep + sourceQueueStep * (
     (structure.bridge?.length ?? 0)
     + (structure.tower?.length ?? 0)
     + (structure.lowgravVisualRequests?.length ?? 0));
@@ -13784,10 +13915,10 @@ function startFinaleStructureTimeline(runtime) {
   structure.elevatorLeaveAt = structure.elevatorReadyAt + FINALE_STRUCTURE_CONFIG.towerElevatorLeaveTime;
   scheduleFinaleElevatorCountdown(runtime, structure.elevatorReadyAt, structure.elevatorLeaveAt);
   // Source spawns block_finale_towerdoormaster right after the elevator master
-  // (one more 0.05s queue slot) and opens it 1s later, so the door stays shut
+  // (one more queue slot) and opens it 1s later, so the door stays shut
   // until the whole tower has spawned. Source also sets FALLDAMAGE_DISABLE for
   // the elevator wait and clears it when the elevator leaves.
-  structure.towerDoorOpenAt = structure.elevatorReadyAt + 0.05 + 1;
+  structure.towerDoorOpenAt = structure.elevatorReadyAt + sourceQueueStep + 1;
   endingTaskAt(runtime, structure.towerDoorOpenAt,
     () => setFinaleTowerDoorState(runtime, "open"), "finaleTowerDoorOpen");
   endingTaskAt(runtime, structure.elevatorReadyAt, () => {
@@ -13797,6 +13928,7 @@ function startFinaleStructureTimeline(runtime) {
   endingTaskAt(runtime, structure.elevatorLeaveAt,
     () => {
       structure.elevatorLeaving = true;
+      state.falldownCheckpointEnabled = false;
       runtime.finaleStructurePhase = "elevator";
                                                                              
                                                                           
@@ -13943,7 +14075,7 @@ function startFinaleTowerElevator(runtime, now) {
       structure.elevator.arrivedAt = lift.arrivedAt;
       runtime.finalBossReadyAt = lift.arrivedAt + FINALE_STRUCTURE_CONFIG.bossStartDelay;
       retireFinaleNativeLift(runtime, lift);
-    });
+    }, "finaleSolidTowerLift");
   fireTarget(structure.elevator.nativeLift.driver, "Open");
   runtime.finaleElevatorRiding = true;
   // Source 1 StartFinaleElevatorLocal: CleanSelf every pizza within 350u.
@@ -14542,7 +14674,8 @@ function raiseFinaleTop(runtime) {
     pieces.push(...(runtime.layout.groups.get(group) ?? []));
   }
   const lift = createFinaleNativeLift(runtime, pieces, vec(0, 0, FINALE_CONFIG.finalRiseDistance),
-    FINALE_CONFIG.finalRiseSpeed, "finalePyramidTop", arrived => retireFinaleNativeLift(runtime, arrived));
+    FINALE_CONFIG.finalRiseSpeed, "finalePyramidTop", arrived => retireFinaleNativeLift(runtime, arrived),
+    "finaleSolidPyramidTop");
   lift.final = true;
   runtime.elevators.push(lift);
   endingTask(runtime, 0.1, () => { if (!lift.retired) fireTarget(lift.driver, "Open"); });
@@ -14696,7 +14829,9 @@ function startFinaleEnding(stageSnapshot, sourceRuntime) {
   const mode = stageSnapshot?.finaleMode === "pyramid" || sourceRuntime?.finaleMode === "pyramid" ? "pyramid" : "boss";
   const missing = missingFinaleFeatureTemplates(mode);
   if (missing.length) throw new Error(`Finale missing required entities: ${missing.join(", ")}`);
-  state.falldownCheckpointEnabled = false;
+  // Source keeps floor checkpoints through the bridge and low-gravity climb.
+  // The tower elevator disables them when it leaves.
+  state.falldownCheckpointEnabled = mode === "boss";
   state.finalePostImpostorUntil = 0;
   const runtime = createEndingRuntime("FINALE", stageSnapshot, sourceRuntime);
   runtime.finaleThemeRandom = true;
@@ -14783,21 +14918,22 @@ function processFinaleEnding(runtime = state.endingRuntime) {
   if (!runtime || runtime.kind !== "FINALE") return;
   if (runtime.lifecycle === "preloading") return;
   if (runtime.lifecycle === "outcome_pending") return;
-  if (["spawning", "active"].includes(runtime.lifecycle)) processFinaleSky(runtime);
-  processInfiniteFinaleEvents(runtime, Instance.GetGameTime());
-  processFinaleThunder(runtime, Instance.GetGameTime());
+  if (["spawning", "active"].includes(runtime.lifecycle)) genProf("fin.liftUnstick", () => processFinaleLiftUnstick(runtime, Instance.GetGameTime()));
+  if (["spawning", "active"].includes(runtime.lifecycle)) genProf("fin.sky", () => processFinaleSky(runtime));
+  genProf("fin.infiniteEvents", () => processInfiniteFinaleEvents(runtime, Instance.GetGameTime()));
+  genProf("fin.thunderRain", () => processFinaleThunder(runtime, Instance.GetGameTime()));
   // The boss loop outlives the boss: escape and the final pyramid (bossMode
   // "pyramid", bossPhase cleared) must keep restarting it.
-  if (["spawning", "active"].includes(runtime.lifecycle)) processFinaleMusic(runtime, Instance.GetGameTime());
+  if (["spawning", "active"].includes(runtime.lifecycle)) genProf("fin.music", () => processFinaleMusic(runtime, Instance.GetGameTime()));
   if (runtime.lifecycle === "spawning") {
                                                                         
                                                                            
                                                                             
                         
-    processFinaleStructure(runtime, Instance.GetGameTime());
-    processEndingSpawnQueue(runtime, runtime.finaleStructure?.arenaBuildRequested && !runtime.finaleStructure?.arenaSpawned
+    genProf("fin.structure", () => processFinaleStructure(runtime, Instance.GetGameTime()));
+    genProf("fin.spawnQueue", () => processEndingSpawnQueue(runtime, runtime.finaleStructure?.arenaBuildRequested && !runtime.finaleStructure?.arenaSpawned
       ? finishFinaleBossArenaSpawn
-      : finishFinaleSpawn);
+      : finishFinaleSpawn));
     return;
   }
   if (runtime.lifecycle !== "active") return;
@@ -14810,28 +14946,28 @@ function processFinaleEnding(runtime = state.endingRuntime) {
                                                                              
                                                                                
                                                               
-      processFinaleBossFight(runtime);
+      genProf("fin.boss", () => processFinaleBossFight(runtime));
       if (runtime.bossPhase === "boss_defeated") return;
-      processFinaleKamikaze(runtime, now);
-      processFinaleEscape(runtime);
+      genProf("fin.kamikaze", () => processFinaleKamikaze(runtime, now));
+      genProf("fin.escape", () => processFinaleEscape(runtime));
       return;
     }
-    processFinaleStructure(runtime, now);
-    if (runtime.bossPhase === "boss_active" || runtime.bossPhase === "boss_intro") processFinaleBossFight(runtime);
+    genProf("fin.structure", () => processFinaleStructure(runtime, now));
+    if (runtime.bossPhase === "boss_active" || runtime.bossPhase === "boss_intro") genProf("fin.boss", () => processFinaleBossFight(runtime));
     if (runtime.debugSkipToEscape && runtime.bossPhase === "boss_active") debugSkipFinaleBoss(runtime, now);
     return;
   }
   const now = Instance.GetGameTime();
   const elapsed = Math.max(0.01, Math.min(0.1, now - runtime.lastElevatorTickAt));
   runtime.lastElevatorTickAt = now;
-  updateFinaleElevators(runtime, elapsed);
-  processFinaleTopCollapse(runtime, now);
-  processFinaleSky(runtime, now, elapsed);
+  genProf("fin.elevators", () => updateFinaleElevators(runtime, elapsed));
+  genProf("fin.topCollapse", () => processFinaleTopCollapse(runtime, now));
+  genProf("fin.sky", () => processFinaleSky(runtime, now, elapsed));
                                                                          
                                                                             
                                                             
-  processRaceRubble(runtime, now);
-  processFinaleKamikaze(runtime, now);
+  genProf("fin.rubble", () => processRaceRubble(runtime, now));
+  genProf("fin.kamikaze", () => processFinaleKamikaze(runtime, now));
   const pawns = allLivingPawns();
   const humans = pawns.filter((pawn) => pawn.GetTeamNumber?.() === 3);
   const zombies = pawns.filter((pawn) => pawn.GetTeamNumber?.() === 2);
@@ -15176,6 +15312,7 @@ function finaleBossGrenadeHitboxEvent(runtime, boss, event, source = "take") {
                                                                             
                                                                             
   boss.grenadeHitboxHealth = current;
+  boss.lastNativeGrenadeAt = Instance.GetGameTime();
   boss.grenadeHitCount = (boss.grenadeHitCount ?? 0) + 1;
   runtime.bossGrenadeHitCount = (runtime.bossGrenadeHitCount ?? 0) + 1;
                                                                            
@@ -15184,6 +15321,58 @@ function finaleBossGrenadeHitboxEvent(runtime, boss, event, source = "take") {
   const critical = Math.random() * 100 <= FINALE_BOSS_CONFIG.grenadeCritChance;
   return damageFinaleBoss(runtime, boss, FINALE_BOSS_CONFIG.grenadeDamage,
     event?.activator ?? event?.attacker, { critical, grenade: true });
+}
+
+// The grenade box sits wholly inside the eye box, so the eye box blocks the
+// HE blast line-of-sight and the grenade box never takes damage. Track HE
+// projectiles and apply the Source grenade hit when one detonates in range.
+const finaleBossGrenadeProjectiles = new Map();
+
+function trackFinaleBossGrenade(projectile, weapon) {
+  if (!validEntity(projectile) || projectile.GetClassName?.() !== "hegrenade_projectile") return;
+  if (finaleBossLivingTargets().length === 0) return;
+  // BIGNADES projectiles already hurt the boss through their own explosion.
+  for (const event of state.genericEvents.active.values()) if (event.projectiles?.has(projectile)) return;
+  finaleBossGrenadeProjectiles.set(projectile, {
+    lastPosition: clone(projectile.GetAbsOrigin?.() ?? vec()),
+    attacker: resolvePawn(projectile.GetOwner?.() ?? weapon?.GetOwner?.()),
+  });
+}
+
+function processFinaleBossGrenades(now) {
+  if (finaleBossGrenadeProjectiles.size === 0) return;
+  const targets = finaleBossLivingTargets();
+  if (targets.length === 0) { finaleBossGrenadeProjectiles.clear(); return; }
+  for (const [projectile, record] of finaleBossGrenadeProjectiles) {
+    if (validEntity(projectile)) {
+      const position = projectile.GetAbsOrigin?.();
+      if (position) record.lastPosition = clone(position);
+      continue;
+    }
+    finaleBossGrenadeProjectiles.delete(projectile);
+    const origin = record.lastPosition;
+    for (const { runtime, boss } of targets) {
+      if (now - (boss.lastNativeGrenadeAt ?? -Infinity) < FINALE_BOSS_CONFIG.grenadeNativeWindow) continue;
+      const { grenadeMins: mins, grenadeMaxs: maxs } = FINALE_BOSS_CONFIG;
+      const angles = boss.angles ?? {};
+      const center = add(boss.position, add(add(
+        mul(forwardFromAngles(angles), (mins.x + maxs.x) / 2),
+        mul(leftFromAngles(angles), (mins.y + maxs.y) / 2)),
+        mul(upFromAngles(angles), (mins.z + maxs.z) / 2)));
+      if (Math.hypot(center.x - origin.x, center.y - origin.y, center.z - origin.z)
+        > FINALE_BOSS_CONFIG.grenadeBlastRadius) continue;
+      boss.grenadeHitCount = (boss.grenadeHitCount ?? 0) + 1;
+      runtime.bossGrenadeHitCount = (runtime.bossGrenadeHitCount ?? 0) + 1;
+      const critical = Math.random() * 100 <= FINALE_BOSS_CONFIG.grenadeCritChance;
+      damageFinaleBoss(runtime, boss, FINALE_BOSS_CONFIG.grenadeDamage,
+        validEntity(record.attacker) ? record.attacker : undefined, { critical, grenade: true });
+    }
+  }
+}
+
+function handleGrenadeThrow(data = {}) {
+  handleGenericGrenadeThrow(data);
+  trackFinaleBossGrenade(data.projectile, data.weapon);
 }
 
 function finaleBossDamageHitboxEvent(runtime, boss, event, source = "take") {
@@ -17903,7 +18092,7 @@ function processFinaleBossFight(runtime) {
                                                                           
                                                 
   processFinaleSky(runtime, now, elapsed);
-  processFinaleBossAttackVisuals(runtime, now, elapsed);
+  genProf("boss.attackVisuals", () => processFinaleBossAttackVisuals(runtime, now, elapsed));
   if (runtime.bossPhase === "escape") {
                                                                           
                                                                            
@@ -17936,10 +18125,10 @@ function processFinaleBossFight(runtime) {
                                                                               
                                                                              
                                                       
-  for (const boss of runtime.bosses ?? []) processFinaleBossEyeTouch(runtime, boss, humans);
-  for (const pawn of allLivingPawns()) finaleBossFallTouch(runtime, pawn, now);
-  if (humans.length > 0) finaleBossApplyHumanDeathReduction(runtime, humans, now);
-  processFinaleBossBullets(runtime, now, elapsed);
+  genProf("boss.eyeTouch", () => { for (const boss of runtime.bosses ?? []) processFinaleBossEyeTouch(runtime, boss, humans); });
+  genProf("boss.fallTouch", () => { for (const pawn of allLivingPawns()) finaleBossFallTouch(runtime, pawn, now); });
+  if (humans.length > 0) genProf("boss.deathReduction", () => finaleBossApplyHumanDeathReduction(runtime, humans, now));
+  genProf("boss.bullets", () => processFinaleBossBullets(runtime, now, elapsed));
   const touchFrame = { humans, hulls: new Map() };
   for (const boss of runtime.bosses ?? []) {
     if (boss.dead) {
@@ -17997,15 +18186,15 @@ function processFinaleBossFight(runtime) {
       finaleBossSetTailAim(boss, false, now);
       finaleBossSetAnimation(boss, "idle_open", "idle_open", 1, now);
     }
-    finaleBossMove(runtime, boss, elapsed, now);
-    processFinaleBossBlink(boss, now);
-    finaleBossCollectPieces(runtime, boss, now);
-    finaleBossSyncChain(boss);
-    finaleBossPieceDamage(runtime, boss, now, touchFrame);
-    finaleBossFlingChargeTick(runtime, boss);
-    finaleBossAttackTick(runtime, boss, now);
-    finaleBossSightAttack(runtime, boss, now);
-    finaleBossFlingAttack(runtime, boss, now);
+    genProf("boss.move", () => finaleBossMove(runtime, boss, elapsed, now));
+    genProf("boss.blink", () => processFinaleBossBlink(boss, now));
+    genProf("boss.collect", () => finaleBossCollectPieces(runtime, boss, now));
+    genProf("boss.syncChain", () => finaleBossSyncChain(boss));
+    genProf("boss.pieceDamage", () => finaleBossPieceDamage(runtime, boss, now, touchFrame));
+    genProf("boss.flingCharge", () => finaleBossFlingChargeTick(runtime, boss));
+    genProf("boss.attack", () => finaleBossAttackTick(runtime, boss, now));
+    genProf("boss.sight", () => finaleBossSightAttack(runtime, boss, now));
+    genProf("boss.fling", () => finaleBossFlingAttack(runtime, boss, now));
   }
 }
 
@@ -18746,7 +18935,7 @@ function findInvincibilityHud() {
 
 function clearInvincibilityHudSlot(slot, record) {
   try {
-    if (validEntity(record.hud)) record.hud.SetHasClassForPlayer(slot, INVINCIBILITY_HUD_PANEL, "Active", false);
+    if (validEntity(record.hud)) record.hud.SetHasClassForPlayer(slot, record.panel ?? INVINCIBILITY_HUD_PANEL, "Active", false);
   } catch (error) {
     invincibilityHudWarning(error);
     return false;
@@ -18782,12 +18971,13 @@ function syncInvincibilityHud(now, force = false) {
   for (const pawn of players) {
     const slot = playerSlotForHud(pawn);
     if (slot === undefined) continue;
+    const panel = zombieDelayProtected(pawn) ? "collective_delay_invincibility_prompt" : INVINCIBILITY_HUD_PANEL;
     const previous = invincibilityHudPlayers.get(slot);
-    if (previous?.pawn === pawn && previous.hud === hud) continue;
+    if (previous?.pawn === pawn && previous.hud === hud && previous.panel === panel) continue;
     if (previous && !clearInvincibilityHudSlot(slot, previous)) continue;
     try {
-      hud.SetHasClassForPlayer(slot, INVINCIBILITY_HUD_PANEL, "Active", true);
-      invincibilityHudPlayers.set(slot, { pawn, hud });
+      hud.SetHasClassForPlayer(slot, panel, "Active", true);
+      invincibilityHudPlayers.set(slot, { pawn, hud, panel });
     } catch (error) {
       invincibilityHudWarning(error);
     }
@@ -19173,7 +19363,7 @@ function updateTerrainPreviewMetadata(hud, metadata) {
                                                                        
   hud.SetDialogVariableString("stage_title", "map_name", String(metadata.name ?? "unknown"));
   hud.SetDialogVariableString("stage_info", "map_author", String(metadata.author ?? "unknown"));
-  hud.SetDialogVariableString("stage_id", "map_id", String(metadata.id ?? "unknown").replace(/^#/, ""));
+  hud.SetDialogVariableString("stage_id", "map_id", displayLevelId(metadata.id ?? "unknown").replace(/^#/, ""));
                                                                              
   hud.SetHasClass("stage_header", "Hidden", false);
   hud.SetHasClass("stage_header", "MetadataVisible", true);
@@ -19223,12 +19413,14 @@ function updateTerrainPreviewHud(runtime, reason = "queued") {
   const hud = findTerrainPreviewHud();
   if (!hud) return false;
   try {
+    // Rebuild from a reset state: a removed class would otherwise stay networked.
+    const rebuilt = resetTerrainPreviewHudState(hud);
     hud.SetHasClass(TERRAIN_PREVIEW_ROOT_PANEL, "Hidden", true);
     for (let index = 0; index < tiles.length; index++) {
       const selected = terrainPreviewTileClass(tiles[index]);
       const panelId = `pixel_${index}`;
       const previous = terrainPreviewHudTileClasses[index];
-      if (previous && previous !== selected) hud.SetHasClass(panelId, previous, false);
+      if (previous && previous !== selected && !rebuilt) hud.SetHasClass(panelId, previous, false);
       if (previous !== selected) {
         hud.SetHasClass(panelId, selected, true);
         terrainPreviewHudTileClasses[index] = selected;
@@ -19246,6 +19438,19 @@ function updateTerrainPreviewHud(runtime, reason = "queued") {
   }
 }
 
+// custom_hud_layout keeps every (panel, class) pair it was ever given in
+// m_vecHasClasses; SetHasClass(false) only marks the pair DoesNotHaveClass.
+// 400 pixel panels cycling through tile colors grew that list level after
+// level until, ~9 h in, the entity no longer fit its encode buffer (FATAL
+// "PackEntity ... Encode false", overflow reported at whichever field ran
+// out). Reset() empties the layout state, so the preview is rebuilt from it.
+function resetTerrainPreviewHudState(hud) {
+  if (typeof hud?.Reset !== "function") return false;
+  hud.Reset();
+  terrainPreviewHudTileClasses = [];
+  return true;
+}
+
 function clearTerrainPreviewHudTiles(hud, classes = terrainPreviewHudTileClasses) {
   for (let index = 0; index < CONFIG.mapSize * CONFIG.mapSize; index++) {
     const panelId = `pixel_${index}`;
@@ -19260,10 +19465,11 @@ function hideTerrainPreviewHud(reason = "round-end") {
   let cleared = !hud;
   try {
     if (hud) {
+      const reset = resetTerrainPreviewHudState(hud);
       hud.SetHasClass(TERRAIN_PREVIEW_ROOT_PANEL, "Hidden", true);
       hud.SetHasClass("stage_header", "MetadataDisabled", true);
       hud.SetHasClass("stage_header", "MetadataVisible", false);
-      clearTerrainPreviewHudTiles(hud);
+      if (!reset) clearTerrainPreviewHudTiles(hud);
       cleared = true;
       if (typeof hud.SetDialogVariableString === "function") {
         hud.SetDialogVariableString("stage_title", "map_name", "");
@@ -19353,6 +19559,7 @@ function runGenerationWork(callback, chargeUnit = true) {
 // PointTemplate creates entities before caller-side model/transform setup.
 // Keep every result reachable for round cleanup even if that setup throws.
 function spawnRoundEntities(template, ...args) {
+  if (SPAWN_BENCH) SPAWN_BENCH.roundSpawns++; // TEMP SPAWN BENCH
   const budget = generationBudget;
   const direct = budget && budget.depth === 0;
   const start = direct ? generationClock() : 0;
@@ -19447,7 +19654,7 @@ function processTasks(now) {
       if (!task.cancelled && task.round === state.roundBootstrapSerial) task.callback();
     } catch (error) {
       // One broken callback must not halt the round (Source wraps these in safe()).
-      reportGuardedError("scheduled task", error);
+      reportGuardedError(`scheduled task ${task.callback?.name || "anonymous"}`, error);
     }
   }
 }
@@ -19494,6 +19701,246 @@ function validateLevels() {
     }
   }
   levelDataValidated = true;
+}
+
+// Offline pixel-stage test (Source devmaps). The workshop site's CS2 test
+// button downloads the CSGO devmap .nut as this addon's save data. When it
+// parses, every level is that stage and endings/events stay off like Source
+// `debugged`; anything else (no file, no marker, bad stage) is a normal round.
+// GetSaveData reads disk once per script load, so a new file needs a map load.
+const DEVMAP_MARKER = /devmaps\s*<-\s*\{\s*function\s+Run\s*\(\s*\)\s*\{\s*maps\s*\.\s*push\s*\(/;
+const devmap = { loaded: false, level: undefined, error: undefined, raceTest: false, probed: false };
+
+// Squirrel table literal reader for the maps.push({...}) argument: strings,
+// numbers, arrays, nested tables, Vector(r,g,b) and true/false/null. No eval.
+function parseDevmapTable(source) {
+  let i = 0;
+  const fail = (what) => { throw new Error(`${what} at offset ${i}`); };
+  const skip = () => {
+    for (;;) {
+      while (i < source.length && /\s/.test(source[i])) i++;
+      if (source.startsWith("//", i) || source[i] === "#") {
+        while (i < source.length && source[i] !== "\n") i++;
+      } else if (source.startsWith("/*", i)) {
+        const end = source.indexOf("*/", i + 2);
+        i = end < 0 ? source.length : end + 2;
+      } else return;
+    }
+  };
+  const expect = (char) => { skip(); if (source[i] !== char) fail(`expected '${char}'`); i++; };
+  const identifier = () => {
+    skip();
+    const match = /^[A-Za-z_][A-Za-z0-9_]*/.exec(source.slice(i, i + 64));
+    if (!match) fail("expected identifier");
+    i += match[0].length;
+    return match[0];
+  };
+  const string = () => {
+    expect("\"");
+    let text = "";
+    while (i < source.length && source[i] !== "\"") {
+      if (source[i] === "\\" && i + 1 < source.length) {
+        const next = source[i + 1];
+        text += next === "n" ? "\n" : next === "t" ? "\t" : next;
+        i += 2;
+      } else text += source[i++];
+    }
+    if (i >= source.length) fail("unterminated string");
+    i++;
+    return text;
+  };
+  const number = () => {
+    skip();
+    const match = /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/.exec(source.slice(i, i + 64));
+    if (!match) fail("expected number");
+    i += match[0].length;
+    return Number(match[0]);
+  };
+  const value = () => {
+    skip();
+    const char = source[i];
+    if (char === "\"") return string();
+    if (char === "[") {
+      i++;
+      const list = [];
+      for (skip(); source[i] !== "]"; skip()) {
+        list.push(value());
+        skip();
+        if (source[i] === ",") i++;
+        else if (source[i] !== "]") fail("expected ',' or ']'");
+      }
+      i++;
+      return list;
+    }
+    if (char === "{") return table();
+    if (char === "-" || char === "." || /\d/.test(char ?? "")) return number();
+    const name = identifier();
+    if (name === "Vector") {
+      expect("(");
+      const color = [number()];
+      expect(","); color.push(number());
+      expect(","); color.push(number());
+      expect(")");
+      return { color };
+    }
+    if (name === "true") return true;
+    if (name === "false") return false;
+    if (name === "null") return null;
+    return fail(`unsupported value '${name}'`);
+  };
+  const table = () => {
+    expect("{");
+    const result = {};
+    for (skip(); source[i] !== "}"; skip()) {
+      if (i >= source.length) fail("unterminated table");
+      const key = source[i] === "\"" ? string() : identifier();
+      skip();
+      if (source[i] !== "=" && source[i] !== ":") fail(`expected '=' after '${key}'`);
+      i++;
+      result[key] = value();
+      skip();
+      if (source[i] === ",") i++;
+    }
+    i++;
+    return result;
+  };
+  return table();
+}
+
+function devmapLevelFromTable(table) {
+  if (!Array.isArray(table.map)) throw new Error("stage has no map=[...] tile list");
+  if (table.map.length !== CONFIG.mapSize * CONFIG.mapSize) {
+    throw new Error(`expected ${CONFIG.mapSize * CONFIG.mapSize} tiles, got ${table.map.length}`);
+  }
+  const direction = String(table.direction ?? "");
+  if (!["forward", "left", "right"].includes(direction)) throw new Error(`invalid direction '${direction}'`);
+  const tileFrequency = {};
+  let computedCost = 0;
+  let markerCount = 0;
+  const tiles = table.map.map((tile, index) => {
+    if (tile && Array.isArray(tile.color)) {
+      if (tile.color.length !== 3 || !tile.color.every(Number.isFinite)) throw new Error(`tile ${index}: invalid Vector color`);
+      tileFrequency.color = (tileFrequency.color ?? 0) + 1;
+      computedCost += 1;
+      return Object.freeze({ color: Object.freeze(tile.color.map(Math.round)) });
+    }
+    if (!Number.isInteger(tile) || !TILE_REGISTRY[tile]) throw new Error(`tile ${index}: unknown tile '${tile}'`);
+    if (tile === 2) markerCount++;
+    tileFrequency[tile] = (tileFrequency[tile] ?? 0) + 1;
+    computedCost += TILE_REGISTRY[tile].cost ?? 0;
+    return tile;
+  });
+  if (markerCount !== 4) throw new Error(`expected four START_END tiles, got ${markerCount}`);
+  const cost = Number(table.cost);
+  const elevation = Number(table.elevation);
+  return Object.freeze({
+    // Prefixed so per-id caches never mix it with a catalogue stage it updates;
+    // displayLevelId strips it again. Blank name/author stay blank like Source.
+    id: `devmap:${String(table.id ?? "")}`, name: String(table.name ?? ""), author: String(table.author ?? ""),
+    direction, cost: Number.isFinite(cost) ? cost : computedCost, computedCost,
+    elevation: Number.isFinite(elevation) ? elevation : 0,
+    requiredCapabilities: Object.freeze([]), tileFrequency: Object.freeze(tileFrequency),
+    tiles: Object.freeze(tiles), devmap: true,
+  });
+}
+
+function parseDevmapSource(source) {
+  const match = DEVMAP_MARKER.exec(String(source ?? ""));
+  if (!match) return undefined;
+  return devmapLevelFromTable(parseDevmapTable(source.slice(match.index + match[0].length)));
+}
+
+function loadDevmap() {
+  if (devmap.loaded) return devmap.level;
+  devmap.loaded = true;
+  let source = "";
+  try {
+    source = Instance.GetSaveData() ?? "";
+  } catch (error) {
+    consoleNotice(`devmap: save data unavailable: ${error}`);
+    return undefined;
+  }
+  try {
+    devmap.level = parseDevmapSource(source);
+    if (devmap.level) consoleNotice(`devmap: loaded '${devmap.level.name}' by '${devmap.level.author}' [${devmap.level.id}]`);
+    else consoleNotice(`devmap: no test stage in save data (${source.length} chars)`);
+  } catch (error) {
+    devmap.error = String(error?.message ?? error);
+    consoleNotice(`devmap: test file rejected: ${devmap.error}`);
+  }
+  return devmap.level;
+}
+
+function displayLevelId(id) {
+  return String(id ?? "").replace(/^devmap:/, "");
+}
+
+function devmapActive() {
+  return !!devmap.level && state.debugStageId === devmap.level.id;
+}
+
+// Round bootstrap: each round starts back on the test stage, even after
+// !testrace cleared it for the previous round's RACE.
+function applyDevmapRound() {
+  devmap.raceTest = false;
+  if (loadDevmap()) {
+    state.debugStageId = devmap.level.id;
+  } else if (devmap.error) {
+    const reason = devmap.error;
+    schedule(3, () => announce(`[DEVMAP ERROR] test stage rejected: ${reason}`));
+  }
+}
+
+function devmapChat(event) {
+  const text = String(event?.text ?? event?.message ?? "").trim().toLowerCase();
+  if (text === "!testrace") startDevmapRaceTest();
+  else if (text === "!devmapprobe") probeDevmapSavePath();
+}
+
+// Source !testrace: drop the devmap and run the RACE ending from here, with
+// the test stage as the only RACE pool entry.
+function startDevmapRaceTest() {
+  if (!devmapActive() || state.fatal || !state.running) return false;
+  if (state.endingRuntime || state.campaign.endingStarted) return false;
+  const source = state.currentLevel;
+  if (!source || source.lifecycle !== "active" || source.remaining > 0 || state.pendingLevel || state.themePreload) {
+    announce("[DEVMAP] wait for the stage to finish generating, then type !testrace again");
+    return false;
+  }
+  devmap.raceTest = true;
+  state.debugStageId = undefined;
+  const stage = Object.freeze({ ...stageSnapshotForRuntime(source), ending: "RACE", infiniteMode: false });
+  state.campaign.currentStageSnapshot = stage;
+  state.campaign.phase = "ending_handoff";
+  state.campaign.endingResolved = false;
+  state.campaign.endingOutcomePending = false;
+  state.endLockedUntil = Number.POSITIVE_INFINITY;
+  if (source.tp && source.incoming) moveTeleportDestination(source.tp, source.incoming);
+  callEndingStartContract(stage, source);
+  const runtime = state.endingRuntime;
+  if (state.fatal || !runtime || runtime.kind !== "RACE") return false;
+  // A test RACE never advances the campaign.
+  runtime.debugForced = true;
+  runtime.debugUsesFormalTimeline = true;
+  schedule(CONFIG.interactionRetirementDelay, () => {
+    if (state.endingRuntime === runtime && source.lifecycle !== "destroyed") retireInteractions(source);
+  }, source.index);
+  return true;
+}
+
+// TEMP: finds where GetSaveData lives on disk. Writes only when no save data
+// exists, so it can never overwrite a player's test file. Remove once known.
+function probeDevmapSavePath() {
+  if (devmap.probed) return;
+  devmap.probed = true;
+  let existing = "";
+  try { existing = Instance.GetSaveData() ?? ""; } catch (error) { existing = ""; }
+  if (existing.trim()) {
+    announce("[DEVMAP] save data already exists; probe skipped");
+    return;
+  }
+  Instance.SetSaveData("// ze_collective devmap probe: replace this file's contents with the downloaded test file\n");
+  announce("[DEVMAP] probe written; search the CS2 folder for 'ze_collective devmap probe'");
 }
 
 function cacheEntities(parentCosmetics = true) {
@@ -20094,9 +20541,8 @@ function prepareTeleportIndicator() {
 }
 
 function createCampaignFinaleSource() {
-  const campaign = state.campaign ?? {};
-  const position = campaign.finaleAnchor ?? state.startPoint?.position ?? vec();
-  const direction = campaign.finaleDirection ?? state.startPoint?.direction ?? vec(1, 0, 0);
+  const position = state.startPoint?.position ?? vec();
+  const direction = state.startPoint?.direction ?? vec(1, 0, 0);
   return {
     index: `campaign_finale_source:${state.roundBootstrapSerial}`,
     id: "#campaign_finale_source",
@@ -20657,6 +21103,8 @@ function resetRoundState({ preserveCampaignOutcome = false } = {}) {
   state.running = false;
   state.fatal = false;
   state.infectionActivated = false;
+  resetProgressionDelay();
+  state.progressionDelay.slayed = false;
   state.zombieSpawnInvincibilityEnabled = true;
   state.firstInfectionAt = undefined;
   state.motherZombies.clear();
@@ -20770,6 +21218,7 @@ function beginRound() {
     failRuntime(`level data validation failed: ${error}`);
     return;
   }
+  applyDevmapRound();
   waitForRequiredEntities(bootstrapSerial, Instance.GetGameTime() + REQUIRED_ENTITY_WAIT_TIMEOUT);
 }
 
@@ -20797,16 +21246,10 @@ function waitForRequiredEntities(bootstrapSerial, deadline) {
   state.roundBootstrapPending = false;
   prepareTeleportIndicator();
 
-  if (state.campaign.stageIndex === FINALE_STAGE_INDEX && state.campaign.finaleAnchor) {
-    const direction = state.campaign.finaleDirection ?? vec(1, 0, 0);
-    state.startPoint = Object.freeze({
-      name: "finale",
-      position: clone(state.campaign.finaleAnchor),
-      direction: clone(direction),
-    });
-  } else {
-    state.startPoint = START_POINTS[Math.floor(Math.random() * START_POINTS.length)];
-  }
+  // Discard legacy anchors restored by a script reload as well as old round data.
+  state.campaign.finaleAnchor = undefined;
+  state.campaign.finaleDirection = undefined;
+  state.startPoint = START_POINTS[Math.floor(Math.random() * START_POINTS.length)];
   state.currentDirection = clone(state.startPoint.direction);
   state.nextBridgeStart = clone(state.startPoint.position);
   state.nextEntry = add(
@@ -21782,11 +22225,12 @@ function elevatorPlan(rows, x, y, entry, incoming, entryCenter, entryElevation) 
       if (tile === undefined || tile === 1) break;
       const elevation = explicitElevation(tile);
       if (elevation === undefined) continue;
+      // Source keeps scanning past surfaces at other elevations; only a wall,
+      // the map edge or a surface at the elevator's floor ends the search.
       if (elevation === low) {
         horizontal.push({ step, tx, ty, dx: direction.dx, dy: direction.dy });
         break;
       }
-      break;
     }
   }
   if (horizontal.length > 0) {
@@ -22824,7 +23268,7 @@ function processGenerationQueuesBudgeted() {
       while (logicalLimit > 0 && planning.planningIterator && generationWorkAvailable()) {
         logicalLimit--;
         runGenerationWork(() => {
-          if (planning.planningIterator.next().done) planning.planningIterator = undefined;
+          if (genProf("gen.planPixel", () => planning.planningIterator.next()).done) planning.planningIterator = undefined;
         }, false);
       }
     } catch (error) {
@@ -22869,7 +23313,7 @@ function processGenerationQueuesBudgeted() {
   }
   for (const runtime of touched) {
     if (!state.spawnQueue.some(request => request.levelIndex === runtime.index)) {
-      try { releaseLevelPostSpawn(runtime, true); }
+      try { genProf("gen.releasePostSpawn", () => releaseLevelPostSpawn(runtime, true)); }
       catch (error) { failRuntime(`generation Step3 failed for level ${runtime.index}: ${error}`); return; }
     }
   }
@@ -22883,21 +23327,22 @@ function processGenerationQueuesBudgeted() {
         && round >= CONFIG.terrainDeployPerThink) continue;
       if (queue.length) {
         const request = queue.shift();
-        runGenerationWork(() => spawnOne(request));
+        runGenerationWork(() => genProf(`spawn.${kind}`, () => spawnOne(request)));
       }
       if (state.fatal) return;
     }
-    if (generationWorkAvailable()) processPostSpawnQueues(1);
+    if (generationWorkAvailable()) genProf("gen.postSpawnQueues", () => processPostSpawnQueues(1));
   }
   // Foreground creation and deployment have priority. Background work uses
   // idle generation passes only, so their terrain budgets never add up.
   if (!generationWorkAvailable()) return;
-  if (!state.fatal && !processThemeTerrainWarmup(foregroundAtStart))
-    processTerrainPreload(foregroundAtStart);
+  if (!state.fatal && !genProf("bg.themeWarmup", () => processThemeTerrainWarmup(foregroundAtStart)))
+    genProf("bg.terrainPreload", () => processTerrainPreload(foregroundAtStart));
 }
 
 function chooseLevel(index, trackItemDesire = true) {
-  if (state.debugStageId) {
+  // A devmap goes through ordinary selection below so world limits still steer it.
+  if (state.debugStageId && !devmapActive()) {
     const level = DEBUG_HOOKS.levelDefinition(state.debugStageId);
     if (!level) throw new Error(`debug stage '${state.debugStageId}' is no longer present in the stage data`);
     const runtime = buildLevel(
@@ -23010,8 +23455,9 @@ function chooseLevel(index, trackItemDesire = true) {
   const entry = state.nextEntry, incoming = state.currentDirection;
   const allowed = campaignAllowedDirections(entry, incoming);
   const options = [];
-  for (const level of LEVELS) {
-    if (level.id === state.lastLevelId) continue;
+  const testing = devmapActive();
+  for (const level of testing ? [devmap.level] : LEVELS) {
+    if (!testing && level.id === state.lastLevelId) continue;
     for (const mirrored of [false, true]) options.push({ level, mirrored });
   }
   // Filtering a uniformly shuffled pool gives the same random order among
@@ -23428,7 +23874,7 @@ function processTerrainPreloadBudgeted(foregroundUsed) {
     try {
       state.deferTerrainPlanning = true;
       let runtime;
-      runGenerationWork(() => { runtime = chooseLevel(state.levelIndex + 1, false); }, false);
+      runGenerationWork(() => { runtime = genProf("bg.preloadChooseLevel", () => chooseLevel(state.levelIndex + 1, false)); }, false);
       runtime.preloadRequests = [];
       runtime.terrainPreloadedEntities = new Set();
       state.terrainPreload = { source, runtime, round: state.roundBootstrapSerial,
@@ -23492,6 +23938,7 @@ function generateNextLevel() {
     schedule(0.1, generateNextLevel);
     return;
   }
+  resetProgressionDelay();
   let committed = false;
   try {
     const index = state.levelIndex + 1;
@@ -23508,7 +23955,7 @@ function generateNextLevel() {
       clearTerrainPreload();
       const priorDefer = state.deferTerrainPlanning;
       state.deferTerrainPlanning = true;
-      try { runtime = chooseLevel(index); }
+      try { runtime = genProf("gen.chooseLevel", () => chooseLevel(index)); }
       finally { state.deferTerrainPlanning = priorDefer; }
     }
     committed = true;
@@ -23554,11 +24001,22 @@ function outputDispatcher(output) {
 }
 
 function dispatchEntityOutput(output, data) {
+  ensureThinkAlive(`output ${output}`);
   const routes = state.outputRoutes.get(data?.caller)?.get(output);
   if (!routes) return;
   for (const callback of [...routes.values()]) {
     try { callback(data); }
-    catch (error) { reportGuardedError(`output ${output}`, error); }
+    catch (error) { reportGuardedError(`output ${output} on ${guardedEntityLabel(data?.caller)}`, error); }
+  }
+}
+
+// Error-log label only; must never throw from inside a catch.
+function guardedEntityLabel(entity) {
+  try {
+    if (!validEntity(entity)) return "<invalid>";
+    return `${entity.GetClassName?.() ?? "?"} '${entity.GetEntityName?.() ?? ""}'`;
+  } catch {
+    return "<unreadable>";
   }
 }
 
@@ -23575,7 +24033,9 @@ function connectEntityOutput(entity, output, callback) {
 }
 
 function disconnectEntityOutput(id) {
-  Instance.DisconnectOutput(id);
+  // A failed engine disconnect must not abort the caller's entity cleanup.
+  try { Instance.DisconnectOutput(id); }
+  catch (error) { reportGuardedError("DisconnectOutput", error); }
   const route = state.outputRouteIndex.get(id);
   if (!route) return;
   state.outputRouteIndex.delete(id);
@@ -23727,8 +24187,8 @@ function addPlayerStatus(runtime, pawn, source, duration, data = {}) {
 
 function syncNativeInvincibleContext(pawn, statuses, now = Instance.GetGameTime()) {
   if (!validEntity(pawn)) return;
-  const active = pawn.IsAlive?.() === true && [...statuses ?? []]
-    .some(([source, status]) => source.endsWith(":invincible") && status.until > now);
+  const active = pawn.IsAlive?.() === true && (zombieDelayProtected(pawn) || [...statuses ?? []]
+    .some(([source, status]) => source.endsWith(":invincible") && status.until > now));
   if (Boolean(pawn.collectiveInvincibleContext) === active) return;
   pawn.collectiveInvincibleContext = active;
   fireTarget(pawn, active ? "AddContext" : "RemoveContext", active ? "invincible:1" : "invincible");
@@ -24154,7 +24614,8 @@ function registerBlockInteraction(runtime, request) {
 function clearBlockInteraction(runtime, record) {
   record.opened = true;
   for (const entity of record.entities) {
-    if (validEntity(entity)) entity.Kill();
+    // record.opened is already set, so a throw here would strand the rest.
+    guardStep("clearBlockInteraction kill", () => { if (validEntity(entity)) entity.Kill(); });
     runtime.entities.delete(entity);
     runtime.buttons.delete(entity);
   }
@@ -24920,6 +25381,7 @@ function spawnButtonFeature(runtime, request) {
   }
   const press = () => {
     if (record.used || record.opened || runtime.interactionsRetired || runtime.lifecycle === "destroyed") return;
+    noteProgression(runtime);
     if (request.feature === "genericHold") {
       startGenericHoldGroup(runtime, record);
       return;
@@ -26088,7 +26550,7 @@ function releaseNativeMoverLeg(runtime, leg, delay = 0) {
   }
   const dispose = () => {
     for (const entity of [leg.driver, leg.anchor]) {
-      if (validEntity(entity)) entity.Kill();
+      destroyEntities([entity]);
       runtime.entities.delete(entity);
       runtime.levelFadeColors?.delete(entity);
       state.silentHillWorld.visuals.delete(entity);
@@ -26304,10 +26766,86 @@ function pawnTouchesTeleportEntry(pawn) {
   return false;
 }
 
+// Source TickDelay: ordinary-map progress resets the clock; endings/debug opt out.
+function progressionDelayEnabled() {
+  return state.running && !state.fatal && !state.adminSlayActive
+    && state.firstInfectionAt !== undefined && !state.endingRuntime
+    && !state.campaign.endingStarted
+    && !["ending_pending", "ending_handoff", "ended"].includes(state.campaign.phase)
+    && !state.debugStageId && !state.debugShowcaseMode && !state.debugGravityMode
+    && !state.debugMovementThemesMode && !state.debugAllModelsMode && !state.debugTrapMode;
+}
+
+function zombieDelayProtected(pawn) {
+  return state.progressionDelay.invincible && progressionDelayEnabled()
+    && state.zombieSpawnInvincibilityEnabled
+    && validEntity(pawn) && pawn.IsAlive?.() && pawn.GetTeamNumber?.() === 2;
+}
+
+function syncDelayInvincibility() {
+  const delay = state.progressionDelay;
+  const pawns = new Set([...delay.contextPawns, ...allPlayerPawns()]);
+  delay.contextPawns.clear();
+  for (const pawn of pawns) {
+    syncNativeInvincibleContext(pawn, state.playerStatuses.get(pawn));
+    if (zombieDelayProtected(pawn)) delay.contextPawns.add(pawn);
+  }
+}
+
+function resetProgressionDelay(now = Instance.GetGameTime()) {
+  const delay = state.progressionDelay;
+  delay.since = now;
+  delay.nextCheckAt = now;
+  delay.invincible = false;
+  if (delay.contextPawns.size) syncDelayInvincibility();
+  invincibilityHudNextSyncAt = 0;
+}
+
+function noteProgression(runtime) {
+  // Old-stage buttons and speculative terrain preloads must not extend the timer.
+  if (runtime?.index === state.levelIndex && state.levels.get(runtime.index) === runtime)
+    resetProgressionDelay();
+}
+
+function processProgressionDelay(now) {
+  const delay = state.progressionDelay;
+  if (!progressionDelayEnabled()) {
+    if (delay.since !== undefined || delay.invincible || delay.contextPawns.size) resetProgressionDelay(now);
+    delay.since = undefined;
+    return;
+  }
+  if (delay.slayed || now < delay.nextCheckAt) return;
+  delay.nextCheckAt = now + 1;
+  delay.since ??= now;
+  const elapsed = now - delay.since;
+  if (elapsed >= CONFIG.delaySlayTimeout) {
+    delay.slayed = true;
+    resetProgressionDelay(now);
+    announceRepeated("[DELAY] you are taking too long - slaying");
+    adminRoomSlay(); // Source EnableMassKillerAll: human slay + unfiltered map hurt.
+    return;
+  }
+  if (elapsed >= CONFIG.delayTimeout && !delay.invincible) {
+    // Source counts every connected player, including spectators/dead players.
+    const playerCount = Instance.GetAllPlayerControllers().filter(controller => controller?.IsValid?.()).length;
+    if (playerCount < CONFIG.delayMinPlayers) {
+      resetProgressionDelay(now);
+      return;
+    }
+    delay.invincible = true;
+    announce("[DELAY] you are taking too long");
+    announce("[DELAY] zombies are now invincible");
+    announce("[DELAY] (until progression is made)");
+    invincibilityHudNextSyncAt = 0;
+  }
+  if (delay.invincible || delay.contextPawns.size) syncDelayInvincibility();
+}
+
 function zombieStartAreaProtected(pawn) {
   if (!state.running || state.fatal || state.firstInfectionAt === undefined
     || !state.zombieSpawnInvincibilityEnabled
     || !validEntity(pawn) || !pawn.IsAlive?.() || pawn.GetTeamNumber?.() !== 2) return false;
+  if (zombieDelayProtected(pawn)) return true;
   const position = pawn.GetAbsOrigin?.();
   if (!position) return false;
   const finale = state.endingRuntime?.kind === "FINALE" && state.endingRuntime.lifecycle === "active"
@@ -28841,14 +29379,16 @@ function processReleasedItemCarriers(now) {
 }
 
 function consumeItem(runtime, item, keepUnownedCarrier = false) {
-  syncItemEntWatchFuel(item);
-  cleanupItemEntWatchRelay(item, 0.1);
+  // processItems skips consumed items, so nothing retries a half-run cleanup:
+  // guard each step so one throw cannot leave the visual or carrier alive.
+  guardStep("consumeItem fuel", () => syncItemEntWatchFuel(item));
+  guardStep("consumeItem relay", () => cleanupItemEntWatchRelay(item, 0.1));
   if (item.holder) forgetPlayerItem(item.holder, item);
   item.holder = undefined;
   item.state = "consumed";
-  ITEM_BEHAVIORS[item.definition.behavior]?.onCleanup?.(runtime, item);
-  cleanupItemStripTrigger(runtime, item);
-  if (!releaseItemCarrier(item, keepUnownedCarrier)) destroyItemCarrier(item);
+  guardStep(`consumeItem cleanup ${item.name}`, () => ITEM_BEHAVIORS[item.definition.behavior]?.onCleanup?.(runtime, item));
+  guardStep("consumeItem strip trigger", () => cleanupItemStripTrigger(runtime, item));
+  guardStep("consumeItem carrier", () => { if (!releaseItemCarrier(item, keepUnownedCarrier)) destroyItemCarrier(item); });
   if (item.visual?.IsValid()) item.visual.Kill();
   runtime?.entities?.delete(item.visual);
   runtime?.items?.delete(item);
@@ -29319,6 +29859,10 @@ function spawnBallisticZombieProjectile(runtime, item, holder, now, kind) {
     position: origin,
     angles: initialAngles,
     scale: kind === "squid" ? 2 : kind === "stone" ? 0.8 : 0.7,
+    // Engine expiry survives stopped script ticks and runtime transfers. Every
+    // ballistic kind needs it: expiresAt below is each kind's hard cap, and a
+    // stone/squid whose runtime stops ticking would otherwise stay forever.
+    lifetime: item.definition.lifetime ?? item.definition.fuseTime,
   });
   const speed = item.definition.throwSpeed ?? item.definition.launchSpeed;
   const controller = {
@@ -29344,16 +29888,21 @@ function spawnBallisticZombieProjectile(runtime, item, holder, now, kind) {
     detonateAt: kind === "bomb_chuck" ? now + item.definition.fuseTime : undefined,
     nextTrailAt: item.definition.trailInterval ? now + item.definition.trailInterval : undefined,
   };
-  visual.SetEntityName?.(`item_projectile_${controller.id}_sound_source`);
-  if (kind === "bomb_chuck") playSourceAudioCue(8532, origin, {parent:visual});
-  if (kind === "squid") playSourceAudioCue(6779, origin, {parent:visual});
-  visual.Teleport?.({
-    position: controller.position,
-    angles: controller.angles,
-    velocity: clone(controller.velocity),
-  });
   runtime.itemDeployables.add(controller);
-  return controller;
+  try {
+    visual.SetEntityName?.(`item_projectile_${controller.id}_sound_source`);
+    if (kind === "bomb_chuck") playSourceAudioCue(8532, origin, {parent:visual});
+    if (kind === "squid") playSourceAudioCue(6779, origin, {parent:visual});
+    visual.Teleport?.({
+      position: controller.position,
+      angles: controller.angles,
+      velocity: clone(controller.velocity),
+    });
+    return controller;
+  } catch (error) {
+    cleanupDeployable(runtime, controller);
+    throw error;
+  }
 }
 
 function useStone(runtime, item, holder, now) {
@@ -30541,7 +31090,7 @@ function targetInOrientedBeam(origin, direction, target, beamLength, halfWidth) 
 
 function validZombieTarget(pawn) {
   return pawn?.IsValid?.() && pawn.IsAlive?.() && pawn.GetTeamNumber?.() === 2
-    && !playerHasItemStatus(pawn, ":invincible");
+    && !zombieDelayProtected(pawn) && !playerHasItemStatus(pawn, ":invincible");
 }
 
 function infectionHasStarted() {
@@ -31803,7 +32352,9 @@ function destroyHumanItemsForHammer(center, item) {
       const distance = Math.hypot(position.x - center.x, position.y - center.y, position.z - center.z);
       if (deployable.kind === "storm_blade" && distance <= item.definition.stormBladeRadius) {
         deployable.released = true;
-        playSourceAudioStack([11126,11127,11128], position);
+        // Use the baked pitch events; ambient_generic applies Pitch only after
+        // starting this short clip. The hammer survives Storm Blade cleanup.
+        playSourceAudioStack([11126,11127,11128], position, { parent: item.visual });
         cleanupDeployable(runtime, deployable);
         hits.storm_blade++;
       } else if (
@@ -32361,6 +32912,9 @@ function usePlanetCrystal(runtime, item, holder, now) {
       : definition.effectLifetime
     ),
   };
+  // Register before spawning: if a later step throws, processItemDeployables
+  // still owns (and expires) whatever this cast already created.
+  runtime.itemDeployables.add(controller);
   const bossSuffix = `${variant}Boss`;
   const bossHitPosition = variant === "earth"
     ? add(position, vec(0, 0, 100))
@@ -32448,7 +33002,6 @@ function usePlanetCrystal(runtime, item, holder, now) {
     }
   }
 
-  runtime.itemDeployables.add(controller);
   advancePlanetCombo(runtime, item, variant, origin, now);
   fireTarget(item.visual, "SetAnimation", variant);
   return true;
@@ -32618,13 +33171,46 @@ function processHealOrb(runtime, orb, now, humans) {
   }
 }
 
+const DEPLOYABLE_ENTITY_KEYS = ["visual", "entryVisual", "exitVisual"];
+const DEPLOYABLE_ENTITY_COLLECTIONS = ["visuals", "pieces", "indicators", "sounds", "nativeEntities"];
+
+// Most onUse functions spawn their visual before registering the deployable
+// that owns it. If onUse throws in between, nothing would ever expire that
+// visual: kill the effects this use created that no deployable references.
+function retireOrphanedItemEffects(item, effectsBefore) {
+  const owned = new Set();
+  for (const runtime of [...state.levels.values(), state.endingRuntime]) {
+    for (const deployable of runtime?.itemDeployables ?? []) {
+      if (deployable.item !== item) continue;
+      for (const key of DEPLOYABLE_ENTITY_KEYS) if (deployable[key]) owned.add(deployable[key]);
+      for (const key of DEPLOYABLE_ENTITY_COLLECTIONS) for (const entity of deployable[key] ?? []) owned.add(entity);
+    }
+  }
+  for (const effect of [...item.effects ?? []]) {
+    if (effectsBefore.has(effect) || owned.has(effect)) continue;
+    if (validEntity(effect)) effect.Kill();
+    item.effects.delete(effect);
+    for (const runtime of [...state.levels.values(), state.endingRuntime]) runtime?.entities?.delete(effect);
+  }
+}
+
 function useItemBehavior(runtime, item, holder, now) {
   // Validate again at the effect boundary, including native ownership changes
   // that processItems has not reconciled yet.
   if (!itemHeldByPlayer(item, holder)) return false;
   const behavior = ITEM_BEHAVIORS[item.definition.behavior];
   if (!behavior || !behavior.canUse?.(item, holder, now)) return false;
-  const result = behavior.onUse?.(runtime, item, holder, now);
+  const effectsBefore = new Set(item.effects ?? []);
+  let result;
+  try {
+    result = behavior.onUse?.(runtime, item, holder, now);
+  } catch (error) {
+    // onUse can throw after its effect already fired. Count the use anyway,
+    // or a repeating error turns a one-shot item into unlimited casts.
+    reportGuardedError(`item use ${item.name}`, error);
+    guardStep(`item use rollback ${item.name}`, () => retireOrphanedItemEffects(item, effectsBefore));
+    return { success: true };
+  }
   if (result === true) return { success: true };
   if (!result || result.success !== true) return false;
   return result;
@@ -32643,7 +33229,7 @@ function useHeldItem(pawn) {
     return false;
   }
   // processItems never ticks these runtimes, so anything spawned now would
-  // freeze in place (chat/ping use bypasses the Think gate).
+  // freeze in place. Reject inactive runtimes before spawning effects.
   if (!state.running || state.fatal || ["outcome_pending", "resolved", "destroyed"].includes(runtime.lifecycle)) return false;
   const now = Instance.GetGameTime();
   const behavior = ITEM_BEHAVIORS[item.definition.behavior];
@@ -32660,25 +33246,17 @@ function useHeldItem(pawn) {
   item.nextUseAt = now + cooldown;
   item.readyNotified = cooldown <= 0;
   if (result.consumeCharge !== false) item.usesRemaining--;
-  // All input routes converge here. Failed or cooldown-blocked uses emit nothing.
+  // Failed or cooldown-blocked uses emit nothing.
   if (validEntity(item.entwatchUseRelay)) fireTarget(item.entwatchUseRelay, "Trigger", "", 0, pawn);
   syncItemEntWatchFuel(item);
   if (item.usesRemaining <= 0 && !result.deferConsume) consumeItem(runtime, item);
   return true;
 }
 
-function useItemFromPing(event) {
-  const pawn = resolvePawn(event?.player ?? event?.controller ?? event?.pawn ?? event);
-  if (pawn) useHeldItem(pawn);
-}
-
-function useItemFromChat(event) {
+function handlePlayerChat(event) {
   genericEventChat(event);
   processChatterCurseChat(event);
-  const text = String(event?.text ?? event?.message ?? "").trim().toLowerCase();
-  if (text !== "!item" && text !== "!useitem") return;
-  const pawn = resolvePawn(event?.player ?? event?.controller ?? event?.pawn);
-  if (pawn) useHeldItem(pawn);
+  devmapChat(event);
 }
 
 function sampleUseInputs(pawns) {
@@ -32805,9 +33383,21 @@ function retireLinearZombieProjectiles(runtime, filter = () => true) {
   }
 }
 
+const BALLISTIC_ZOMBIE_PROJECTILE_KINDS = new Set(["stone", "bomb_chuck", "squid"]);
+
+// A runtime leaving activeRuntimes() stops ticking its projectiles, which
+// would freeze stones/bombs/squids mid-air: remove them (no detonation).
+function retireBallisticZombieProjectiles(runtime) {
+  for (const deployable of [...runtime?.itemDeployables ?? []]) {
+    if (BALLISTIC_ZOMBIE_PROJECTILE_KINDS.has(deployable.kind)) cleanupDeployable(runtime, deployable);
+  }
+}
+
 function cleanupDeployable(runtime, deployable) {
   state.stormBladeVisuals.delete(deployable);
-  clearSourceAudio(deployable);
+  // The deployable leaves itemDeployables below, so a throw past that point
+  // would orphan its entities for good: guard every non-Kill step.
+  guardStep(`cleanupDeployable audio ${deployable.kind}`, () => clearSourceAudio(deployable));
   for (const id of deployable.nativeConnections ?? []) {
     disconnectEntityOutput(id);
     runtime.outputConnections.delete(id);
@@ -32820,16 +33410,16 @@ function cleanupDeployable(runtime, deployable) {
   deployable.fallForgivenessTasks?.clear?.();
   for (const key of ["visual", "entryVisual", "exitVisual"]) {
     const visual = deployable[key];
-    if (validEntity(visual)) visual.Kill();
+    guardStep(`cleanupDeployable ${key} ${deployable.kind}`, () => { if (validEntity(visual)) visual.Kill(); });
     runtime.entities?.delete(visual);
     deployable.item?.effects?.delete(visual);
   }
   for (const collection of [deployable.visuals, deployable.pieces, deployable.indicators, deployable.sounds, deployable.nativeEntities]) {
-    for (const visual of collection ?? []) {
+    for (const visual of collection ?? []) guardStep(`cleanupDeployable entity ${deployable.kind}`, () => {
       if (!validEntity(visual)) {
         runtime.entities?.delete(visual);
         deployable.item?.effects?.delete(visual);
-        continue;
+        return;
       }
       if (visual.GetClassName?.() === "point_soundevent") {
         fireTarget(visual, "StopSound", "");
@@ -32842,12 +33432,12 @@ function cleanupDeployable(runtime, deployable) {
           fireTarget(visual, "Volume", "0");
         }
       }
-      if (deployable.borrowedSounds?.has(visual)) continue;
+      if (deployable.borrowedSounds?.has(visual)) return;
       if (validEntity(visual)) visual.Kill();
       runtime.entities?.delete(visual);
       deployable.item?.effects?.delete(visual);
       if (deployable.kind === "planet_earth") state.silentHillWorld.visuals.delete(visual);
-    }
+    });
     collection?.clear?.();
   }
   deployable.pieceStates?.clear?.();
@@ -33220,35 +33810,39 @@ function hitStoneTarget(runtime, deployable, pawn, stonePosition) {
 
 function explodeBombChuck(runtime, deployable, pawns) {
   const definition = deployable.item.definition;
-  playSourceAudioStack([8498,8499], deployable.position);
-  for (const pawn of pawns) {
-    const position = pawn.GetAbsOrigin?.();
-    if (!position) continue;
-    const distance = Math.hypot(
-      position.x - deployable.position.x,
-      position.y - deployable.position.y,
-      position.z - deployable.position.z,
-    );
-    if (distance > definition.explosionRadius) continue;
+  try {
+    playSourceAudioStack([8498,8499], deployable.position);
+    for (const pawn of pawns) {
+      const position = pawn.GetAbsOrigin?.();
+      if (!position) continue;
+      const distance = Math.hypot(
+        position.x - deployable.position.x,
+        position.y - deployable.position.y,
+        position.z - deployable.position.z,
+      );
+      if (distance > definition.explosionRadius) continue;
                                                                             
                                                                             
                                                                             
                                                                            
                                                                  
-    const damage = definition.magnitude
-      * definition.explosionDamageScale
-      * Math.max(0.05, 1 - distance / definition.explosionRadius);
+      const damage = definition.magnitude
+        * definition.explosionDamageScale
+        * Math.max(0.05, 1 - distance / definition.explosionRadius);
                                                                               
                                                                                  
-    damagePawn(pawn, damage, undefined, undefined, CSDamageTypes.BLAST);
-    pushPawn(
-      pawn,
-      directionBetween(deployable.position, position),
-      damage * 1.5,
-      Math.max(180, damage),
-    );
+      damagePawn(pawn, damage, undefined, undefined, CSDamageTypes.BLAST);
+      pushPawn(
+        pawn,
+        directionBetween(deployable.position, position),
+        damage * 1.5,
+        Math.max(180, damage),
+      );
+    }
+  } finally {
+    // Damage/audio errors must not leave a live bomb to detonate again.
+    cleanupDeployable(runtime, deployable);
   }
-  cleanupDeployable(runtime, deployable);
 }
 
 function humanUsesBomb(pawn, deployable, usePressed) {
@@ -33296,35 +33890,39 @@ function spawnSquidInkVisual(runtime, deployable, now, index) {
 
 function explodeSquid(runtime, deployable, now, humans) {
   const definition = deployable.item.definition;
-  playSourceAudioStack([6695, 6696], deployable.position);
-  playSourceAudioCue(6697, deployable.position);
-  for (const pawn of humans) {
-    const position = pawn.GetAbsOrigin?.();
-    if (!position || Math.hypot(
-      position.x - deployable.position.x,
-      position.y - deployable.position.y,
-      position.z - deployable.position.z,
-    ) > definition.impactRadius) continue;
-    const velocity = pawn.GetAbsVelocity?.() ?? vec();
-    pawn.Teleport?.({ velocity: vec(0, 0, Math.min(0, velocity.z)) });
-    playSourceAudioCue(6712, position, { recipient: pawn });
-    addPlayerStatus(
-      runtime,
-      pawn,
-      itemEffectSource(runtime, deployable.item, "squid_slow"),
-      definition.slowTime,
-      { speedMultiplier: definition.slowAmount },
-    );
-    addPlayerStatus(
-      runtime,
-      pawn,
-      `${runtime.index}:item:${deployable.item.id}:squid`,
-      definition.inkTime,
-      { squidBlind: true },
-    );
+  try {
+    playSourceAudioStack([6695, 6696], deployable.position);
+    playSourceAudioCue(6697, deployable.position);
+    for (const pawn of humans) {
+      const position = pawn.GetAbsOrigin?.();
+      if (!position || Math.hypot(
+        position.x - deployable.position.x,
+        position.y - deployable.position.y,
+        position.z - deployable.position.z,
+      ) > definition.impactRadius) continue;
+      const velocity = pawn.GetAbsVelocity?.() ?? vec();
+      pawn.Teleport?.({ velocity: vec(0, 0, Math.min(0, velocity.z)) });
+      playSourceAudioCue(6712, position, { recipient: pawn });
+      addPlayerStatus(
+        runtime,
+        pawn,
+        itemEffectSource(runtime, deployable.item, "squid_slow"),
+        definition.slowTime,
+        { speedMultiplier: definition.slowAmount },
+      );
+      addPlayerStatus(
+        runtime,
+        pawn,
+        `${runtime.index}:item:${deployable.item.id}:squid`,
+        definition.inkTime,
+        { squidBlind: true },
+      );
+    }
+    syncSquidBlindHud(now, true);
+  } finally {
+    // Like BombChuck: an effect error must not leave the squid to re-explode.
+    cleanupDeployable(runtime, deployable);
   }
-  syncSquidBlindHud(now, true);
-  cleanupDeployable(runtime, deployable);
   for (let index = 0; index < 5; index++) spawnSquidInkVisual(runtime, deployable, now, index);
 }
 
@@ -33349,14 +33947,15 @@ function processBallisticZombieProjectile(runtime, deployable, now, humans, zomb
     return;
   }
   if (deployable.kind === "bomb_chuck") {
+    // Expiry takes precedence over optional defuse interaction callbacks.
+    if (now >= deployable.detonateAt) {
+      explodeBombChuck(runtime, deployable, [...humans, ...zombies]);
+      return;
+    }
     for (const pawn of humans) {
       if (!humanUsesBomb(pawn, deployable, usePressed)) continue;
       playerNameMessage(pawn, "", " died trying to defuse a bomb");
       damagePawn(pawn, 999999, deployable.user, deployable.visual);
-    }
-    if (now >= deployable.detonateAt) {
-      explodeBombChuck(runtime, deployable, [...humans, ...zombies]);
-      return;
     }
   } else if (now >= deployable.expiresAt) {
     if (deployable.kind === "squid") explodeSquid(runtime, deployable, now, humans);
@@ -33618,35 +34217,39 @@ function processClaymore(runtime, deployable, now, zombies) {
     }
   }
   if (deployable.detonateAt === undefined || now < deployable.detonateAt) return;
-  hurtFinaleBossAt(add(deployable.position, vec(0, 0, 100)), deployable.item.definition.bossRadius, deployable.item.definition.bossDamage * (deployable.damageMultiplier ?? 1), deployable.item.definition.bossStunChance, deployable.item.definition.bossStunTimeAdd, undefined, "claymore");
-  for (const pawn of zombies) {
-    if (!validZombieTarget(pawn)) continue;
-    const position = pawn.GetAbsOrigin?.();
-    if (!position) continue;
-    const distance = Math.hypot(
-      position.x - deployable.position.x,
-      position.y - deployable.position.y,
-      position.z - deployable.position.z,
-    );
-    if (distance > 500) continue;
-     const damage = 3000 * (deployable.damageMultiplier ?? 1) * Math.max(0, 1 - distance / 500);
-     damagePawn(pawn, damage);
-     if (!pawn.IsAlive?.()) continue;
-    if (distance <= 200) pawn.Teleport({ velocity: vec() });
-    if (distance <= 100) {
-      fireTarget(pawn, "IgniteLifetime", "7");
-      addPlayerStatus(runtime, pawn, itemEffectSource(runtime, deployable.item, "claymore"), 7, {
-        speedMultiplier: -0.44,
-      });
+  try {
+    hurtFinaleBossAt(add(deployable.position, vec(0, 0, 100)), deployable.item.definition.bossRadius, deployable.item.definition.bossDamage * (deployable.damageMultiplier ?? 1), deployable.item.definition.bossStunChance, deployable.item.definition.bossStunTimeAdd, undefined, "claymore");
+    for (const pawn of zombies) {
+      if (!validZombieTarget(pawn)) continue;
+      const position = pawn.GetAbsOrigin?.();
+      if (!position) continue;
+      const distance = Math.hypot(
+        position.x - deployable.position.x,
+        position.y - deployable.position.y,
+        position.z - deployable.position.z,
+      );
+      if (distance > 500) continue;
+      const damage = 3000 * (deployable.damageMultiplier ?? 1) * Math.max(0, 1 - distance / 500);
+      damagePawn(pawn, damage);
+      if (!pawn.IsAlive?.()) continue;
+      if (distance <= 200) pawn.Teleport({ velocity: vec() });
+      if (distance <= 100) {
+        fireTarget(pawn, "IgniteLifetime", "7");
+        addPlayerStatus(runtime, pawn, itemEffectSource(runtime, deployable.item, "claymore"), 7, {
+          speedMultiplier: -0.44,
+        });
+      }
     }
+    if (reserveItemParticleBurst("claymore", 10, 0.20, true)) {
+      const position = add(deployable.position, vec(0, 0, 4));
+      playSourceAudioCue(7958, position);
+      playSourceAudioCue(7959, position);
+      spawnItemParticle(runtime, deployable.item, "explosion_child_distort01d_1k", position, undefined, 0.10);
+    }
+  } finally {
+    // Like BombChuck: a damage/audio error must not leave the mine to detonate again.
+    cleanupDeployable(runtime, deployable);
   }
-  if (reserveItemParticleBurst("claymore", 10, 0.20, true)) {
-    const position = add(deployable.position, vec(0, 0, 4));
-    playSourceAudioCue(7958, position);
-    playSourceAudioCue(7959, position);
-    spawnItemParticle(runtime, deployable.item, "explosion_child_distort01d_1k", position, undefined, 0.10);
-  }
-  cleanupDeployable(runtime, deployable);
 }
 
 function processBillNye(runtime, deployable, now, zombies) {
@@ -34340,47 +34943,60 @@ function processItemDeployables(runtime, now, targetsByTeam, usePressed = new Se
   const zombies = targetsByTeam.get(2) ?? [];
   const pawns = [...humans, ...zombies];
   for (const deployable of [...runtime.itemDeployables]) {
-    if (deployable.kind === "native_item_particle") {
-      if (now >= deployable.expiresAt || !validEntity(deployable.visual)) cleanupDeployable(runtime, deployable);
+    try {
+      if (deployable.kind === "native_item_particle") {
+        if (now >= deployable.expiresAt || !validEntity(deployable.visual)) cleanupDeployable(runtime, deployable);
+      }
+      else if (deployable.kind === "squid_ink_visual") processSquidInkVisual(runtime, deployable, now);
+      else if (deployable.kind === "ballistic_trail") processBallisticTrail(runtime, deployable, now);
+      else if (deployable.kind === "short_sound") processShortSound(runtime, deployable, now);
+      else if (["stone", "bomb_chuck", "squid"].includes(deployable.kind)) {
+        processBallisticZombieProjectile(runtime, deployable, now, humans, zombies, usePressed);
+      }
+      else if (deployable.kind === "fling_burst") processFlingBurst(runtime, deployable, now);
+      else if (deployable.kind === "roar_burst") processRoarBurst(runtime, deployable, now);
+      else if (deployable.kind === "gust_echo") processGustEcho(runtime, deployable, now);
+      else if (deployable.kind === "poise_burst") processPoiseBurst(runtime, deployable, now);
+      else if (deployable.kind === "greasy_fingers") processGreasyFingers(runtime, deployable, now);
+      else if (deployable.kind === "poise_illusion" || deployable.kind === "impostor_illusion") {
+        processPoiseIllusion(runtime, deployable, now);
+      }
+      else if (deployable.kind === "pizzabaker" || deployable.kind === "gust") {
+        processLinearZombieProjectile(runtime, deployable, now, humans);
+      }
+      else if (deployable.kind === "puller") processPuller(runtime, deployable, now, humans);
+      else if (deployable.kind === "heal_orb") processHealOrb(runtime, deployable, now, humans);
+      else if (deployable.kind === "peanutbutter") processPeanutButter(runtime, deployable, now, zombies);
+      else if (deployable.kind === "claymore") processClaymore(runtime, deployable, now, zombies);
+      else if (deployable.kind === "billnye") processBillNye(runtime, deployable, now, zombies);
+      else if (deployable.kind === "hackerman") processHackerman(runtime, deployable, now);
+      else if (deployable.kind === "hackerman_indicators") processHackermanIndicators(runtime, deployable, now);
+      else if (deployable.kind === "rift_z") processZombieRift(runtime, deployable, now, zombies);
+      else if (deployable.kind === "rift") processRift(runtime, deployable, now, pawns);
+      else if (deployable.kind === "impostor") processImpostor(runtime, deployable, now);
+      else if (deployable.kind === "destructo_slow") processDestructoSlow(runtime, deployable, now, zombies);
+      else if (deployable.kind === "storm_blade") processStormBlade(runtime, deployable, now);
+      else if (deployable.kind.startsWith("planet_")) processPlanet(runtime, deployable, now, zombies, humans);
+      else if (deployable.kind === "captain_planet") processCaptainPlanet(runtime, deployable, now, pawns);
+    } catch (error) {
+      reportGuardedError(`item deployable ${deployable.kind}`, error);
+      // A broken scripted mover cannot fly on its own. Remove its entire
+      // effect rather than leave a stationary, potentially lethal projectile.
+      // Any other effect that keeps throwing never reaches its own expiry
+      // check, so its models would stay forever: retire it after 3 failures.
+      deployable.tickFailures = (deployable.tickFailures ?? 0) + 1;
+      if (deployable.kind === "bomb_chuck" || LINEAR_ZOMBIE_PROJECTILE_KINDS.has(deployable.kind)
+        || deployable.tickFailures >= 3) {
+        guardStep(`retire failed ${deployable.kind}`, () => cleanupDeployable(runtime, deployable));
+      }
     }
-    else if (deployable.kind === "squid_ink_visual") processSquidInkVisual(runtime, deployable, now);
-    else if (deployable.kind === "ballistic_trail") processBallisticTrail(runtime, deployable, now);
-    else if (deployable.kind === "short_sound") processShortSound(runtime, deployable, now);
-    else if (["stone", "bomb_chuck", "squid"].includes(deployable.kind)) {
-      processBallisticZombieProjectile(runtime, deployable, now, humans, zombies, usePressed);
-    }
-    else if (deployable.kind === "fling_burst") processFlingBurst(runtime, deployable, now);
-    else if (deployable.kind === "roar_burst") processRoarBurst(runtime, deployable, now);
-    else if (deployable.kind === "gust_echo") processGustEcho(runtime, deployable, now);
-    else if (deployable.kind === "poise_burst") processPoiseBurst(runtime, deployable, now);
-    else if (deployable.kind === "greasy_fingers") processGreasyFingers(runtime, deployable, now);
-    else if (deployable.kind === "poise_illusion" || deployable.kind === "impostor_illusion") {
-      processPoiseIllusion(runtime, deployable, now);
-    }
-    else if (deployable.kind === "pizzabaker" || deployable.kind === "gust") {
-      processLinearZombieProjectile(runtime, deployable, now, humans);
-    }
-    else if (deployable.kind === "puller") processPuller(runtime, deployable, now, humans);
-    else if (deployable.kind === "heal_orb") processHealOrb(runtime, deployable, now, humans);
-    else if (deployable.kind === "peanutbutter") processPeanutButter(runtime, deployable, now, zombies);
-    else if (deployable.kind === "claymore") processClaymore(runtime, deployable, now, zombies);
-    else if (deployable.kind === "billnye") processBillNye(runtime, deployable, now, zombies);
-    else if (deployable.kind === "hackerman") processHackerman(runtime, deployable, now);
-    else if (deployable.kind === "hackerman_indicators") processHackermanIndicators(runtime, deployable, now);
-    else if (deployable.kind === "rift_z") processZombieRift(runtime, deployable, now, zombies);
-    else if (deployable.kind === "rift") processRift(runtime, deployable, now, pawns);
-    else if (deployable.kind === "impostor") processImpostor(runtime, deployable, now);
-    else if (deployable.kind === "destructo_slow") processDestructoSlow(runtime, deployable, now, zombies);
-    else if (deployable.kind === "storm_blade") processStormBlade(runtime, deployable, now);
-    else if (deployable.kind.startsWith("planet_")) processPlanet(runtime, deployable, now, zombies, humans);
-    else if (deployable.kind === "captain_planet") processCaptainPlanet(runtime, deployable, now, pawns);
   }
 }
 
 function processItems(now, usePressed = state.pendingDeployableUsePawns) {
   if (now < state.nextItemTickAt) return false;
   state.nextItemTickAt = now + CONFIG.itemTickInterval;
-  processReleasedItemCarriers(now);
+  guardStep("processReleasedItemCarriers", () => processReleasedItemCarriers(now));
   const pawns = allLivingPawns();
   const targetsByTeam = new Map([
     [2, pawns.filter((pawn) => pawn.GetTeamNumber?.() === 2)],
@@ -34390,81 +35006,87 @@ function processItems(now, usePressed = state.pendingDeployableUsePawns) {
   // Pickup qualification needs only 10 Hz; native claims and moving item
   // effects retain the 50 Hz Item Tick.
   const checkKnifePickups = now >= state.nextKnifePickupTickAt;
-  if (checkKnifePickups) {
-    state.nextKnifePickupTickAt = now + CONFIG.knifePickupCheckInterval;
-    for (const runtime of activeRuntimes()) {
-      for (const item of runtime.items ?? []) {
-        if (["world", "dropped"].includes(item.state) && now < (item.knifePickupUntil ?? 0)
-          && validEntity(item.carrier) && !validEntity(item.carrier.GetOwner?.())
-          && validEntity(item.knifePickupPawn)) reservedKnifePawns.add(item.knifePickupPawn);
+  guardStep("reserveKnifePickups", () => {
+    if (checkKnifePickups) {
+      state.nextKnifePickupTickAt = now + CONFIG.knifePickupCheckInterval;
+      for (const runtime of activeRuntimes()) {
+        for (const item of runtime.items ?? []) {
+          if (["world", "dropped"].includes(item.state) && now < (item.knifePickupUntil ?? 0)
+            && validEntity(item.carrier) && !validEntity(item.carrier.GetOwner?.())
+            && validEntity(item.knifePickupPawn)) reservedKnifePawns.add(item.knifePickupPawn);
+        }
       }
     }
-  }
+  });
   for (const runtime of activeRuntimes()) {
     for (const item of [...runtime.items ?? []]) {
-      if (item.state === "consumed") continue;
-      if (item.state === "dropped") {
-        const droppedPosition = item.carrier?.GetAbsOrigin?.() ?? item.position;
-        if (droppedPosition?.z <= CONFIG.itemFallCleanupZ) {
-          consumeItem(runtime, item);
+      try {
+        if (item.state === "consumed") continue;
+        if (item.state === "dropped") {
+          const droppedPosition = item.carrier?.GetAbsOrigin?.() ?? item.position;
+          if (droppedPosition?.z <= CONFIG.itemFallCleanupZ) {
+            consumeItem(runtime, item);
+            continue;
+          }
+        }
+        if (!item.visual?.IsValid()) {
+          if (item.holder) forgetPlayerItem(item.holder, item);
+          ITEM_BEHAVIORS[item.definition.behavior]?.onCleanup?.(runtime, item);
+          destroyItemCarrier(item);
+          runtime.items.delete(item);
           continue;
         }
-      }
-      if (!item.visual?.IsValid()) {
-        if (item.holder) forgetPlayerItem(item.holder, item);
-        ITEM_BEHAVIORS[item.definition.behavior]?.onCleanup?.(runtime, item);
-        destroyItemCarrier(item);
-        runtime.items.delete(item);
-        continue;
-      }
-      if (item.state === "held") {
-        const holder = item.holder;
-        if (!holder?.IsValid() || !holder.IsAlive() || holder.GetTeamNumber?.() !== item.definition.team) {
-          dropItem(item, item.position);
-        } else {
-          const carrier = item.carrier;
-          if (!validEntity(carrier)) {
-            item.carrier = undefined;
-            dropItem(item, holder.GetAbsOrigin?.() ?? item.position);
-            continue;
-          }
-          const carrierOwner = carrier.GetOwner?.();
-          if (typeof carrier.GetOwner === "function" && carrierOwner !== holder) {
-            dropItem(item, carrier.GetAbsOrigin?.() ?? item.position);
-            continue;
-          }
-                                                                             
-                                                                              
-                                                                         
-          item.position = clone(holder.GetAbsOrigin?.() ?? carrier.GetAbsOrigin?.() ?? item.position);
-          if (!item.readyNotified && now >= item.nextUseAt) {
-            item.readyNotified = true;
-            ITEM_BEHAVIORS[item.definition.behavior]?.onReady?.(runtime, item, holder);
-          }
-          ITEM_BEHAVIORS[item.definition.behavior]?.onTick?.(runtime, item, holder, now);
-        }
-        continue;
-      }
-
-      if (validEntity(item.carrier)) {
-        item.position = clone(item.carrier.GetAbsOrigin?.() ?? item.position);
-        const carrierOwner = item.carrier.GetOwner?.();
-        if (validEntity(carrierOwner)) {
-          if (
-            carrierOwner.IsAlive?.()
-            && carrierOwner.GetTeamNumber?.() === item.definition.team
-            && !playerItemInSlot(carrierOwner, itemSlotKey(item.definition))
-          ) {
-            if (!claimItem(item, carrierOwner, item.carrier)) carrierOwner.DropWeapon?.(item.carrier);
+        if (item.state === "held") {
+          const holder = item.holder;
+          if (!holder?.IsValid() || !holder.IsAlive() || holder.GetTeamNumber?.() !== item.definition.team) {
+            dropItem(item, item.position);
           } else {
-            carrierOwner.DropWeapon?.(item.carrier);
+            const carrier = item.carrier;
+            if (!validEntity(carrier)) {
+              item.carrier = undefined;
+              dropItem(item, holder.GetAbsOrigin?.() ?? item.position);
+              continue;
+            }
+            const carrierOwner = carrier.GetOwner?.();
+            if (typeof carrier.GetOwner === "function" && carrierOwner !== holder) {
+              dropItem(item, carrier.GetAbsOrigin?.() ?? item.position);
+              continue;
+            }
+                                                                               
+                                                                                
+                                                                           
+            item.position = clone(holder.GetAbsOrigin?.() ?? carrier.GetAbsOrigin?.() ?? item.position);
+            if (!item.readyNotified && now >= item.nextUseAt) {
+              item.readyNotified = true;
+              ITEM_BEHAVIORS[item.definition.behavior]?.onReady?.(runtime, item, holder);
+            }
+            ITEM_BEHAVIORS[item.definition.behavior]?.onTick?.(runtime, item, holder, now);
           }
           continue;
         }
-        if (checkKnifePickups && (!state.finaleEscapeActive || item.endingItem === true)) {
-          processKnifeItemPickup(item, now, pawns, reservedKnifePawns);
+  
+        if (validEntity(item.carrier)) {
+          item.position = clone(item.carrier.GetAbsOrigin?.() ?? item.position);
+          const carrierOwner = item.carrier.GetOwner?.();
+          if (validEntity(carrierOwner)) {
+            if (
+              carrierOwner.IsAlive?.()
+              && carrierOwner.GetTeamNumber?.() === item.definition.team
+              && !playerItemInSlot(carrierOwner, itemSlotKey(item.definition))
+            ) {
+              if (!claimItem(item, carrierOwner, item.carrier)) carrierOwner.DropWeapon?.(item.carrier);
+            } else {
+              carrierOwner.DropWeapon?.(item.carrier);
+            }
+            continue;
+          }
+          if (checkKnifePickups && (!state.finaleEscapeActive || item.endingItem === true)) {
+            processKnifeItemPickup(item, now, pawns, reservedKnifePawns);
+          }
+          continue;
         }
-        continue;
+      } catch (error) {
+        reportGuardedError(`item tick ${item.name}`, error);
       }
     }
     processItemDeployables(runtime, now, targetsByTeam, usePressed);
@@ -34725,7 +35347,7 @@ function spawnOne(request) {
     pair.partner.terrainPairDone = true;
   }
   try {
-    spawnBlockSafetyTrigger(runtime, request);
+    genProf("spawn.safetyTrigger", () => spawnBlockSafetyTrigger(runtime, request));
   } catch (error) {
     skipFailedSpawn(runtime, `spawn safety ${request.shape}`, error);
     return;
@@ -34938,7 +35560,9 @@ function restoreThickFogSky(event) {
   if (themeProfile(theme).name === "silenthill") setSilentHillSky(state.silentHillWorld.visualDark);
 }
 function clearGenericEvents() {
-  for (const event of [...state.genericEvents.active.values()]) endGenericEvent(event, { reset: true });
+  // endGenericEvent rethrows after its own cleanup; one event must not strand the rest.
+  for (const event of [...state.genericEvents.active.values()])
+    guardStep(`clearGenericEvents ${event.name}`, () => endGenericEvent(event, { reset: true }));
   clearPledgePrompt();
   state.genericEvents.cooldown = undefined; state.genericEvents.failChance = 0;
   state.genericEvents.lastEvaluatedLevel = undefined;
@@ -35110,7 +35734,7 @@ function spawnGenericBeam(event, runtime, now) {
   ));
   const angles = { pitch: 0, yaw: Math.random() * 360, roll: 0 };
   const visual = spawnGenericEventVisual(event, runtime, "genericBeamGrid", GENERIC_BEAMGRID_CONFIG.model, position, angles);
-  visual.SetModelScale?.(3);
+  visual.SetModelScale?.(GENERIC_BEAMGRID_CONFIG.modelScale);
   // Yellow comes from the self-illum material; Source's black tint + glow is not used.
   visual.SetColor?.({ r: 255, g: 255, b: 255, a: 255 });
   const beam = { visual, position, initialPosition: clone(position), angles,
@@ -35379,6 +36003,9 @@ function spawnGenericDoorhug(event, runtime) {
     pitch: -25, yaw: normalizeYaw(yawOf(direction) + 180), roll: 0,
   };
   const visual = spawnGenericEventVisual(event, runtime, "genericDoorhug", config.model, position, angles);
+  // Engine backstop like BombChuck: the explode/end tasks below need a running
+  // script, so a fatal or stalled Think must not leave the bomb standing.
+  scheduleDeployableKill([visual], config.explodeTime + config.activeEndPadding);
   visual.SetModelScale?.(config.modelScale);
   visual.SetColor?.({ r: 255, g: 0, b: 0, a: 0 });
   visual.Glow({ r: 200, g: 100, b: 0, a: 255 });
@@ -35644,6 +36271,9 @@ function genericBigNadeExplode(event, projectile, position) {
   const record = event.projectiles.get(projectile);
   event.projectiles.delete(projectile);
   const origin = position ?? projectile.GetAbsOrigin?.();
+  // The projectile has left event.projectiles, so nothing would retry its
+  // Kill: queue it before the damage/audio below can throw.
+  if (validEntity(projectile)) fireTarget(projectile, "Kill");
   if (!origin) return false;
   for (const pawn of allLivingPawns()) {
     if (pawn.GetTeamNumber?.() !== 2 || !pawn.IsAlive?.()) continue;
@@ -35666,7 +36296,6 @@ function genericBigNadeExplode(event, projectile, position) {
     record.attacker, "bignades");
   playSourceAudioCue(4295, origin);
   playSourceAudioCue(4296, origin);
-  if (validEntity(projectile)) fireTarget(projectile, "Kill");
   return true;
 }
 
@@ -35707,7 +36336,7 @@ function genericEventTask(event, delay, callback) {
     event.tasks?.delete(task);
     if (event.ended) return;
     try { callback(); } catch (error) {
-      message(`[EVENT ${event.name}] failed: ${String(error)}`);
+      reportGuardedError(`event ${event.name}`, error);
       endGenericEvent(event);
     }
   }, owner);
@@ -35853,89 +36482,96 @@ function endGenericEvent(event, { reset = false, natural = false } = {}) {
   }
   event.ended = true;
   cancelGenericEventTasks(event);
-                                                                      
+  // ended is set and the tasks are gone, so nothing retries this function:
+  // an error in the per-event cleanup below must not skip the entity kills.
+  try {
+
+
+    for (const volume of event.collapsedMovementVolumes ?? [])
+      disableMovementVolume(event.collapseSource, volume);
+    const source = genericEventSource(event);
+    if (event.name === "DEBRIS") {
+      const runtime = event.debrisRuntime;
+      for (const piece of event.createdRubblePieces ?? []) {
+        if (runtime && piece) cleanupRaceRubblePiece(runtime, piece);
+      }
+      if (runtime && runtime.lifecycle !== "destroyed") {
+        runtime.rubblePieces = (runtime.rubblePieces ?? []).filter((piece) => !event.createdRubblePieces?.has(piece));
+        runtime.raceRubbleStarted = event.previousDebrisState?.raceRubbleStarted;
+        runtime.raceRubbleStopped = event.previousDebrisState?.raceRubbleStopped;
+        runtime.rubbleProfile = event.previousDebrisState?.rubbleProfile;
+        runtime.rubbleSpawnedCount = event.previousDebrisState?.rubbleSpawnedCount ?? 0;
+        runtime.nextRubbleAt = event.previousDebrisState?.nextRubbleAt;
+        runtime.rubbleTarget = event.previousDebrisState?.rubbleTarget;
+      }
+    } else if (event.name === "LOWGRAV") {
+      for (const pawn of state.playerEffects.keys()) removeGravitySource(pawn, source);
+    } else if (event.name === "PLEDGE") {
+      state.genericEvents.pledgeUntil = 0;
+      clearPledgePrompt();
+    } else if (event.name === "THICK_FOG") {
+      restoreThickFogSky(event);
+      setThemeFog(state.currentLevel ?? state.transitionLevel ?? { stageSnapshot: event.stageSnapshot });
+    } else if (event.name === "BLOODLUST") {
+      state.genericEvents.bloodlustHits.clear();
+    } else if (event.name === "SILENCE") {
+      if (validEntity(event.ringingEmitter)) {
+        fireTarget(event.ringingEmitter, "Volume", "0");
+        fireTarget(event.ringingEmitter, "StopSound", "");
+      }
+    } else if (event.name === "PHASING") {
+      for (const entity of event.targets ?? []) {
+        if (validEntity(entity)) genericTerrainAlpha(entity, genericEventVisibleAlpha(entity));
+      }
+      for (const scene of [themeModelSky.active, ...themeModelSky.retiring]) {
+        for (const record of scene?.records ?? []) themeSkyAlpha(record, record.requestedAlpha ?? record.maxAlpha);
+      }
+    } else if (event.name === "WALLBREAK") {
+      for (const { entity } of event.targets ?? []) {
+        if (validEntity(entity)) genericTerrainAlpha(entity, genericEventVisibleAlpha(entity));
+      }
+    } else if (event.name === "DISTORT") {
+      for (const pawn of genericEventPlayers()) fireName("client", "Command", "r_screenoverlay ", 0.05, pawn);
+    }
+    if (event.name === "KAMIKAZE" && event.kamikazeRuntime?.kamikaze) {
+      cancelFinaleKamikaze(event.kamikazeRuntime);
+    }
+    if (event.name === "BIGNADES") {
+                                                                               
+                                                                                
+      for (const [projectile, record] of event.projectiles ?? []) {
+        if (!validEntity(projectile)) continue;
+        if (record.originalModel) projectile.SetModel?.(record.originalModel);
+        projectile.SetModelScale?.(record.originalScale);
+      }
+      event.projectiles?.clear?.();
+    }
+    for (const sound of event.pizza?.sounds ?? [event.worldEater?.sound1, event.worldEater?.sound2])
+      if (validEntity(sound)) fireTarget(sound, "StopSound");
+    for (const burst of event.pizza?.contactBursts ?? []) retireGenericPizzaContactFx(event, burst, true);
+  } finally {
+    for (const entity of event.entities ?? []) {
+      guardStep(`end event ${event.name} kill`, () => { if (validEntity(entity)) entity.Kill?.(); });
+      event.entityRuntime?.entities?.delete(entity);
+    }
+    for (const id of event.entityRuntime?.outputConnections ?? []) {
+      disconnectEntityOutput(id);
+      state.outputConnections.delete(id);
+    }
+    event.entityRuntime?.outputConnections?.clear();
+    for (const entity of event.entityRuntime?.entities ?? [])
+      guardStep(`end event ${event.name} kill`, () => { if (validEntity(entity)) entity.Kill(); });
+    event.entityRuntime?.entities?.clear();
+    state.genericEvents.active.delete(event.id);
+    // reachEnd clears currentLevel until the next level commits. COLLAPSE can
+    // finish during that handoff, after normal history retirement skipped it.
+    // Run it here too: ended is set, so a throw above would skip it for good.
+    const cleanupRuntime = state.currentLevel ?? state.transitionLevel ?? state.pendingLevel;
+    if (event.collapseSource && !reset && Number.isFinite(Number(cleanupRuntime?.index)))
+      guardStep(`end event ${event.name} collapse cleanup`, () => cleanupExpiredLevels(Number(cleanupRuntime.index)));
+  }
                                                                         
-  for (const volume of event.collapsedMovementVolumes ?? [])
-    disableMovementVolume(event.collapseSource, volume);
-  const source = genericEventSource(event);
-  if (event.name === "DEBRIS") {
-    const runtime = event.debrisRuntime;
-    for (const piece of event.createdRubblePieces ?? []) {
-      if (runtime && piece) cleanupRaceRubblePiece(runtime, piece);
-    }
-    if (runtime && runtime.lifecycle !== "destroyed") {
-      runtime.rubblePieces = (runtime.rubblePieces ?? []).filter((piece) => !event.createdRubblePieces?.has(piece));
-      runtime.raceRubbleStarted = event.previousDebrisState?.raceRubbleStarted;
-      runtime.raceRubbleStopped = event.previousDebrisState?.raceRubbleStopped;
-      runtime.rubbleProfile = event.previousDebrisState?.rubbleProfile;
-      runtime.rubbleSpawnedCount = event.previousDebrisState?.rubbleSpawnedCount ?? 0;
-      runtime.nextRubbleAt = event.previousDebrisState?.nextRubbleAt;
-      runtime.rubbleTarget = event.previousDebrisState?.rubbleTarget;
-    }
-  } else if (event.name === "LOWGRAV") {
-    for (const pawn of state.playerEffects.keys()) removeGravitySource(pawn, source);
-  } else if (event.name === "PLEDGE") {
-    state.genericEvents.pledgeUntil = 0;
-    clearPledgePrompt();
-  } else if (event.name === "THICK_FOG") {
-    restoreThickFogSky(event);
-    setThemeFog(state.currentLevel ?? state.transitionLevel ?? { stageSnapshot: event.stageSnapshot });
-  } else if (event.name === "BLOODLUST") {
-    state.genericEvents.bloodlustHits.clear();
-  } else if (event.name === "SILENCE") {
-    if (validEntity(event.ringingEmitter)) {
-      fireTarget(event.ringingEmitter, "Volume", "0");
-      fireTarget(event.ringingEmitter, "StopSound", "");
-    }
-  } else if (event.name === "PHASING") {
-    for (const entity of event.targets ?? []) {
-      if (validEntity(entity)) genericTerrainAlpha(entity, genericEventVisibleAlpha(entity));
-    }
-    for (const scene of [themeModelSky.active, ...themeModelSky.retiring]) {
-      for (const record of scene?.records ?? []) themeSkyAlpha(record, record.requestedAlpha ?? record.maxAlpha);
-    }
-  } else if (event.name === "WALLBREAK") {
-    for (const { entity } of event.targets ?? []) {
-      if (validEntity(entity)) genericTerrainAlpha(entity, genericEventVisibleAlpha(entity));
-    }
-  } else if (event.name === "DISTORT") {
-    for (const pawn of genericEventPlayers()) fireName("client", "Command", "r_screenoverlay ", 0.05, pawn);
-  }
-  if (event.name === "KAMIKAZE" && event.kamikazeRuntime?.kamikaze) {
-    cancelFinaleKamikaze(event.kamikazeRuntime);
-  }
-  if (event.name === "BIGNADES") {
                                                                              
-                                                                              
-    for (const [projectile, record] of event.projectiles ?? []) {
-      if (!validEntity(projectile)) continue;
-      if (record.originalModel) projectile.SetModel?.(record.originalModel);
-      projectile.SetModelScale?.(record.originalScale);
-    }
-    event.projectiles?.clear?.();
-  }
-  for (const sound of event.pizza?.sounds ?? [event.worldEater?.sound1, event.worldEater?.sound2])
-    if (validEntity(sound)) fireTarget(sound, "StopSound");
-  for (const burst of event.pizza?.contactBursts ?? []) retireGenericPizzaContactFx(event, burst, true);
-  for (const entity of event.entities ?? []) {
-    if (validEntity(entity)) entity.Kill?.();
-    event.entityRuntime?.entities?.delete(entity);
-  }
-  for (const id of event.entityRuntime?.outputConnections ?? []) {
-    disconnectEntityOutput(id);
-    state.outputConnections.delete(id);
-  }
-  event.entityRuntime?.outputConnections?.clear();
-  for (const entity of event.entityRuntime?.entities ?? []) if (validEntity(entity)) entity.Kill();
-  event.entityRuntime?.entities?.clear();
-  state.genericEvents.active.delete(event.id);
-                                                                        
-                                                                             
-  // reachEnd clears currentLevel until the next level commits. COLLAPSE can
-  // finish during that handoff, after normal history retirement skipped it.
-  const cleanupRuntime = state.currentLevel ?? state.transitionLevel ?? state.pendingLevel;
-  if (event.collapseSource && !reset && Number.isFinite(Number(cleanupRuntime?.index)))
-    cleanupExpiredLevels(Number(cleanupRuntime.index));
 }
 
 function startGenericEvent(name, runtime, { manualProbe = false, continuousDebug = false } = {}) {
@@ -36575,8 +37211,14 @@ function startHardCodedStageEvent(runtime) {
 
 // Source map_server_printout, sent ::STAGE_ENTRY_MSG_DELAY after postspawn.
 function announceLevelEntry(level) {
-  if (!level?.name) return;
-  const text = `Now entering: '${level.name}' by '${level.author}' [${level.id}]`;
+  // A devmap may have a blank name; Source still printed its entry line.
+  if (!level?.name && !String(level?.id ?? "").startsWith("devmap:")) return;
+  if (devmapActive() && level.id === devmap.level.id) {
+    schedule(0.7, () => announce("[DEVMAP ENABLED]"));
+    schedule(1.71, () => announce("type !testrace in chat to test this stage in the race-ending"));
+    return;
+  }
+  const text = `Now entering: '${level.name}' by '${level.author}' [${displayLevelId(level.id)}]`;
   schedule(0.7, () => announce(text));
 }
 
@@ -36592,6 +37234,7 @@ function finishPendingLevel() {
   const previous = state.currentLevel ?? state.transitionLevel;
   state.pendingLevel = undefined;
   state.currentLevel = runtime;
+  resetProgressionDelay();
   ensureThemeModelSky(campaignStageSnapshot().infiniteMode ? campaignStageSnapshot().theme
     : runtime.stageSnapshot?.theme ?? campaignStageSnapshot().theme, runtime.end.z);
   setLevelLifecycle(runtime, "active");
@@ -36634,6 +37277,7 @@ function finishPendingLevel() {
     schedule(CONFIG.previousLevelRetention, () => cleanupExpiredLevels(runtime.index), runtime.index);
   announceLevelEntry(runtime);
   setThemeFog(runtime);
+  genProfLevelSummary(runtime);
   armThemeTerrainWarmup(runtime);
   if (runtime.debugTeleport) {
     message("[TELEPORT DEBUG] lab ready; disable noclip, then use ze_debug_teleport horizontal|fastfall|slowfall|upward");
@@ -36743,8 +37387,7 @@ function cleanupExpiredLevels(currentIndex) {
       const runtime = state.levels.get(index);
       if (runtime.sourceCleanupScheduled) continue;
       if ([...state.genericEvents.active.values()].some(event => !event.ended && event.collapseSource === runtime)) continue;
-      beginLevelFade(runtime);
-      destroyLevel(index, true, true);
+      genProf("task.cleanupLevel", () => { beginLevelFade(runtime); destroyLevel(index, true, true); });
     }
   }
 }
@@ -37030,10 +37673,12 @@ function destroyLevel(index, preservePickedItems = false, deferKill = false) {
   state.scheduledTasks = state.scheduledTasks.filter((task) => task.owner !== index);
   for (const volume of [...runtime.movementVolumes ?? []]) disableMovementVolume(runtime, volume);
   runtime.airslides?.clear();
-  for (const id of runtime.outputConnections) {
-    disconnectEntityOutput(id);
-    state.outputConnections.delete(id);
-  }
+  genProf("destroy.outputs", () => {
+    for (const id of runtime.outputConnections) {
+      disconnectEntityOutput(id);
+      state.outputConnections.delete(id);
+    }
+  });
   runtime.outputConnections.clear();
   restorePlayerEffects(index);
   clearPlayerStatuses(index);
@@ -37083,10 +37728,12 @@ function destroyLevel(index, preservePickedItems = false, deferKill = false) {
     if (record.runtime === runtime) state.silentHillWorld.visuals.delete(entity);
   }
   // Normal history retirement (fade, then destroy) keeps clean flat terrain.
-  if (preservePickedItems && deferKill) releaseTerrainToPool(runtime);
+  if (preservePickedItems && deferKill) genProf("destroy.pool", () => releaseTerrainToPool(runtime));
   const destroy = deferKill ? queueEntityKills : destroyEntities;
-  destroy([...runtime.entities]);
-  destroy([...(runtime.terrainPreloadedEntities ?? [])]);
+  genProf("destroy.kill", () => {
+    destroy([...runtime.entities]);
+    destroy([...(runtime.terrainPreloadedEntities ?? [])]);
+  });
   runtime.terrainPreloadedEntities?.clear();
   runtime.levelFadeColors?.clear();
   runtime.terrainEntities?.clear?.();
@@ -37196,6 +37843,8 @@ function checkEnd(now) {
 function isStageGoalLevel(runtime) {
   if (!runtime) return false;
   if (runtime.debugEndingSnapshot) return true;
+  // Source `debugged`: a devmap test repeats its stage with no ending.
+  if (devmapActive()) return false;
   const stage = stageSnapshotForRuntime(runtime);
   if (stage.infiniteMode) return state.infiniteCheckout?.passed === true;
   return (runtime.stageLevel ?? state.campaign.stageLevelCount) >= stage.stageGoal;
@@ -37275,6 +37924,7 @@ function reachEnd() {
     state.debugNextEnding = undefined;
     clearTerrainPreload();
   }
+  resetProgressionDelay();
   reached.completed = true;
   state.currentLevel = undefined;
   state.transitionLevel = reached;
@@ -38063,23 +38713,207 @@ function resetPlayerEffects(event) {
 // Each step is isolated and the next Think is always scheduled.
 const guardedErrorLog = new Map();
 
+// Rate-limit per step AND throw site: a shared step such as "scheduled task"
+// must not let one noisy fault hide a different one thrown in the same 5 s.
+function guardedErrorSite(error) {
+  const stack = String(error?.stack ?? "");
+  const frame = stack.split("\n").find(line => line.trim().startsWith("at "));
+  return frame?.trim() ?? String(error?.message ?? error);
+}
+
 function reportGuardedError(step, error) {
   const now = Instance.GetGameTime();
-  if ((guardedErrorLog.get(step) ?? -Infinity) > now) return;
-  guardedErrorLog.set(step, now + 5);
-  message(`ERROR in ${step}: ${error?.stack ?? error}`);
+  const key = `${step}|${guardedErrorSite(error)}`;
+  const entry = guardedErrorLog.get(key);
+  if (entry && entry.until > now) {
+    entry.suppressed++;
+    return;
+  }
+  const suppressed = entry?.suppressed ?? 0;
+  guardedErrorLog.set(key, { until: now + 5, suppressed: 0 });
+  // Faults must reach the server console even with loggingEnabled off;
+  // the 5 s per-site limit above keeps this from spamming.
+  consoleNotice(`ERROR in ${step}${suppressed ? ` (+${suppressed} suppressed)` : ""}: ${error?.stack ?? error}`);
 }
+
+// ===== TEMP PERF PROBES (GEN_PROF + SPAWN_BENCH) — remove before release =====
+// TEMP SPAWN BENCH (remove before release, with GEN_PROF).
+// Engine ForceSpawn cost grows over a map session and only a map change resets
+// it. Once per round, 20 s after round start, this times each engine step of a
+// minimal spawn on template_spawn_safety (one disabled trigger far below the
+// world), one batch per Think so the probe itself never spikes a frame:
+//   forceSpawn / SetEntityName / EntFire x3 / Kill (even batches) or Remove (odd)
+// plus two calls that create nothing as controls, and live entity counts for a
+// few classes. Compare [SPAWNBENCH] lines across rounds: whichever column grows
+// is the engine step that accumulates.
+var SPAWN_BENCH = { enabled: false, delay: 20, batches: 20, perBatch: 3,
+  serial: undefined, dueAt: undefined, batch: 0, sums: undefined, rounds: 0, roundSpawns: 0 };
+var benchClock = typeof globalThis.performance?.now === "function"
+  ? () => globalThis.performance.now() : () => Date.now();
+
+function processSpawnBench(now) {
+  if (!SPAWN_BENCH.enabled || !state.running || state.fatal) return;
+  if (SPAWN_BENCH.serial !== state.roundBootstrapSerial) {
+    SPAWN_BENCH.serial = state.roundBootstrapSerial;
+    SPAWN_BENCH.rounds++;
+    SPAWN_BENCH.dueAt = now + SPAWN_BENCH.delay;
+    SPAWN_BENCH.batch = 0;
+    SPAWN_BENCH.sums = { spawn: 0, name: 0, fire: 0, kill: 0, remove: 0, findName: 0, findClass: 0,
+      spawned: 0, killed: 0, removed: 0, fixupName: undefined };
+  }
+  if (SPAWN_BENCH.dueAt === undefined || now < SPAWN_BENCH.dueAt) return;
+  // Clear dueAt before any engine call so a throw cannot retry every Think.
+  const template = state.featureTemplates.get("spawnSafety");
+  if (!validEntity(template)) { SPAWN_BENCH.dueAt = undefined; consoleNotice("[SPAWNBENCH] template_spawn_safety missing"); return; }
+  const s = SPAWN_BENCH.sums;
+  const dueAt = SPAWN_BENCH.dueAt;
+  SPAWN_BENCH.dueAt = undefined;
+  const useRemove = SPAWN_BENCH.batch % 2 === 1;
+  const position = vec(0, 0, -15500);
+  for (let i = 0; i < SPAWN_BENCH.perBatch; i++) {
+    let t = benchClock();
+    const spawned = template.ForceSpawn(position, vec()) ?? [];
+    s.spawn += benchClock() - t;
+    s.spawned++;
+    for (const entity of spawned) {
+      if (!validEntity(entity)) continue;
+      s.fixupName ??= entity.GetEntityName?.();
+      t = benchClock();
+      entity.SetEntityName("spawn_bench");
+      s.name += benchClock() - t;
+      t = benchClock();
+      fireTarget(entity, "Disable");
+      fireTarget(entity, "Disable", undefined, 0.01);
+      fireTarget(entity, "Disable", undefined, 0.03);
+      s.fire += benchClock() - t;
+      t = benchClock();
+      if (useRemove && typeof entity.Remove === "function") { entity.Remove(); s.remove += benchClock() - t; s.removed++; }
+      else { entity.Kill(); s.kill += benchClock() - t; s.killed++; }
+    }
+    t = benchClock();
+    Instance.FindEntityByName("manager");
+    s.findName += benchClock() - t;
+  }
+  SPAWN_BENCH.batch++;
+  if (SPAWN_BENCH.batch < SPAWN_BENCH.batches) { SPAWN_BENCH.dueAt = dueAt; return; }
+  let t = benchClock();
+  const counts = {};
+  for (const cls of ["trigger_multiple", "prop_dynamic", "func_brush", "point_template", "info_target"]) {
+    counts[cls] = (Instance.FindEntitiesByClass?.(cls) ?? []).length;
+  }
+  s.findClass = benchClock() - t;
+  const per = (sum, n) => (n ? sum / n : 0).toFixed(3);
+  consoleNotice(`[SPAWNBENCH] round#${SPAWN_BENCH.rounds} gameTime=${now.toFixed(0)}s roundSpawns=${SPAWN_BENCH.roundSpawns}`
+    + ` ms/op: forceSpawn=${per(s.spawn, s.spawned)} setName=${per(s.name, s.spawned)} entFire3=${per(s.fire, s.spawned)}`
+    + ` kill=${per(s.kill, s.killed)} remove=${s.removed ? per(s.remove, s.removed) : "n/a"} findByName=${per(s.findName, s.spawned)}`
+    + ` findByClass5=${s.findClass.toFixed(2)}ms counts=${Object.entries(counts).map(([k, v]) => `${k}:${v}`).join(",")}`
+    + ` fixupName=${s.fixupName ?? "?"}`
+    + ` clock=${typeof globalThis.performance?.now === "function" ? "perf" : "date"}`);
+}
+
+// TEMPORARY generation hitch profiler. Wall-clock ms per Think step and per
+// generation sub-phase; logs any Think over spikeMs and a per-level summary.
+// Set enabled=false (or remove this block and its genProf() calls) when done.
+var GEN_PROF = { enabled: false, spikeMs: 6, gapMs: 60, windowMs: 5000, window: undefined,
+  frame: new Map(), counts: new Map(), level: new Map(), lastWall: undefined };
+function genProf(label, callback) {
+  if (!GEN_PROF?.enabled) return callback();
+  const start = Date.now();
+  try { return callback(); }
+  finally {
+    const ms = Date.now() - start;
+    GEN_PROF.frame.set(label, (GEN_PROF.frame.get(label) ?? 0) + ms);
+    GEN_PROF.counts.set(label, (GEN_PROF.counts.get(label) ?? 0) + 1);
+  }
+}
+function genProfFlush(wallStart) {
+  if (!GEN_PROF?.enabled) return;
+  const end = Date.now();
+  const total = end - wallStart;
+  // Wall gap between Thinks minus our own time is engine work (entity
+  // creation fallout, physics, networking) that a JS timer cannot see directly.
+  const gap = GEN_PROF.lastWall === undefined ? 0 : wallStart - GEN_PROF.lastWall;
+  GEN_PROF.lastWall = end;
+  for (const [label, ms] of GEN_PROF.frame) {
+    const entry = GEN_PROF.level.get(label) ?? { ms: 0, max: 0, n: 0 };
+    entry.ms += ms; entry.max = Math.max(entry.max, ms); entry.n += GEN_PROF.counts.get(label) ?? 0;
+    GEN_PROF.level.set(label, entry);
+  }
+  const generating = !!state.pendingLevel || state.spawnQueue.length > 0
+    || [...state.generationQueues.values()].some(queue => queue.length);
+  if (total >= GEN_PROF.spikeMs || (gap >= GEN_PROF.gapMs && generating)) {
+    const parts = [...GEN_PROF.frame].filter(([, ms]) => ms > 0).sort((a, b) => b[1] - a[1])
+      .map(([label, ms]) => `${label}=${ms}ms(x${GEN_PROF.counts.get(label)})`).join(" ");
+    consoleNotice(`[GENPROF] think ${total}ms gap ${gap}ms lvl ${state.pendingLevel?.index ?? "-"} q=${state.spawnQueue.length}`
+      + ` ${parts || "(no step >=1ms)"}`);
+  }
+  // Sustained load: per-Think cost under spikeMs still starves the tick, so
+  // summarize a rolling window whenever the round is running.
+  const win = GEN_PROF.window ??= { start: end, thinks: 0, total: 0, max: 0, gapMax: 0, steps: new Map() };
+  win.thinks++; win.total += total; win.max = Math.max(win.max, total); win.gapMax = Math.max(win.gapMax, gap);
+  for (const [label, ms] of GEN_PROF.frame) win.steps.set(label, (win.steps.get(label) ?? 0) + ms);
+  if (end - win.start >= GEN_PROF.windowMs) {
+    if (state.running && win.thinks > 0) {
+      const ending = state.endingRuntime;
+      const top = [...win.steps].filter(([, ms]) => ms > 0).sort((a, b) => b[1] - a[1]).slice(0, 8)
+        .map(([label, ms]) => `${label}=${(ms / win.thinks).toFixed(2)}`).join(" ");
+      consoleNotice(`[GENPROF] window ${((end - win.start) / 1000).toFixed(1)}s thinks=${win.thinks}`
+        + ` avg=${(win.total / win.thinks).toFixed(2)}ms max=${win.max}ms gapMax=${win.gapMax}ms`
+        + ` ending=${ending?.kind ?? "-"}/${ending?.lifecycle ?? "-"}/${ending?.bossPhase ?? ending?.finaleStructurePhase ?? "-"}`
+        + ` ents=${ending?.entities?.size ?? 0} per-think: ${top || "(all <1ms)"}`);
+    }
+    GEN_PROF.window = undefined;
+  }
+  GEN_PROF.frame.clear();
+  GEN_PROF.counts.clear();
+}
+function genProfLevelSummary(runtime) {
+  if (!GEN_PROF?.enabled || GEN_PROF.level.size === 0) return;
+  const parts = [...GEN_PROF.level].sort((a, b) => b[1].ms - a[1].ms).slice(0, 14)
+    .map(([label, entry]) => `${label}=${entry.ms}ms/max${entry.max}/x${entry.n}`).join(" ");
+  consoleNotice(`[GENPROF] level ${runtime.index} '${runtime.name}' (${runtime.entities?.size ?? 0} ents): ${parts}`);
+  GEN_PROF.level.clear();
+}
+
+// ===== END TEMP PERF PROBES =====
 
 function guardStep(step, callback, fallback) {
   try {
-    return callback();
+    return GEN_PROF?.enabled ? genProf(step, callback) : callback();
   } catch (error) {
     reportGuardedError(step, error);
     return fallback;
   }
 }
 
+// Every timed cleanup (tasks, item/event expiry) hangs off the Think chain,
+// while outputs, damage and round callbacks keep firing without it. If a
+// SetNextThink is ever lost mid-round the map looks playable but nothing
+// expires until OnRoundStart re-arms it, so those callbacks re-arm it too.
+const THINK_STALL_SECONDS = 1;
+let thinkAliveAt;
+let nextThinkStallNoticeAt = -Infinity;
+
+function ensureThinkAlive(source) {
+  if (!state.activated || thinkAliveAt === undefined) return;
+  const now = Instance.GetGameTime();
+  if (now - thinkAliveAt <= THINK_STALL_SECONDS) return;
+  if (now >= nextThinkStallNoticeAt) {
+    nextThinkStallNoticeAt = now + 5;
+    consoleNotice(`WARNING: Think stalled for ${(now - thinkAliveAt).toFixed(2)}s; re-armed from ${source}`);
+  }
+  thinkAliveAt = now; // one re-arm per stall window, not one per callback
+  try {
+    Instance.SetThink(think);
+    Instance.SetNextThink(now);
+  } catch (error) {
+    reportGuardedError("ensureThinkAlive", error);
+  }
+}
+
 function think() {
+  thinkAliveAt = Instance.GetGameTime();
+  const profWall = Date.now();
   try {
     withGenerationBudget(() => {
       thinkPlayerPawns = guardStep("resolvePlayerPawns", () => resolvePlayerPawns(), []);
@@ -38089,6 +38923,7 @@ function think() {
     reportGuardedError("think", error);
   } finally {
     thinkPlayerPawns = undefined;
+    try { genProfFlush(profWall); } catch (error) { reportGuardedError("genProfFlush", error); }
     try {
       Instance.SetNextThink(Instance.GetGameTime() + (state.running ? CONFIG.thinkInterval : CONFIG.idleThinkInterval));
     } catch (error) {
@@ -38119,12 +38954,14 @@ function thinkBody() {
     guardStep("processThemeMusic", () => processThemeMusic(now));
     guardStep("processDebugDebris", () => processDebugDebris(now));
     guardStep("processGenericEvents", () => processGenericEvents(now));
+    guardStep("processFinaleBossGrenades", () => processFinaleBossGrenades(now));
     guardStep("processTrollMessages", () => processTrollMessages(now));
     guardStep("processSilentHillVisualChange", () => processSilentHillVisualChange());
     guardStep("processEndingRuntime", () => processEndingRuntime());
     guardStep("updateInfectionState", () => updateInfectionState(now));
     guardStep("processCheapPlayerModels", () => processCheapPlayerModels(now));
     guardStep("checkEnd", () => checkEnd(now));
+    guardStep("processProgressionDelay", () => processProgressionDelay(now));
     guardStep("processAirslideVolumes", () => processAirslideVolumes(now));
     guardStep("processAirslideFailsafe", () => processAirslideFailsafe(now));
     guardStep("processLowgravFailsafe", () => processLowgravFailsafe(now));
@@ -38144,6 +38981,7 @@ function thinkBody() {
     guardStep("processStormBladeVisuals", () => processStormBladeVisuals(now));
     guardStep("processGenerationQueues", () => processGenerationQueues());
     if (!state.fatal) guardStep("processTerrainSpawnFades", () => processTerrainSpawnFades(now));
+    guardStep("processSpawnBench", () => processSpawnBench(now)); // TEMP SPAWN BENCH
   }
   guardStep("syncInvincibilityHud", () => syncInvincibilityHud(now));
   guardStep("syncJumpscareHud", () => syncJumpscareHud(now));
@@ -38471,16 +39309,18 @@ Instance.OnRoundStart(roundStartRuntime);
 Instance.OnPlayerReset(resetPlayerEffects);
 Instance.OnPlayerTeamChanged?.(handleZombieInfectionTeamChanged);
 Instance.OnPlayerKill?.(handlePlayerKill);
-Instance.OnPlayerPing?.(useItemFromPing);
-Instance.OnPlayerChat?.(useItemFromChat);
+Instance.OnPlayerChat?.(handlePlayerChat);
 Instance.OnPlayerDamage?.(handleGenericPlayerDamage);
-Instance.OnGrenadeThrow?.(handleGenericGrenadeThrow);
+Instance.OnGrenadeThrow?.(handleGrenadeThrow);
 Instance.OnGrenadeBounce?.(handleTrapFloorGrenadeBounce);
 
 
 
 
-Instance.OnModifyPlayerDamage(modifyPlayerDamage);
+Instance.OnModifyPlayerDamage((event) => {
+  ensureThinkAlive("damage");
+  return modifyPlayerDamage(event);
+});
 
 
 
@@ -39001,7 +39841,8 @@ function debugEventCommand(args) {
     return true;
   }
   if (["OFF", "STOP", "CLEAR", "0"].includes(command)) {
-    for (const event of [...state.genericEvents.active.values()]) endGenericEvent(event);
+    for (const event of [...state.genericEvents.active.values()])
+      guardStep(`debug stop ${event.name}`, () => endGenericEvent(event));
     setGenericEventManualMode(false);
     message(`debug events stopped; automatic rolls ${state.genericEvents.autoEnabled ? "ON" : "OFF"}`);
     return true;
@@ -39156,7 +39997,7 @@ function prepareDebugDirectBoss(runtime) {
 function stopDebugDebris() {
   state.debugDebrisMode = false;
   for (const event of [...state.genericEvents.active.values()])
-    if (event.continuousDebug) endGenericEvent(event);
+    if (event.continuousDebug) guardStep(`debug debris stop ${event.name}`, () => endGenericEvent(event));
 }
 
 function processDebugDebris(now) {
