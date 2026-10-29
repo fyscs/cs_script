@@ -2,7 +2,7 @@
 // https://github.com/Kxnrl
 
 // 原生 JS 专项修复；不含 Lua 执行层、整图表或测试命令。
-// life_blizzard_lua_order_20261018_r8/src/native.js
+// elves_second_lua_20261018_r9/src/native.js
 import { Instance, CSMoveType } from 'cs_script/point_script'
 var roundHandlers = /* @__PURE__ */ new Set()
 var roundResetHandlers = /* @__PURE__ */ new Set()
@@ -211,7 +211,7 @@ function wiring(templates, install) {
   return { refresh, bind, connect, connections }
 }
 
-// life_blizzard_lua_order_20261018_r8/src/effects.js
+// elves_second_lua_20261018_r9/src/effects.js
 var states = /* @__PURE__ */ new Map()
 var resetPawns = /* @__PURE__ */ new Set()
 var luaBatches = /* @__PURE__ */ new Map()
@@ -223,9 +223,6 @@ var luaRejected = 0
 var luaLastWrite
 var luaPhases = {
   blizzardReset: [0.49, 1],
-  lifeReset: [0.59, 1.1],
-  lifePrepare: [2, 1.4],
-  lifeFinish: [4, 1.1],
 }
 for (const name of Object.keys(luaPhases))
   luaBatches.set(name, /* @__PURE__ */ new Map())
@@ -319,12 +316,13 @@ function apply(p, record, t, force = false) {
       else fast = Math.max(fast, value)
     }
   const speed = slow < 1 ? slow : fast
+  const refreshInterval = record.effects.has('elvesCenter') ? 0.1 : 0.2
   if (force || record.written !== speed || t >= record.refresh) {
     fire(p, 'KeyValue', 'speed ' + speed)
     record.written = speed
-    record.refresh = t + 0.2
+    record.refresh = t + refreshInterval
   }
-  if (!(record.luaPending > 0)) {
+  if (!(record.luaPending > 0 || record.luaHold > 0)) {
     record.luaLast = void 0
     if (!record.effects.size) states.delete(p)
   }
@@ -348,6 +346,7 @@ function luaRecord(p) {
       written: void 0,
       refresh: 0,
       luaPending: 0,
+      luaHold: 0,
     }
     states.set(p, r)
   }
@@ -412,19 +411,38 @@ for (const [value, input] of [
   [0.5, 'blizzard50'],
   [0.65, 'blizzard65'],
   [0.85, 'blizzard85'],
-  [1.5, 'lifeTap'],
 ])
   Instance.OnScriptInput(input, ({ activator: p }) => {
     if (!live(p, 2)) return
     const r = luaRecord(p)
-    if (luaSchedule(p, r, input === 'lifeTap' ? 'lifeReset' : 'blizzardReset'))
-      luaWrite(p, r, value, input)
+    if (luaSchedule(p, r, 'blizzardReset')) luaWrite(p, r, value, input)
   })
-Instance.OnScriptInput('lifeTap12', ({ activator: p }) => {
+// 生命分离速度阶梯：第 0 秒 1.2、第 2 秒 1.4、第 4 秒 1.6（施法者生命值高于 13000 时 1.8）、第 11 秒恢复 1.1。
+// 在范围内由 life_tap.js 以约 0.1 秒节拍持续写入当前阶段速度；离开范围时由 life_tap.js 写回 1.1。
+// 每次写入都是一次真实的时间写入，后写入的效果按时间顺序覆盖，不主动取消其他神器已经排出的恢复写入。
+var lifeTapSpeeds = {
+  lifeTap12: [1.2, true],
+  lifeTap14: [1.4, true],
+  lifeTap16: [1.6, true],
+  lifeTap18: [1.8, true],
+  lifeTapPhase12: [1.2, false],
+  lifeTapPhase14: [1.4, false],
+  lifeTapPhase16: [1.6, false],
+  lifeTapPhase18: [1.8, false],
+}
+for (const [input, [speed, join]] of Object.entries(lifeTapSpeeds))
+  Instance.OnScriptInput(input, ({ activator: p }) => {
+    if (!live(p, 2)) return
+    const r = luaRecord(p)
+    if (join) r.luaHold = (r.luaHold || 0) + 1
+    luaWrite(p, r, speed, input)
+  })
+Instance.OnScriptInput('lifeTapEnd', ({ activator: p }) => {
   if (!live(p, 2)) return
-  const r = luaRecord(p)
-  if (luaSchedule(p, r, 'lifePrepare') && luaSchedule(p, r, 'lifeFinish'))
-    luaWrite(p, r, 1.2, 'lifeTap12')
+  const r = states.get(p)
+  if (!r) return
+  if ((r.luaHold || 0) > 0) r.luaHold--
+  luaWrite(p, r, 1.1, 'lifeTapEnd')
 })
 Instance.OnScriptInput('blizzard_release', () => {})
 for (const [input, [kind, speed, duration]] of Object.entries(presets))
@@ -536,4 +554,4 @@ wiring(
   },
 )
 
-Instance.Msg('SLICOO_NATIVE_LOAD:effects:20261018-r8')
+Instance.Msg('SLICOO_NATIVE_LOAD:effects:20261028-r10')

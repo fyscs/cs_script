@@ -7,6 +7,7 @@ const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
 let MapValue = 0;
+let Mode = 0;
 let ModeColor = 'white';
 Instance.OnScriptInput("SetMapValue0", () => {
     MapValue = 0;
@@ -43,6 +44,7 @@ Instance.OnRoundStart(() => {
 });
 
 Instance.OnPlayerKill((event) => {
+    if (Mode !== 5) return;
     const attacker = event.attacker;
     if (!(attacker instanceof CSPlayerPawn)) return;
     if (!attacker.IsAlive()) return;
@@ -123,9 +125,11 @@ Instance.OnScriptInput("diff_4", () => {
 });
 Instance.OnScriptInput("dr_1", () => {
     setText("当前模式：死亡赛跑", hint_radar);
+    Mode = 1;
 });
 Instance.OnScriptInput("hide_1", () => {
     setText("当前模式：躲猫猫", hint_radar);
+    Mode = 2;
     const mghidecounter = Instance.FindEntityByName("mghidecounter");
     if (mghidecounter) {
         Instance.ConnectOutput(mghidecounter, "OnGetValue", (data) => {
@@ -145,14 +149,17 @@ Instance.OnScriptInput("hide_1", () => {
 });
 Instance.OnScriptInput("run_1", () => {
     setText("当前模式：马拉松", hint_radar);
+    Mode = 3;
 });
 Instance.OnScriptInput("wang_1", () => {
     setText("当前模式：小王爱探险", hint_radar);
+    Mode = 5;
     WangP1 = -6;
     WangP2 = -10;
 });
 Instance.OnScriptInput("tnt_1", () => {
     setText("当前模式：小游戏合集", hint_radar);
+    Mode = 6;
 });
 Instance.OnScriptInput("hide_2_1", ({ activator }) => {
     if (activator instanceof CSPlayerPawn) {
@@ -256,7 +263,7 @@ Instance.OnScriptInput("tnt_6", () => {
 Instance.OnScriptInput("tnt_6b", ({ activator }) => {
     if (activator instanceof CSPlayerPawn) {
         const controller = activator.GetPlayerController();
-        setTextPlayer("你已失去免抓\n快躲起来", controller, { ...hint_mid, color: 'red' });
+        setTextPlayer("你已失去免抓 快躲起来", controller, { ...hint_mid, color: 'red' });
     }
 });
 Instance.OnScriptInput("tnt_7", () => {
@@ -1010,14 +1017,13 @@ function ensureScoreEntry(player) {
 
 function checkReward(player, entry) {
     if (entry.score >= REWARD_SCORE && !entry.rewarded) {
+        if (rewardCount >= MAX_REWARD_COUNT) return;
         entry.rewarded = true;
+        rewardCount += 1;
         if (typeof player.AddMoneySpendableNow === 'function') {
             player.AddMoneySpendableNow(REWARD_MONEY);
         }
         rewardedPlayers.unshift(entry.name);
-        if (rewardedPlayers.length > MAX_REWARD_LINES) {
-            rewardedPlayers.length = MAX_REWARD_LINES;
-        }
         renderLeaderboard();
     }
 }
@@ -1025,13 +1031,15 @@ function checkReward(player, entry) {
 function ClearScores() {
     playerScores.clear();
     rewardedPlayers.length = 0;
+    rewardCount = 0;
 }
 
 const RANK_LABELS = ['一', '二', '三'];
 const REWARD_SCORE = 10;
 const REWARD_MONEY = 50000;
-const MAX_REWARD_LINES = 2;
+const MAX_REWARD_COUNT = 2;
 const rewardedPlayers = [];
+let rewardCount = 0;
 
 function renderLeaderboard() {
     const hud = getChatHud();
@@ -1047,9 +1055,7 @@ function renderLeaderboard() {
     }
     hud.SetHasClass('chat_line_1', 'ChatHidden', false);
 
-    // 排行榜固定占 chat_line_2~4（flow-children: up，数字大在上）
     const sorted = [...playerScores.values()].sort((a, b) => b.score - a.score);
-
     for (let i = 0; i < 3; i++) {
         const lineId = `chat_line_${4 - i}`;
         if (i < sorted.length) {
