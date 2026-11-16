@@ -12,8 +12,16 @@ function EntFireTarget(target, input, value, delay, activator, caller) {
     Instance.EntFireAtTarget({ target: target, input: input, value: value, delay: delay, activator: activator, caller: caller });
 }
 
+
+Instance.OnRoundStart(() => {
+    playerQuotas.clear();
+    grenadeThrowerAngles.clear();
+    stopWaterUpdate();
+    grenadeEnabled = false;
+});
+
 Instance.OnScriptInput("Admin", (inputData) => {
-    const playerController = /** @type {CSPlayerPawn|undefined} */ (inputData.activator)?.GetPlayerController();
+    const playerController = (inputData.activator)?.GetPlayerController();
     if (playerController && playerController.IsValid()) admins.add(playerController);
 });
 
@@ -186,6 +194,187 @@ Instance.OnScriptInput("Heal300", ({ activator }) => {
     const hp = activator.GetHealth();
     activator.SetHealth(hp + 300);
 });
+
+
+const EFFECT_ORDER = ['blackhole', 'freeze', 'laugh', 'wind', 'water'];
+const playerQuotas = new Map();
+let grenadeEnabled = false;
+
+/** 给玩家加某种效果的次数 */
+function addQuota(slot, effect, n = 1) {
+    if (slot < 0 || !EFFECT_ORDER.includes(effect) || n <= 0) return false;
+    let q = playerQuotas.get(slot);
+    if (!q) {
+        q = { blackhole: 0, freeze: 0, laugh: 0, wind: 0, water: 0 };
+        playerQuotas.set(slot, q);
+    }
+    q[effect] += n;
+    return true;
+}
+
+function consumeAnyEffect(slot) {
+    if (slot < 0) return null;
+    const q = playerQuotas.get(slot);
+    if (!q) return null;
+    for (const effect of EFFECT_ORDER) {
+        if (q[effect] > 0) {
+            q[effect] -= 1;
+            return effect;
+        }
+    }
+    return null;
+}
+
+function activatorToSlot(activator) {
+    if (!(activator instanceof CSPlayerPawn) || !activator.IsValid()) return -1;
+    const playerController = activator.GetPlayerController();
+    playerController.GetPlayerPawn().GiveNamedItem("weapon_hegrenade", true);
+    return playerController && playerController.IsValid() ? playerController.GetPlayerSlot() : -1;
+}
+
+Instance.OnScriptInput("EnableGrenades", () => {
+    grenadeEnabled = true;
+});
+
+Instance.OnScriptInput("AddBlackhole", ({ activator }) => {
+    const slot = activatorToSlot(activator);
+    if (slot < 0) return;
+    addQuota(slot, 'blackhole', 1);
+});
+
+Instance.OnScriptInput("AddFreeze", ({ activator }) => {
+    const slot = activatorToSlot(activator);
+    if (slot < 0) return;
+    addQuota(slot, 'freeze', 1);
+});
+
+Instance.OnScriptInput("AddLaugh", ({ activator }) => {
+    const slot = activatorToSlot(activator);
+    if (slot < 0) return;
+    addQuota(slot, 'laugh', 3);
+});
+
+Instance.OnScriptInput("AddWind", ({ activator }) => {
+    const slot = activatorToSlot(activator);
+    if (slot < 0) return;
+    addQuota(slot, 'wind', 2);
+});
+
+Instance.OnScriptInput("AddWater", ({ activator }) => {
+    const slot = activatorToSlot(activator);
+    if (slot < 0) return;
+    addQuota(slot, 'water', 1);
+});
+
+const grenadeThrowerAngles = new Map();
+Instance.OnGrenadeThrow((event) => {
+    const grenade = event.projectile;
+    if (!grenade || !grenade.IsValid()) return;
+    const thrower = grenade.GetThrower();
+    if (!thrower || !thrower.IsValid()) return;
+    grenadeThrowerAngles.set(grenade, thrower.GetAbsAngles().yaw);
+});
+
+Instance.OnGrenadeBounce((event) => {
+    if (!grenadeEnabled) return;
+    if (event.bounces !== 1) return;
+    const grenade = event.projectile;
+    if (!grenade || !grenade.IsValid()) return;
+    const thrower = grenade.GetThrower();
+    if (!thrower || !thrower.IsValid()) return;
+    const playerController = thrower.GetPlayerController();
+    if (!playerController || !playerController.IsValid()) return;
+
+    const slot = playerController.GetPlayerSlot();
+
+    const effect = consumeAnyEffect(slot);
+    if (!effect) {
+        grenadeThrowerAngles.delete(grenade);
+        return;
+    };
+    if (effect === 'wind') {
+        const template = Instance.FindEntityByName("grenade_windtemp");
+        const origin = grenade.GetAbsOrigin();
+
+        const yaw = grenadeThrowerAngles.get(grenade);
+        if (yaw !== undefined) {
+            template.ForceSpawn(origin, { pitch: 0, yaw: yaw, roll: 0 });
+        }
+    }
+    if (effect === 'water') {
+        setWaterTarget(waterTarget + 50);
+        startWaterUpdate();
+        void waterDecayAfterDelay();
+    }
+    // activator 传手雷，地图里可以用 !activator 拿到它的位置
+    EntFire(`grenade_${effect}`, 'Trigger', '', 0, grenade, null);
+    EntFireTarget(grenade, 'Kill', '', 0, null, null);
+
+    grenadeThrowerAngles.delete(grenade);
+});
+
+
+let waterTarget = 0;       // 目标值
+let waterCurrent = 0;      // 当前值
+let waterRunning = false;  // 是否正在更新
+let waterRunId = 0;        // 运行代号，用于让旧循环失效
+
+let waterEntity = null;    // 被 Teleport 的实体
+
+function setWaterTarget(v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return;
+    if (v < 0) v = 0;
+    waterTarget = v;
+}
+
+async function waterDecayAfterDelay() {
+    await Instance.Delay(12);
+    setWaterTarget(waterTarget - 50);
+}
+
+async function waterLoop(runId) {
+    while (waterRunning && runId === waterRunId) {
+        const diff = waterTarget - waterCurrent;
+        if (Math.abs(diff) <= 0.5) {
+            waterCurrent = waterTarget;
+        } else {
+            waterCurrent += diff > 0 ? 0.5 : -0.5;
+        }
+        if (waterCurrent > 128) waterCurrent = 128;
+        if (waterCurrent < 0) waterCurrent = 0;
+
+        if (!waterEntity || !waterEntity.IsValid()) {
+            waterEntity = findWaterEntity();
+        }
+
+        if (waterEntity && waterEntity.IsValid()) {
+            waterEntity.Teleport({
+                position: { x: 0, y: 0, z: waterCurrent + 9600 },
+            });
+        }
+        await Instance.Delay(0.03);
+    }
+}
+
+/** 开始水位更新 */
+function startWaterUpdate() {
+    if (waterRunning) return;
+    waterRunning = true;
+    waterRunId++;
+    void waterLoop(waterRunId);
+}
+
+/** 停止水位更新 */
+function stopWaterUpdate() {
+    waterRunning = false;
+    waterRunId++;
+}
+
+function findWaterEntity() {
+    const ent = Instance.FindEntityByName("hide_water");
+    if (ent && ent.IsValid()) return ent;
+    return null;
+}
 
 
 
