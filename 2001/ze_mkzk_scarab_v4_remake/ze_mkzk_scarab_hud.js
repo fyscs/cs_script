@@ -185,6 +185,24 @@ Instance.OnScriptInput("hide_2_4", ({ activator }) => {
         setTextPlayer("已选择：低重力", controller, { ...hint_down, duration: 2 });
     }
 });
+Instance.OnScriptInput("hide_2_5", ({ activator }) => {
+    if (activator instanceof CSPlayerPawn) {
+        const controller = activator.GetPlayerController();
+        setTextPlayer("已选择：潮汐", controller, { ...hint_down, duration: 2 });
+    }
+});
+Instance.OnScriptInput("hide_2_6", ({ activator }) => {
+    if (activator instanceof CSPlayerPawn) {
+        const controller = activator.GetPlayerController();
+        setTextPlayer("已选择：飓风", controller, { ...hint_down, duration: 2 });
+    }
+});
+Instance.OnScriptInput("hide_2_7", ({ activator }) => {
+    if (activator instanceof CSPlayerPawn) {
+        const controller = activator.GetPlayerController();
+        setTextPlayer("已选择：开心", controller, { ...hint_down, duration: 2 });
+    }
+});
 Instance.OnScriptInput("slot_reward", ({ activator }) => {
     if (activator instanceof CSPlayerPawn) {
         const controller = activator.GetPlayerController();
