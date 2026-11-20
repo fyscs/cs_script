@@ -9,24 +9,27 @@ const LOCKED_CLASS = "Locked";
 const stories = [
     {
         title: "基本讯息",
-        body: [
-            `基本讯息
-编号:001
-性别:女
+        sections: [
+            {
+                title: "编号:001",
+                body: `性别:女
 年龄:未知
 描述:拥有著最后的白巫女之称的女孩，能净化所有污秽
 近期发现能召唤暗影高达`,
-            `基本讯息
-编号:213
-性别:女
+            },
+            {
+                title: "编号:213",
+                body: `性别:女
 年龄:17
 描述:粉色头发的女孩，力气非常大`,
-            `基本讯息
-编号:842
-性别:女
+            },
+            {
+                title: "编号:842",
+                body: `性别:女
 年龄:16
 描述:除了情绪多样化无任何特殊能力`,
-        ].join("\n\n"),
+            },
+        ],
     },
     {
         title: "研究员的笔记2",
@@ -136,11 +139,51 @@ Brand:不用管那个不知道此价值为何的人
     },
     {
         title: "传送门安全程序",
-        body: "(没有,作者想不到怎么给这东西加叙述,我也不是学理的,投降)",
+        body: "c3RhdHNpcyBzeXN0ZW0gcGFzc3dvcmQ6MDcwOQ==",
+    },
+    {
+        title: "番外",
+        sections: [
+            {
+                title: "关于Kiki",
+                body:
+`研究所前几年建立了一所孤儿院，说好听点是孤儿院，说难听点那简直就是备料所
+孤儿院总会到处收养著没人要或是养不起的孩子，在十岁之前他们会被注射各种药剂，
+进行各种训练以及实验，他们嘴上说著是预防针，
+实际上给这些孩子们注射的都是些什么，心里明明很清楚我却无法做些什么。
+今早所长让我来这糟糕的孤儿院一趟，说什么看我总是一个人孤零零的让我去看看那些孩子，
+这里的环境感受不到一点希望，老旧的门吱吱作响、一闪一闪的吊灯与摇摇欲坠的风扇，
+坐在底下彷佛随时会被砸到似的，这里的采光也糟糕透顶，所有的设备及家具都陈旧无比，
+这里唯一值得称赞的或许只有按时提供三餐了。
+在有著一大片落地窗的房间里，昏暗的灯光下一群孩童的正嘻笑著，
+他们围著一个女孩有说有笑的分享著彼此的喜悦。
+那个女孩...怎么会...`,
+            },
+            {
+                title: "关于kiki2",
+                body: 
+`:实验体842号，9岁，身高123，体重.....
+(实验体842号...这是对人的称呼吗？我果然一点也不喜欢这所孤儿院，他们可都是活生生的人，却被当成物品一般对待。)
+:预计将于明年的1月处理掉。
+处理?处理什么?
+:这些实验体，若是没有特别突出的特性或是特殊理由被公司采用将会在第十年将他们处理掉，实验体842号，
+经栽培后她并没有特殊的能力，脑力测试也只是非常普通的成绩`,
+            },
+            {
+                title: "子測試03",
+                body: `測試測試`,
+            },
+        ],
+    },
+    {
+        title: "測試12",
+        body: "c3RhdHNpcyBzeXN0ZW0gcGFzc3dvcmQ6MDcwOQ==",
     },
 ];
 
 const unlockedStories = Array(stories.length).fill(false);
+const selectedSubStory = new Map();
+
 const hudLayout = /** @type {import("cs_script/point_script").CustomHudLayout} */ (
     Instance.FindEntityByName("hud_story_layout")
 );
@@ -154,9 +197,9 @@ function twoDigits(value) {
 function findActivatorPlayer(activator) {
     for (const player of Instance.GetAllPlayerControllers()) {
         if (
-            player === activator
-            || player.GetPlayerPawn() === activator
-            || player.GetObserverPawn() === activator
+            player === activator ||
+            player.GetPlayerPawn() === activator ||
+            player.GetObserverPawn() === activator
         ) {
             return player;
         }
@@ -169,19 +212,29 @@ function updateStoryList() {
     for (let index = 0; index < stories.length; index += 1) {
         const story = stories[index];
         const suffix = twoDigits(index + 1);
-        const buttonId = `story_button_${suffix}`;
-        const titleId = `story_title_${suffix}`;
 
-        hudLayout.SetHasClass(buttonId, LOCKED_CLASS, !unlockedStories[index]);
-        hudLayout.SetDialogVariableString(titleId, "title", unlockedStories[index] ? story.title : "???");
+        hudLayout.SetHasClass(
+            `story_button_${suffix}`,
+            LOCKED_CLASS,
+            !unlockedStories[index]
+        );
+
+        hudLayout.SetDialogVariableString(
+            `story_title_${suffix}`,
+            "title",
+            unlockedStories[index] ? story.title : "???"
+        );
     }
 }
 
 /** @param {number} playerSlot */
 function showStoryList(playerSlot) {
+    selectedSubStory.delete(playerSlot);
     updateStoryList();
+
     hudLayout.SetHasClassForPlayer(playerSlot, "story_dialog", HIDDEN_CLASS, false);
     hudLayout.SetHasClassForPlayer(playerSlot, "story_list", HIDDEN_CLASS, false);
+    hudLayout.SetHasClassForPlayer(playerSlot, "story_sublist", HIDDEN_CLASS, true);
     hudLayout.SetHasClassForPlayer(playerSlot, "story_detail", HIDDEN_CLASS, true);
     hudLayout.SetInputCaptureEnabled(playerSlot, true);
 }
@@ -191,16 +244,63 @@ function showStoryList(playerSlot) {
  * @param {{ title: string, body: string }} story
  */
 function showStoryDetail(playerSlot, story) {
-    hudLayout.SetDialogVariableStringForPlayer(playerSlot, "detail_title", "title", story.title);
-    hudLayout.SetDialogVariableStringForPlayer(playerSlot, "detail_body", "body", story.body);
+    hudLayout.SetDialogVariableStringForPlayer(
+        playerSlot,
+        "detail_title",
+        "title",
+        story.title
+    );
+
+    hudLayout.SetDialogVariableStringForPlayer(
+        playerSlot,
+        "detail_body",
+        "body",
+        story.body
+    );
+
     hudLayout.SetHasClassForPlayer(playerSlot, "story_list", HIDDEN_CLASS, true);
+    hudLayout.SetHasClassForPlayer(playerSlot, "story_sublist", HIDDEN_CLASS, true);
     hudLayout.SetHasClassForPlayer(playerSlot, "story_detail", HIDDEN_CLASS, false);
+}
+
+/**
+ * @param {number} playerSlot
+ * @param {{ sections: { title: string, body: string }[] }} story
+ */
+function showStorySubList(playerSlot, story) {
+    selectedSubStory.set(playerSlot, story);
+
+    for (let index = 0; index < 3; index += 1) {
+        const section = story.sections[index];
+        const suffix = twoDigits(index + 1);
+
+        hudLayout.SetDialogVariableStringForPlayer(
+            playerSlot,
+            `story_sub_title_${suffix}`,
+            "title",
+            section ? section.title : ""
+        );
+
+        hudLayout.SetHasClassForPlayer(
+            playerSlot,
+            `story_sub_button_${suffix}`,
+            HIDDEN_CLASS,
+            !section
+        );
+    }
+
+    hudLayout.SetHasClassForPlayer(playerSlot, "story_list", HIDDEN_CLASS, true);
+    hudLayout.SetHasClassForPlayer(playerSlot, "story_sublist", HIDDEN_CLASS, false);
+    hudLayout.SetHasClassForPlayer(playerSlot, "story_detail", HIDDEN_CLASS, true);
 }
 
 /** @param {number} playerSlot */
 function hideHud(playerSlot) {
+    selectedSubStory.delete(playerSlot);
+
     hudLayout.SetHasClassForPlayer(playerSlot, "story_dialog", HIDDEN_CLASS, true);
     hudLayout.SetHasClassForPlayer(playerSlot, "story_list", HIDDEN_CLASS, false);
+    hudLayout.SetHasClassForPlayer(playerSlot, "story_sublist", HIDDEN_CLASS, true);
     hudLayout.SetHasClassForPlayer(playerSlot, "story_detail", HIDDEN_CLASS, true);
     hudLayout.SetInputCaptureEnabled(playerSlot, false);
 }
@@ -210,6 +310,11 @@ function unlockStory(index) {
     unlockedStories[index] = true;
     updateStoryList();
 }
+
+Instance.OnScriptInput("UnlockAll", () => {
+    unlockedStories.fill(true);
+    updateStoryList();
+});
 
 Instance.OnActivate(() => {
     updateStoryList();
@@ -253,8 +358,31 @@ Instance.OnCustomHudClicked(({ player, layout, buttonId }) => {
         return;
     }
 
-    if (buttonId === "back_button") {
+    if (buttonId === "sub_back_button") {
         showStoryList(playerSlot);
+        return;
+    }
+
+    if (buttonId === "back_button") {
+        const story = selectedSubStory.get(playerSlot);
+
+        if (story) {
+            showStorySubList(playerSlot, story);
+        } else {
+            showStoryList(playerSlot);
+        }
+        return;
+    }
+
+    const subMatch = /^story_sub_button_(\d{2})$/.exec(buttonId);
+    if (subMatch) {
+        const story = selectedSubStory.get(playerSlot);
+        const sectionIndex = Number(subMatch[1]) - 1;
+        const section = story?.sections?.[sectionIndex];
+
+        if (section) {
+            showStoryDetail(playerSlot, section);
+        }
         return;
     }
 
@@ -265,7 +393,13 @@ Instance.OnCustomHudClicked(({ player, layout, buttonId }) => {
 
     const storyIndex = Number(match[1]) - 1;
     const story = stories[storyIndex];
+
     if (!story || !unlockedStories[storyIndex]) {
+        return;
+    }
+
+    if (Array.isArray(story.sections)) {
+        showStorySubList(playerSlot, story);
         return;
     }
 
